@@ -97,7 +97,7 @@ export function Toolbar({
       
       if (selected && typeof selected === 'string') {
         // Load the file via Tauri command
-        const info = await safeInvoke<MoleculeInfo>('load_molecule', { path: selected });
+        const info = await safeInvoke('load_molecule', { path: selected }) as MoleculeInfo;
         onFileLoaded(info);
       }
     } catch (err) {

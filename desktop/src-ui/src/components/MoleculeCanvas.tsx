@@ -20,7 +20,7 @@ interface MoleculeCanvasProps {
   isLoading: boolean;
 }
 
-export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: MoleculeCanvasProps) {
+export function MoleculeCanvas({ onMoleculeLoaded: _onMoleculeLoaded, onError, isLoading }: MoleculeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
