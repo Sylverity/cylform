@@ -7,7 +7,7 @@
 //! - Real-time 60-240 fps performance
 
 use crate::molecule::Structure;
-use crate::{Result, CoreError};
+use crate::Result;
 
 /// The main renderer
 pub struct Renderer {
@@ -17,7 +17,7 @@ pub struct Renderer {
 
 impl Renderer {
     /// Create a new renderer
-    pub async fn new(window: &dyn raw_window_handle::HasRawWindowHandle) -> Result<Self> {
+    pub async fn new(_window: &dyn raw_window_handle::HasRawWindowHandle) -> Result<Self> {
         // TODO: Implement wgpu initialization
         // 1. Create instance
         // 2. Create adapter
@@ -29,6 +29,8 @@ impl Renderer {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             dx12_shader_compiler: Default::default(),
+            flags: wgpu::InstanceFlags::default(),
+            gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
         });
         
         // Placeholder - full implementation coming

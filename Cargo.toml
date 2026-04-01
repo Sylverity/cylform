@@ -14,12 +14,12 @@ rust-version = "1.70"
 # Core dependencies
 wgpu = "0.19"
 bytemuck = { version = "1.14", features = ["derive"] }
-glam = "0.25"
+glam = { version = "0.25", features = ["bytemuck", "serde"] }
 pollster = "0.3"
 raw-window-handle = "0.6"
 
-# File I/O
-chemfiles = "0.10"
+# File I/O (chemfiles to be added later)
+# chemfiles = "0.10"
 
 # Logging & errors
 log = "0.4"
@@ -35,8 +35,11 @@ serde_json = "1.0"
 tokio = { version = "1.35", features = ["rt-multi-thread"] }
 
 # Tauri (desktop only)
-tauri = { version = "1.5", features = ["api-all"] }
+tauri = { version = "1.6", features = ["api-all"] }
 tauri-build = { version = "1.5" }
+
+# Temporary for chemfiles linking
+cc = "1.0"
 
 [profile.release]
 opt-level = 3

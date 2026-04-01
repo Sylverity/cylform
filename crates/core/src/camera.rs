@@ -6,7 +6,7 @@
 //! - Scroll: Zoom
 //! - Double-click: Center on point
 
-use glam::{Vec3, Mat4, Quat};
+use glam::{Vec3, Mat4};
 
 /// An orbital camera for viewing molecular structures
 #[derive(Debug, Clone)]

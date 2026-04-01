@@ -57,7 +57,7 @@ While eliminating legacy constraints:
 |-----------|-----------|
 | **Core Language** | Rust |
 | **GPU API** | wgpu (WebGPU) |
-| **UI Framework** | Tauri (Rust) + Svelte/TypeScript |
+| **UI Framework** | Tauri (Rust) + React 19 + Vite + TypeScript |
 | **Compute Shaders** | WGSL |
 | **File I/O** | chemfiles (Rust bindings) |
 | **Build System** | Cargo + cargo-bundle |
@@ -66,9 +66,11 @@ While eliminating legacy constraints:
 ## Development Roadmap
 
 ### Phase 1: Core (Months 1-6) 🚧 *In Progress*
+- [x] Project skeleton and core data structures
+- [x] XYZ file I/O support
+- [ ] chemfiles integration (40+ formats) ← **CURRENT STEP**
 - [ ] wgpu renderer with cylinder instancing
-- [ ] chemfiles integration (40+ formats)
-- [ ] Tauri desktop shell (Windows, macOS, Linux)
+- [ ] Tauri desktop shell with React 19 + Vite
 - [ ] Basic measurement and selection tools
 
 ### Phase 2: Polish (Months 7-12)
@@ -86,9 +88,31 @@ While eliminating legacy constraints:
 ## Getting Started
 
 ### Prerequisites
-- Rust 1.70+ (`rustup update`)
-- Node.js 18+ (for Tauri frontend)
+- Rust 1.75+ (`rustup update`)
+- Node.js 20+ (LTS recommended)
+- cargo-tauri (`cargo install tauri-cli`)
 - Git
+
+### Development Environment Setup
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Summykai/CYLview-NG.git
+cd CYLview-NG
+
+# 2. Verify Rust toolchain
+rustc --version  # Should be 1.75+
+cargo --version
+
+# 3. Install Tauri CLI
+cargo install tauri-cli
+
+# 4. Build the core library (runs tests automatically)
+cargo build --release -p cylview-core
+
+# 5. Setup frontend (when desktop is ready)
+cd desktop/src-ui && npm install
+```
 
 ### Build
 ```bash
@@ -98,6 +122,10 @@ cd CYLview-NG
 
 # Build the core library
 cargo build --release -p cylview-core
+
+# Install frontend dependencies
+cd desktop
+cd src-ui && npm install && cd ..
 
 # Build and run the desktop app
 cargo tauri dev
@@ -128,8 +156,8 @@ CYLview-NG/
 ├── crates/
 │   └── core/               # Core Rust library (wgpu, chemfiles)
 └── desktop/                # Tauri desktop application
-    ├── src-tauri/          # Rust backend
-    └── src/                # Svelte frontend
+    ├── src-tauri/          # Rust backend (Tauri)
+    └── src-ui/             # React 19 + Vite frontend
 ```
 
 ---

@@ -1,0 +1,24 @@
+[package]
+name = "cylview-desktop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Desktop application for CYLview-NG"
+
+[dependencies]
+cylview-core = { path = "../../crates/core" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[[bin]]
+name = "cylview-ng"
+path = "src/main.rs"

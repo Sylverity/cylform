@@ -15,8 +15,8 @@ bytemuck = { workspace = true }
 glam = { workspace = true }
 raw-window-handle = { workspace = true }
 
-# File I/O
-chemfiles = { workspace = true }
+# File I/O (chemfiles to be added later)
+# chemfiles = { workspace = true }
 
 # Logging & errors
 log = { workspace = true }
@@ -32,3 +32,4 @@ pollster = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }
+tempfile = "3.9"
