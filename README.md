@@ -67,11 +67,11 @@ While eliminating legacy constraints:
 
 ### Phase 1: Core (Months 1-6) 🚧 *In Progress*
 - [x] Project skeleton and core data structures
-- [x] XYZ file I/O support
-- [ ] chemfiles integration (40+ formats) ← **CURRENT STEP**
-- [ ] wgpu renderer with cylinder instancing
-- [ ] Tauri desktop shell with React 19 + Vite
+- [x] XYZ/PDB file I/O support (chemfiles planned for Phase 2)
+- [x] wgpu renderer with cylinder instancing
+- [ ] **Tauri desktop shell with React 19 + Vite** ← **CURRENT STEP**
 - [ ] Basic measurement and selection tools
+- [ ] Mouse camera controls (orbit, pan, zoom)
 
 ### Phase 2: Polish (Months 7-12)
 - [ ] Hybrid RT mode (RTX/Metal)
@@ -162,4 +162,10 @@ CYLview-NG/
 
 ---
 
-**Current Status:** Setting up project skeleton (Phase 1, Step 1)
+**Current Status:** Step 4 - Tauri Desktop Shell (Phase 1, Step 4)
+
+**Recently Completed:**
+- ✅ GPU-instanced cylinder rendering for bonds
+- ✅ Quadrant lighting system (4-point plastic material highlights)
+- ✅ Sphere impostors for compact atom rendering
+- ✅ Depth testing and alpha blending
