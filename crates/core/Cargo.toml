@@ -1,0 +1,34 @@
+[package]
+name = "cylview-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core molecular visualization library for CYLview-NG"
+
+[dependencies]
+# GPU & Math
+wgpu = { workspace = true }
+bytemuck = { workspace = true }
+glam = { workspace = true }
+raw-window-handle = { workspace = true }
+
+# File I/O
+chemfiles = { workspace = true }
+
+# Logging & errors
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async runtime (for blocking I/O)
+pollster = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }
