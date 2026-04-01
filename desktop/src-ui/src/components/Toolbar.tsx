@@ -32,6 +32,46 @@ export function Toolbar({
 }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      setIsLoading(true);
+      onError('');
+      
+      // Read file content
+      const text = await file.text();
+      
+      // Parse XYZ file
+      const lines = text.split('\n');
+      const atomCount = parseInt(lines[0].trim()) || 0;
+      const name = lines[1]?.trim() || file.name;
+      
+      // Count bonds (simplified)
+      const bondCount = Math.floor(atomCount * 1.5); // rough estimate
+      
+      const info: MoleculeInfo = {
+        name,
+        atomCount,
+        bondCount
+      };
+      
+      onFileLoaded(info);
+      
+      // Store file content for renderer (would pass to Rust in real app)
+      console.log('Loaded molecule:', info);
+      console.log('File content preview:', text.substring(0, 500));
+      
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+      // Reset input
+      event.target.value = '';
+    }
+  };
+
   const handleOpenFile = async () => {
     try {
       setIsLoading(true);
@@ -98,14 +138,8 @@ export function Toolbar({
         ref={fileInputRef}
         type="file"
         accept=".xyz,.pdb,.sdf,.mol"
-        onChange={(e) => {
-          // Handle file drop
-          const file = e.target.files?.[0];
-          if (file) {
-            // Would use web APIs for drag-drop in a real implementation
-            console.log('File selected:', file.name);
-          }
-        }}
+        onChange={handleFileSelect}
+        style={{ display: 'none' }}
       />
     </div>
   );

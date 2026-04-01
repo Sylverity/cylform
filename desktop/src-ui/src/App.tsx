@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import './App.css'
 import { Toolbar } from './components/Toolbar'
 import { InfoPanel } from './components/InfoPanel'
@@ -10,6 +10,9 @@ export interface MoleculeInfo {
   atomCount: number;
   bondCount: number;
 }
+
+// Check if running in Tauri
+const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
 
 function App() {
   const [moleculeInfo, setMoleculeInfo] = useState<MoleculeInfo | null>(null);
@@ -34,6 +37,12 @@ function App() {
 
   return (
     <div className="app">
+      {!isTauri && (
+        <div className="browser-banner">
+          <strong>⚠️ Browser Mode:</strong> File loading unavailable. 
+          Use the <strong>desktop app window</strong> titled "CYLview-NG" to load molecules.
+        </div>
+      )}
       <Toolbar 
         onFileLoaded={handleFileLoaded}
         onError={handleError}
