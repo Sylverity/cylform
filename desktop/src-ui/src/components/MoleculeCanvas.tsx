@@ -2,6 +2,18 @@ import { useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { MoleculeInfo } from '../App';
 
+// Check if Tauri is available
+const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+
+// Safe invoke that works in both Tauri and browser
+const safeInvoke = async (cmd: string, args?: any) => {
+  if (!isTauri) {
+    console.log(`[Mock] Would call: ${cmd}`, args);
+    return Promise.resolve();
+  }
+  return invoke(cmd, args);
+};
+
 interface MoleculeCanvasProps {
   onMoleculeLoaded: (info: MoleculeInfo) => void;
   onError: (error: string) => void;
@@ -33,10 +45,10 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
     
     if (buttonRef.current === 0) {
       // Left click - rotate
-      invoke('camera_rotate', { deltaX: deltaX * 0.01, deltaY: deltaY * 0.01 }).catch(console.error);
+      safeInvoke('camera_rotate', { deltaX: deltaX * 0.01, deltaY: deltaY * 0.01 }).catch(console.error);
     } else if (buttonRef.current === 2) {
       // Right click - pan
-      invoke('camera_pan', { deltaX: deltaX * 0.01, deltaY: -deltaY * 0.01 }).catch(console.error);
+      safeInvoke('camera_pan', { deltaX: deltaX * 0.01, deltaY: -deltaY * 0.01 }).catch(console.error);
     }
     
     lastPosRef.current = { x: e.clientX, y: e.clientY };
@@ -50,7 +62,7 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.1 : -0.1;
-    invoke('camera_zoom', { delta }).catch(console.error);
+    safeInvoke('camera_zoom', { delta }).catch(console.error);
   }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -61,7 +73,7 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'r' || e.key === 'R') {
-        invoke('camera_reset').catch(console.error);
+        safeInvoke('camera_reset').catch(console.error);
       }
     };
 
@@ -72,7 +84,7 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
   // Handle reset camera event
   useEffect(() => {
     const handleReset = () => {
-      invoke('camera_reset').catch(console.error);
+      safeInvoke('camera_reset').catch(console.error);
     };
     
     window.addEventListener('reset-camera', handleReset);
@@ -93,7 +105,7 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
         canvas.height = rect.height;
         
         // Notify Rust backend of resize
-        invoke('resize_surface', { 
+        safeInvoke('resize_surface', { 
           width: Math.max(1, Math.floor(rect.width)), 
           height: Math.max(1, Math.floor(rect.height)) 
         }).catch(console.error);
@@ -112,7 +124,7 @@ export function MoleculeCanvas({ onMoleculeLoaded, onError, isLoading }: Molecul
     const initRenderer = async () => {
       try {
         // Get the raw window handle via Tauri
-        await invoke('init_renderer');
+        await safeInvoke('init_renderer');
       } catch (err) {
         console.error('Failed to initialize renderer:', err);
         onError('Failed to initialize GPU renderer');

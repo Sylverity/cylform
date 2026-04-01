@@ -1,7 +1,19 @@
 import { useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/api/dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import type { MoleculeInfo } from '../App';
+
+// Check if Tauri is available
+const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+
+// Safe invoke that works in both Tauri and browser
+const safeInvoke = async (cmd: string, args?: any) => {
+  if (!isTauri) {
+    console.log(`[Mock] Would call: ${cmd}`, args);
+    return Promise.resolve({ name: 'Test Molecule', atomCount: 56, bondCount: 78 } as MoleculeInfo);
+  }
+  return invoke(cmd, args);
+};
 
 interface ToolbarProps {
   onFileLoaded: (info: MoleculeInfo) => void;
@@ -25,6 +37,13 @@ export function Toolbar({
       setIsLoading(true);
       onError('');
       
+      if (!isTauri) {
+        // Browser fallback - use file input
+        fileInputRef.current?.click();
+        setIsLoading(false);
+        return;
+      }
+      
       // Open file dialog
       const selected = await open({
         multiple: false,
@@ -38,7 +57,7 @@ export function Toolbar({
       
       if (selected && typeof selected === 'string') {
         // Load the file via Tauri command
-        const info = await invoke<MoleculeInfo>('load_molecule', { path: selected });
+        const info = await safeInvoke<MoleculeInfo>('load_molecule', { path: selected });
         onFileLoaded(info);
       }
     } catch (err) {

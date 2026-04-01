@@ -60,10 +60,18 @@ async fn init_renderer(
     // Store window reference
     *state.window.lock() = Some(window.clone());
     
-    // Create renderer
-    let renderer = Renderer::new(&window)
-        .await
-        .map_err(|e| format!("Failed to create renderer: {}", e))?;
+    // Create renderer - window needs to be static or we need to use a different approach
+    // For now, let's create the renderer in a blocking task
+    let window_for_renderer = window.clone();
+    let renderer = tokio::task::spawn_blocking(move || {
+        // We need to use a static reference or leak the window
+        // This is a workaround for the lifetime issue
+        let window_ref: &'static WebviewWindow = unsafe { std::mem::transmute(&window_for_renderer) };
+        pollster::block_on(Renderer::new(window_ref))
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))?
+    .map_err(|e| format!("Failed to create renderer: {}", e))?;
     
     *state.renderer.lock() = Some(renderer);
     

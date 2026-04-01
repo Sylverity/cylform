@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.cylview-ng.app",
   "build": {
-    "beforeDevCommand": "cd src-ui && npm run dev",
-    "beforeBuildCommand": "cd src-ui && npm run build",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "cd ../src-ui && npm run build",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../src-ui/dist"
+    "frontendDist": "../../desktop/src-ui/dist"
   },
   "app": {
     "windows": [
