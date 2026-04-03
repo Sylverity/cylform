@@ -7,12 +7,12 @@ import type { MoleculeData } from '../App';
 // Visual style — matches CYLview reference image
 // ---------------------------------------------------------------------------
 
-// Atom colours: O = orange, H/C = grays, rest = CPK
+// Atom colours: keep the palette restrained so the cylindrical bonds dominate.
 const ATOM_COLORS: Record<string, number> = {
-  H:  0xCCCCCC,  // light gray
-  C:  0x999999,  // medium gray  (tiny spheres, barely visible)
-  N:  0x4466FF,
-  O:  0xE05500,  // orange (matches reference)
+  H:  0xcfd3d7,
+  C:  0x8d949c,
+  N:  0x4b84d8,
+  O:  0xea6a1a,
   F:  0x33CC55,
   P:  0xFF8800,
   S:  0xDDAA00,
@@ -21,18 +21,18 @@ const ATOM_COLORS: Record<string, number> = {
   I:  0x770088,
 };
 
-// Very small atom spheres — bonds are the dominant visual element
+// Keep spheres understated so the render reads as a CYLview-style tube drawing.
 const ATOM_DISPLAY_RADIUS: Record<string, number> = {
-  H:  0.10,
-  C:  0.10,
-  N:  0.13,
-  O:  0.16,  // slightly larger so the orange reads clearly
-  F:  0.12,
-  P:  0.16,
-  S:  0.16,
-  Cl: 0.15,
-  Br: 0.18,
-  I:  0.20,
+  H:  0.075,
+  C:  0.078,
+  N:  0.095,
+  O:  0.118,
+  F:  0.09,
+  P:  0.118,
+  S:  0.118,
+  Cl: 0.108,
+  Br: 0.13,
+  I:  0.145,
 };
 
 function atomColor(element: string): number {
@@ -86,25 +86,30 @@ export function MoleculeCanvas({ moleculeData, onError: _onError }: Props) {
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff); // white — matches CYLview
+    scene.background = new THREE.Color(0xffffff);
+    scene.fog = new THREE.Fog(0xffffff, 42, 120);
 
     const camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 1000);
     camera.position.set(0, 0, 25);
 
-    // Lighting: strong key from upper-front, soft fill, dim back-rim
-    scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+    // Bright, print-oriented lighting tuned toward the CYLview reference.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.52));
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.0);
-    key.position.set(1.5, 2.5, 4);
+    const key = new THREE.DirectionalLight(0xffffff, 1.65);
+    key.position.set(3.2, 4.4, 6.4);
     scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0xffffff, 0.30);
-    fill.position.set(-3, 0.5, -1);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.72);
+    fill.position.set(-5.2, 1.4, 3.2);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xffffff, 0.12);
-    rim.position.set(0, -3, -2);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.24);
+    rim.position.set(-1.6, -3.6, -4.8);
     scene.add(rim);
+
+    const topLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    topLight.position.set(0, 7, 1.5);
+    scene.add(topLight);
 
     // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -121,13 +126,13 @@ export function MoleculeCanvas({ moleculeData, onError: _onError }: Props) {
 
     // Shared geometries — 16-segment cylinders for smooth tubes
     const sphereGeom = new THREE.SphereGeometry(1, 20, 16);
-    const cylGeom    = new THREE.CylinderGeometry(1, 1, 1, 16);
+    const cylGeom    = new THREE.CylinderGeometry(1, 1, 1, 24);
 
-    // Bond material: CYLview cyan, very glossy
+    // Saturated cyan cylinders with enough gloss to read like polished tubes.
     const bondMat = new THREE.MeshPhongMaterial({
-      color:     0x29ABE2,              // CYLview cyan
-      shininess: 200,
-      specular:  new THREE.Color(0.85, 0.85, 0.90),
+      color:     0x2f9df4,
+      shininess: 175,
+      specular:  new THREE.Color(0.86, 0.9, 0.96),
     });
 
     const atomMats = new Map<string, THREE.MeshPhongMaterial>();
@@ -230,7 +235,8 @@ export function MoleculeCanvas({ moleculeData, onError: _onError }: Props) {
       const dirNorm = dir.clone().normalize();
       const mesh    = new THREE.Mesh(cylGeom, bondMat);
       mesh.position.addVectors(start, end).multiplyScalar(0.5);
-      mesh.scale.set(bond.radius, len, bond.radius);
+      const displayRadius = Math.max(0.055, bond.radius * 0.82);
+      mesh.scale.set(displayRadius, len, displayRadius);
 
       if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
         // Bond nearly parallel to Y — rotate 180° around X to point the right way
@@ -250,8 +256,8 @@ export function MoleculeCanvas({ moleculeData, onError: _onError }: Props) {
       if (!atomMats.has(atom.element)) {
         atomMats.set(atom.element, new THREE.MeshPhongMaterial({
           color:     atomColor(atom.element),
-          shininess: 60,
-          specular:  new THREE.Color(0.3, 0.3, 0.3),
+          shininess: 42,
+          specular:  new THREE.Color(0.18, 0.18, 0.18),
         }));
       }
       const mat  = atomMats.get(atom.element)!;
@@ -267,12 +273,12 @@ export function MoleculeCanvas({ moleculeData, onError: _onError }: Props) {
     const size   = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     const fovRad = camera.fov * (Math.PI / 180);
-    const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.6;
+    const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.9;
 
     camera.near = dist / 100;
     camera.far  = dist * 100;
     camera.updateProjectionMatrix();
-    camera.position.set(0, 0, dist);
+    camera.position.set(0.15, 0.1, dist);
     controls.target.set(0, 0, 0);
     controls.update();
     controls.saveState();

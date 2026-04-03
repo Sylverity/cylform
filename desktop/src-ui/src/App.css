@@ -32,16 +32,17 @@
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 18px;
   gap: 12px;
   flex-shrink: 0;
 }
 
 .toolbar-title {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-primary);
   margin-right: auto;
+  letter-spacing: 0.01em;
 }
 
 .toolbar-section {
@@ -60,8 +61,17 @@
 .molecule-canvas {
   flex: 1;
   position: relative;
-  background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.92) 28%, rgba(245, 247, 249, 0.9) 58%, rgba(238, 241, 244, 0.92) 100%);
   overflow: hidden;
+}
+
+.molecule-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border: 1px solid rgba(200, 207, 214, 0.45);
+  pointer-events: none;
 }
 
 .molecule-canvas canvas {
@@ -88,9 +98,9 @@
 /* Info Panel */
 .info-panel {
   width: var(--panel-width);
-  background: var(--bg-secondary);
+  background: rgba(253, 253, 253, 0.97);
   border-left: 1px solid var(--border);
-  padding: 16px;
+  padding: 18px;
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -100,18 +110,18 @@
 }
 
 .info-section h4 {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.12em;
 }
 
 .info-row {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
 }

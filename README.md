@@ -83,12 +83,37 @@ cd desktop/src-ui && npm run build && cd ../..
 cargo tauri build
 ```
 
+Or use the automated Windows build script from the repo root:
+
+```powershell
+./scripts/build-desktop.ps1
+```
+
+For repeat local builds when `node_modules` is already present:
+
+```powershell
+./scripts/build-desktop.ps1 -SkipFrontendInstall
+```
+
+This script builds the standalone desktop executable and refreshes both:
+
+- `target/release/cylview-ng.exe`
+- `CYLview-NG.exe` at the repo root
+
+If you also want installer bundles (`nsis` / `msi`), keep using the full Tauri packaging command separately:
+
+```powershell
+cd desktop/src-ui
+npm run tauri-build
+```
+
 Output:
 
 ```
 target/release/cylview-ng.exe                          ← standalone exe
 target/release/bundle/nsis/CYLview-NG_*-setup.exe     ← NSIS installer
 target/release/bundle/msi/CYLview-NG_*_x64_en-US.msi  ← MSI installer
+CYLview-NG.exe                                        ← auto-copied repo-root executable
 ```
 
 ---
