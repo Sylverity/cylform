@@ -1,6 +1,6 @@
 //! CYLview-NG Desktop Application
-//! 
-//! Tauri-based desktop wrapper for the core visualization engine.
+//!
+//! Tauri shell — file I/O in Rust, 3-D rendering via Three.js in the WebView.
 
 #![cfg_attr(
     all(not(debug_assertions), target_os = "windows"),
@@ -10,227 +10,159 @@
 use cylview_core::{
     io::{read_structure, FileFormat},
     molecule::Structure,
-    render::Renderer,
-    camera::Camera,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::path::Path;
 use std::sync::Arc;
-use tauri::{Manager, State, WebviewWindow};
+use tauri::State;
 
-/// Application state shared between Tauri commands
+// ---------------------------------------------------------------------------
+// Application state
+// ---------------------------------------------------------------------------
+
 pub struct AppState {
-    /// The renderer (initialized on first window creation)
-    renderer: Mutex<Option<Renderer>>,
-    /// Current molecule being displayed
     structure: Mutex<Option<Structure>>,
-    /// Camera for view control
-    camera: Mutex<Camera>,
-    /// Window reference for rendering
-    window: Mutex<Option<WebviewWindow>>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
-            renderer: Mutex::new(None),
             structure: Mutex::new(None),
-            camera: Mutex::new(Camera::new()),
-            window: Mutex::new(None),
         }
     }
 }
 
-/// Molecule info returned to frontend
+// ---------------------------------------------------------------------------
+// Serialisable types sent to the frontend
+// ---------------------------------------------------------------------------
+
 #[derive(Serialize)]
-struct MoleculeInfo {
+struct SerialAtom {
+    x: f32,
+    y: f32,
+    z: f32,
+    element: String,
+    /// van der Waals radius (Å) — frontend scales this for display
+    radius: f32,
+}
+
+#[derive(Serialize)]
+struct SerialBond {
+    atom1: u32,
+    atom2: u32,
+    /// cylinder radius (Å) derived from bond order
+    radius: f32,
+}
+
+#[derive(Serialize)]
+struct MoleculeData {
     name: String,
-    atom_count: usize,
-    bond_count: usize,
+    atoms: Vec<SerialAtom>,
+    bonds: Vec<SerialBond>,
 }
 
-/// Initialize the wgpu renderer
-#[tauri::command]
-async fn init_renderer(
-    window: WebviewWindow,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    log::info!("Initializing renderer...");
-    
-    // Store window reference
-    *state.window.lock() = Some(window.clone());
-    
-    // Create renderer - window needs to be static or we need to use a different approach
-    // For now, let's create the renderer in a blocking task
-    let window_for_renderer = window.clone();
-    let renderer = tokio::task::spawn_blocking(move || {
-        // We need to use a static reference or leak the window
-        // This is a workaround for the lifetime issue
-        let window_ref: &'static WebviewWindow = unsafe { std::mem::transmute(&window_for_renderer) };
-        pollster::block_on(Renderer::new(window_ref))
-    })
-    .await
-    .map_err(|e| format!("Task panicked: {}", e))?
-    .map_err(|e| format!("Failed to create renderer: {}", e))?;
-    
-    *state.renderer.lock() = Some(renderer);
-    
-    // Start render loop
-    let state_clone = Arc::clone(&state);
-    std::thread::spawn(move || {
-        render_loop(state_clone);
-    });
-    
-    log::info!("Renderer initialized successfully");
-    Ok(())
-}
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
 
-/// Load a molecule file
+/// Load a molecular file and return the full atom/bond geometry to the frontend.
+/// Coordinates are re-centred to the geometric centre of the molecule.
 #[tauri::command]
 fn load_molecule(
     path: String,
     state: State<'_, Arc<AppState>>,
-) -> Result<MoleculeInfo, String> {
+) -> Result<MoleculeData, String> {
     log::info!("Loading molecule from: {}", path);
-    
-    // Read the structure
+
     let structure = read_structure(&path, FileFormat::Auto)
         .map_err(|e| format!("Failed to load file: {}", e))?;
-    
-    let info = MoleculeInfo {
+
+    let center = structure.center();
+
+    let atoms = structure
+        .atoms
+        .iter()
+        .map(|a| SerialAtom {
+            x: a.position.x - center.x,
+            y: a.position.y - center.y,
+            z: a.position.z - center.z,
+            element: a.element.clone(),
+            radius: a.radius,
+        })
+        .collect();
+
+    let bonds = structure
+        .bonds
+        .iter()
+        .map(|b| SerialBond {
+            atom1: b.atom1,
+            atom2: b.atom2,
+            radius: b.order.radius_multiplier(),
+        })
+        .collect();
+
+    log::info!(
+        "Loaded '{}': {} atoms, {} bonds",
+        structure.name,
+        structure.atom_count(),
+        structure.bond_count()
+    );
+
+    let data = MoleculeData {
         name: structure.name.clone(),
-        atom_count: structure.atom_count(),
-        bond_count: structure.bond_count(),
+        atoms,
+        bonds,
     };
-    
-    // Update camera to fit molecule
-    let (min, max) = structure.bounding_box();
-    state.camera.lock().fit_to_bounds(min, max);
-    
-    // Store structure
+
     *state.structure.lock() = Some(structure);
-    
-    log::info!("Loaded {} atoms, {} bonds", info.atom_count, info.bond_count);
-    Ok(info)
+
+    Ok(data)
 }
 
-/// Camera control commands
+/// Return an optional molecular file path passed on app launch.
 #[tauri::command]
-fn camera_rotate(
-    delta_x: f32,
-    delta_y: f32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    state.camera.lock().rotate(delta_x, delta_y);
-    Ok(())
+fn get_startup_file() -> Option<String> {
+    std::env::args()
+        .skip(1)
+        .find(|arg| {
+            let path = Path::new(arg);
+            path.exists() && path.is_file()
+        })
 }
 
-#[tauri::command]
-fn camera_pan(
-    delta_x: f32,
-    delta_y: f32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    state.camera.lock().pan(delta_x, delta_y);
-    Ok(())
-}
-
-#[tauri::command]
-fn camera_zoom(
-    delta: f32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    state.camera.lock().zoom(delta);
-    Ok(())
-}
-
-#[tauri::command]
-fn camera_reset(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let mut camera = state.camera.lock();
-    if let Some(ref structure) = *state.structure.lock() {
-        let (min, max) = structure.bounding_box();
-        camera.fit_to_bounds(min, max);
-    } else {
-        *camera = Camera::new();
-    }
-    Ok(())
-}
-
-/// Resize the render surface
-#[tauri::command]
-fn resize_surface(
-    width: u32,
-    height: u32,
-    state: State<'_, Arc<AppState>>,
-) -> Result<(), String> {
-    if let Some(ref mut renderer) = *state.renderer.lock() {
-        renderer.resize(width, height);
-    }
-    Ok(())
-}
-
-/// Main render loop - runs in a separate thread
-fn render_loop(state: Arc<AppState>) {
-    log::info!("Render loop started");
-    
-    loop {
-        // Try to render a frame
-        let mut renderer_guard = state.renderer.lock();
-        let structure_guard = state.structure.lock();
-        let camera_guard = state.camera.lock();
-        
-        if let Some(ref mut renderer) = *renderer_guard {
-            if let Some(ref structure) = *structure_guard {
-                if let Err(e) = renderer.render(structure, &camera_guard) {
-                    log::error!("Render error: {}", e);
-                }
-            }
-        }
-        
-        // Drop guards before sleeping
-        drop(camera_guard);
-        drop(structure_guard);
-        drop(renderer_guard);
-        
-        // Target ~60 FPS
-        std::thread::sleep(std::time::Duration::from_millis(16));
-    }
-}
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
 fn main() {
     env_logger::init();
-    
-    log::info!("CYLview-NG Desktop starting...");
-    log::info!("Core version: {}", cylview_core::VERSION);
-    
-    // Create shared state
+
+    log::info!("CYLview-NG starting (core v{})", cylview_core::VERSION);
+
     let app_state = Arc::new(AppState::new());
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![
-            init_renderer,
-            load_molecule,
-            camera_rotate,
-            camera_pan,
-            camera_zoom,
-            camera_reset,
-            resize_surface,
-        ])
+        .invoke_handler(tauri::generate_handler![load_molecule, get_startup_file])
         .setup(|app| {
-            log::info!("Tauri application setup complete");
-            
-            // Get the main window
-            let window = app.get_webview_window("main").unwrap();
-            
-            // Set initial size
-            let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                width: 1280,
-                height: 800,
-            }));
-            
+            #[cfg(not(debug_assertions))]
+            let url = tauri::WebviewUrl::App("index.html".into());
+
+            #[cfg(debug_assertions)]
+            let url = tauri::WebviewUrl::External(
+                tauri::Url::parse("http://localhost:5173").unwrap(),
+            );
+
+            tauri::WebviewWindowBuilder::new(app, "main", url)
+                .title("CYLview-NG")
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(800.0, 600.0)
+                .center()
+                .build()?;
+
             Ok(())
         })
         .run(tauri::generate_context!())

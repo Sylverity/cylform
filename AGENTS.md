@@ -16,10 +16,28 @@ Rules:
 - Treat rendering style as a core product feature, not later polish.
 - Favor usable, testable increments over broad scaffolding.
 
-Current instruction:
-Focus on Step 3: implement the wgpu renderer and the foundations of the CYLview look.
-Renderer quality matters more right now than shell/UI breadth.
-Choose the simplest approach that moves the project toward faithful CYLview-style rendering.
+## Rendering architecture
+
+Rust (cylview-core) handles all file I/O and chemistry. The desktop app sends
+atom/bond JSON to the React frontend via a single `load_molecule` Tauri command.
+Three.js (WebGL) renders the scene inside the Tauri WebView — this is the correct
+architecture; do not attempt to drive wgpu from the Tauri window handle.
+
+## Current state — v0.1.0 complete
+
+- Standalone Windows .exe builds and runs
+- XYZ and PDB file loading via native dialog
+- Three.js scene: cylinder bonds (CYLview blue), CPK atom spheres, 4-point lighting
+- OrbitControls: rotate / pan / zoom / reset
+- Covalent-radius bond perception (no phantom bonds)
+
+## Next step — v0.2.0: chemistry controls
+
+Priority order:
+1. Hide/show hydrogens toggle (most-used CYLview feature)
+2. Distance label on selected bond (click bond → show Å value)
+3. Angle label on three selected atoms
+4. Export current view as PNG
 
 For every update:
 1. State the goal of the step.

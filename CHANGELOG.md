@@ -1,59 +1,34 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased] - Phase 1: Core Development
-
-### Added
-- Initial project skeleton and workspace structure
-- Core data structures (`Atom`, `Bond`, `Structure`) with bond perception
-- XYZ file I/O support (read/write)
-- **chemfiles integration** supporting 40+ molecular formats (PDB, SDF, Gaussian, etc.)
-- Trajectory reading for MD simulations
-- Orbital camera with spherical coordinates
-- Selection and picking framework
-- CI/CD pipeline with GitHub Actions
-- Comprehensive documentation and contribution guidelines
-
-### In Progress
-- wgpu renderer with cylinder instancing
-- Tauri desktop shell setup
+## [Unreleased]
 
 ### Planned
-- React 19 + Vite frontend
-- Real-time GPU rendering
-- Basic measurement tools
-
-## [0.1.0] - 2026-03-31
-
-### Added
-- Project initialization
-- Core library crate (`cylview-core`)
-- README with comprehensive technical specification
-- Apache 2.0 license
+- Hydrogen visibility toggle
+- Element colour customisation
+- Distance / angle / dihedral labels
+- PNG export
+- Multi-frame XYZ trajectory playback
+- Gaussian output file support (opt steps, frequencies)
 
 ---
 
-## Roadmap
+## [0.1.0] — 2026-04-01
 
-### Phase 1: Core (Target: Q2 2026)
-- [x] Project skeleton
-- [x] chemfiles integration
-- [ ] wgpu renderer
-- [ ] Tauri desktop shell
-- [ ] Basic tools
+First working build. Open an `.xyz` file, see the molecule in 3-D.
 
-### Phase 2: Polish (Target: Q4 2026)
-- [ ] Hybrid raytracing
-- [ ] Animation support
-- [ ] Custom styling
-- [ ] Web build
+### Added
+- `cylview-core` Rust library — `Atom`, `Bond`, `Structure` data structures
+- XYZ and PDB file I/O with automatic format detection
+- Bond perception using covalent radii
+- Tauri v2 desktop shell — standalone `.exe`, no installation required
+- `load_molecule` Tauri command — parses file in Rust, returns centred atom/bond JSON
+- Three.js real-time renderer — cylinder bonds and CPK atom spheres
+- 4-point directional lighting matching the CYLview aesthetic
+- OrbitControls — left drag = rotate, right drag = pan, scroll = zoom, R = reset
+- Native OS file picker (`.xyz`, `.pdb`)
+- Auto-fit camera to bounding box on load
+- Info panel — molecule name, atom count, bond count
 
-### Phase 3: Ecosystem (Target: 2027)
-- [ ] Plugin API
-- [ ] Python bindings
-- [ ] Jupyter integration
-- [ ] Database connectors
+### Fixed
+- Bond perception was using van der Waals radii, creating phantom bonds at ~4 Å;
+  switched to covalent radii with a 1.3× tolerance

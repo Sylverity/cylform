@@ -1,171 +1,179 @@
 # CYLview-NG
 
-**"The CYLview aesthetic, reimagined for the GPU era"**
+**Open-source molecular visualization inspired by Claude Y. Legault's CYLview**
 
-A GPU-native, open-source molecular visualization tool inspired by Claude Y. Legault's original CYLview.
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 
-![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
-![Status](https://img.shields.io/badge/status-Phase%201%20Development-orange.svg)
+A modern reimplementation of CYLview — the chemistry community's favourite tool for generating publication-quality 3-D molecular figures. Double-click the `.exe`, open an `.xyz` file, rotate and inspect.
 
-## Vision
+---
 
-Preserve the signature characteristics that made CYLview indispensable for natural product chemistry:
-- **Instant-on usability** — no configuration required
-- **Publication-quality defaults** — beautiful out of the box
-- **Single-window workflow** — no scattered toolbars
-- **Cylindrical bond aesthetic** — the "CYLview look"
+## Features
 
-While eliminating legacy constraints:
-- Replace POV-Ray offline rendering with **real-time GPU raytracing**
-- Replace Tkinter with **modern reactive UI**
-- Replace single-threaded geometry generation with **GPU mesh shaders**
-- Add **native Apple Silicon**, **Windows ARM**, and **Linux** support
+- **Standalone `.exe`** — no installation, no dependencies; just run it
+- **Real-time 3-D rendering** — WebGL via Three.js, smooth 60 fps orbit/pan/zoom
+- **CYLview visual style** — glossy cyan cylinders, tiny CPK atom spheres, white background, 4-point lighting
+- **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
+- **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
+- **PNG export** — save the current view at full resolution with one click
+- **Rust file I/O** — fast, reliable parsing with automatic format detection
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     PRESENTATION LAYER                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │  Desktop App │  │  Web Viewer │  │  Headless/Server    │  │
-│  │  (Tauri)     │  │  (WASM+WebGPU)│  │  (CLI/API)         │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
-│         └─────────────────┴────────────────────┘            │
-│                    Unified Rust Core                         │
-├─────────────────────────────────────────────────────────────┤
-│                      RENDERING ENGINE                        │
-│  ┌─────────────────────────────────────────────────────────┐ │
-│  │  wgpu (WebGPU-native) → Vulkan/Metal/DX12/Software      │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐  │ │
-│  │  │ Real-time   │  │ Path-traced │  │ Hybrid RT       │  │ │
-│  │  │ Raster      │  │ (Offline)   │  │ (RTX/DXR/Metal) │  │ │
-│  │  │ (60-240fps) │  │ (4K/8K)     │  │ (30-60fps AO)   │  │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────────┘  │ │
-│  └─────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│                     MOLECULAR CORE                           │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │ chemfiles   │  │ Bond perception│  │ Force field      │  │
-│  │ (I/O)       │  │ & topology   │  │ (UFF/MMFF quick)   │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  Tauri desktop shell (Rust)                  │
+│  • Native window, file dialogs               │
+│  • load_molecule command                     │
+│     reads file → perceives bonds             │
+│     centres coordinates → sends JSON         │
+└────────────────────┬─────────────────────────┘
+                     │  Tauri invoke (JSON)
+┌────────────────────▼─────────────────────────┐
+│  React + TypeScript frontend                 │
+│  • Three.js / WebGL renders to <canvas>      │
+│  • OrbitControls — rotate / pan / zoom       │
+│  • CPK colour table, atom + bond meshes      │
+│  • ResizeObserver keeps canvas crisp         │
+└──────────────────────────────────────────────┘
 ```
 
-## Technology Stack
+### Technology stack
 
-| Component | Technology |
-|-----------|-----------|
-| **Core Language** | Rust |
-| **GPU API** | wgpu (WebGPU) |
-| **UI Framework** | Tauri (Rust) + React 19 + Vite + TypeScript |
-| **Compute Shaders** | WGSL |
-| **File I/O** | chemfiles (Rust bindings) |
-| **Build System** | Cargo + cargo-bundle |
-| **Plugin System** | WASM (WASI) |
+| Layer | Technology |
+|---|---|
+| Desktop shell | Tauri v2 (Rust) |
+| File I/O & chemistry | `cylview-core` Rust library |
+| 3-D rendering | Three.js (WebGL) |
+| UI framework | React 19 + TypeScript + Vite |
+| Build | Cargo + npm |
 
-## Development Roadmap
+---
 
-### Phase 1: Core (Months 1-6) 🚧 *In Progress*
-- [x] Project skeleton and core data structures
-- [x] XYZ/PDB file I/O support (chemfiles planned for Phase 2)
-- [x] wgpu renderer with cylinder instancing
-- [ ] **Tauri desktop shell with React 19 + Vite** ← **CURRENT STEP**
-- [ ] Basic measurement and selection tools
-- [ ] Mouse camera controls (orbit, pan, zoom)
-
-### Phase 2: Polish (Months 7-12)
-- [ ] Hybrid RT mode (RTX/Metal)
-- [ ] Animation and trajectory support
-- [ ] Custom styling system
-- [ ] WASM web build
-
-### Phase 3: Ecosystem (Months 13-18)
-- [ ] Plugin API (WASI)
-- [ ] Python bindings (PyO3)
-- [ ] Jupyter notebook integration
-- [ ] Database connectors (PDB, PubChem)
-
-## Getting Started
+## Quick start
 
 ### Prerequisites
-- Rust 1.75+ (`rustup update`)
-- Node.js 20+ (LTS recommended)
-- cargo-tauri (`cargo install tauri-cli`)
-- Git
 
-### Development Environment Setup
+- [Rust](https://www.rust-lang.org/tools/install) 1.70 or later
+- [Node.js](https://nodejs.org/) 20 LTS or later
+- Tauri system dependencies — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/)
+
+### Development
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/Summykai/CYLview-NG.git
-cd CYLview-NG
+# 1. Install frontend dependencies
+cd desktop/src-ui
+npm install
 
-# 2. Verify Rust toolchain
-rustc --version  # Should be 1.75+
-cargo --version
-
-# 3. Install Tauri CLI
-cargo install tauri-cli
-
-# 4. Build the core library (runs tests automatically)
-cargo build --release -p cylview-core
-
-# 5. Setup frontend (when desktop is ready)
-cd desktop/src-ui && npm install
-```
-
-### Build
-```bash
-# Clone the repository
-git clone https://github.com/Summykai/CYLview-NG.git
-cd CYLview-NG
-
-# Build the core library
-cargo build --release -p cylview-core
-
-# Install frontend dependencies
-cd desktop
-cd src-ui && npm install && cd ..
-
-# Build and run the desktop app
+# 2. Start dev server + Tauri window (hot-reload)
+cd ..
 cargo tauri dev
 ```
 
-## Performance Targets
+### Release build
 
-| Metric | Target Hardware | Performance |
-|--------|----------------|-------------|
-| 1,000 atoms | Apple M1 (integrated) | 240 fps |
-| 10,000 atoms | RTX 3060 Laptop | 120 fps |
-| 100,000 atoms | RTX 4090 Desktop | 60 fps |
-| 1,000,000 atoms | RTX 4090 + DLSS | 30 fps |
-| 8K image export | RTX 4090 (path tracer) | < 10 seconds |
+Run from the repo root:
 
-## License & Attribution
+```bash
+cd desktop/src-ui && npm run build && cd ../..
+cargo tauri build
+```
 
-- **Code:** Apache 2.0
-- **Assets:** CC-BY-SA
-- **Attribution:** "CYLview-NG — inspired by Claude Y. Legault's original vision"
-
-## Project Structure
+Output:
 
 ```
-CYLview-NG/
-├── Cargo.toml              # Workspace configuration
-├── README.md               # This file
-├── crates/
-│   └── core/               # Core Rust library (wgpu, chemfiles)
-└── desktop/                # Tauri desktop application
-    ├── src-tauri/          # Rust backend (Tauri)
-    └── src-ui/             # React 19 + Vite frontend
+target/release/cylview-ng.exe                          ← standalone exe
+target/release/bundle/nsis/CYLview-NG_*-setup.exe     ← NSIS installer
+target/release/bundle/msi/CYLview-NG_*_x64_en-US.msi  ← MSI installer
 ```
 
 ---
 
-**Current Status:** Step 4 - Tauri Desktop Shell (Phase 1, Step 4)
+## Usage
 
-**Recently Completed:**
-- ✅ GPU-instanced cylinder rendering for bonds
-- ✅ Quadrant lighting system (4-point plastic material highlights)
-- ✅ Sphere impostors for compact atom rendering
-- ✅ Depth testing and alpha blending
+| Action | Control |
+|---|---|
+| Open file | Click **Open File** → pick `.xyz` or `.pdb` |
+| Rotate | Left-click + drag |
+| Pan | Right-click + drag |
+| Zoom | Scroll wheel |
+| Reset view | **Reset View** button, or press **R** |
+| Export PNG | Click **Export PNG** → saves `molecule.png` |
+
+---
+
+## Project layout
+
+```
+CYLviewClone/
+├── Cargo.toml                   # Workspace
+├── Cargo.lock
+│
+├── crates/
+│   └── core/                    # cylview-core — pure Rust library
+│       └── src/
+│           ├── lib.rs
+│           ├── molecule.rs      # Atom, Bond, Structure; bond perception
+│           ├── io.rs            # XYZ + PDB readers/writers
+│           ├── camera.rs        # Orbital camera maths
+│           ├── picker.rs        # Selection framework
+│           └── render/          # wgpu rendering engine (future use)
+│
+├── desktop/
+│   ├── src-tauri/               # Tauri Rust backend
+│   │   └── src/main.rs          # load_molecule command, app setup
+│   └── src-ui/                  # React frontend
+│       └── src/
+│           ├── App.tsx
+│           └── components/
+│               ├── MoleculeCanvas.tsx   # Three.js scene
+│               ├── Toolbar.tsx
+│               └── InfoPanel.tsx
+│
+├── epsilon_viniferin_triton.xyz # Sample molecule (56 atoms)
+└── reference-image-goal.png     # Target visual style
+```
+
+---
+
+## Roadmap
+
+### Done
+- [x] Core data structures — `Atom`, `Bond`, `Structure`
+- [x] XYZ and PDB file I/O
+- [x] Covalent-radius bond perception (no phantom bonds)
+- [x] Tauri desktop shell — single standalone `.exe`
+- [x] Three.js real-time renderer — glossy cyan cylinders, tiny CPK atom spheres
+- [x] White background, 4-point CYLview-style lighting
+- [x] Orbit / pan / zoom camera with damping
+- [x] Native OS file dialog
+- [x] Auto-fit camera to loaded molecule
+- [x] PNG export at full canvas resolution
+
+### Next
+- [ ] Hydrogen visibility toggle (hide/show H)
+- [ ] Element colour customisation
+- [ ] Distance, angle, and dihedral labels on selected atoms/bonds
+- [ ] Multi-frame XYZ trajectory playback
+- [ ] PDB residue-level colouring
+- [ ] Gaussian output file support (opt steps, frequencies)
+
+---
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
+
+CYLview-NG is an independent open-source project with no affiliation to the original CYLview by Claude Y. Legault.
+
+---
+
+## Acknowledgements
+
+- **Claude Y. Legault** — creator of the original CYLview and its distinctive visual language
+- **The Tauri team** — for making lean native desktop apps with web frontends practical
+- **Three.js contributors** — for the WebGL rendering library

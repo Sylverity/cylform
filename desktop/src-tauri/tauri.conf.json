@@ -6,29 +6,10 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "devUrl": "http://localhost:5173",
     "frontendDist": "../../desktop/src-ui/dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "CYLview-NG",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false,
-        "visible": true,
-        "decorations": true,
-        "transparent": false,
-        "alwaysOnTop": false,
-        "contentProtected": false,
-        "skipTaskbar": false,
-        "theme": "Light",
-        "titleBarStyle": "Visible"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

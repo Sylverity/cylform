@@ -15,9 +15,6 @@ bytemuck = { workspace = true }
 glam = { workspace = true }
 raw-window-handle = { workspace = true }
 
-# File I/O (chemfiles to be added later)
-# chemfiles = { workspace = true }
-
 # Logging & errors
 log = { workspace = true }
 thiserror = { workspace = true }
@@ -26,9 +23,6 @@ anyhow = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# Async runtime (for blocking I/O)
-pollster = { workspace = true }
 
 [dev-dependencies]
 env_logger = { workspace = true }

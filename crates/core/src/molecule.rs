@@ -41,19 +41,37 @@ impl Atom {
         }
     }
     
-    /// Get default radius for an element
+    /// Get default van der Waals radius for an element (Angstroms)
     fn default_radius(element: &str) -> f32 {
-        // CPK van der Waals radii in Angstroms
         match element {
-            "H" => 1.2,
-            "C" => 1.7,
-            "N" => 1.55,
-            "O" => 1.52,
-            "F" => 1.47,
-            "P" => 1.80,
-            "S" => 1.80,
+            "H"  => 1.20,
+            "C"  => 1.70,
+            "N"  => 1.55,
+            "O"  => 1.52,
+            "F"  => 1.47,
+            "P"  => 1.80,
+            "S"  => 1.80,
             "Cl" => 1.75,
-            _ => 1.7, // Default to carbon
+            "Br" => 1.85,
+            "I"  => 1.98,
+            _    => 1.70,
+        }
+    }
+
+    /// Get covalent radius for bond perception (Angstroms)
+    fn covalent_radius(element: &str) -> f32 {
+        match element {
+            "H"  => 0.31,
+            "C"  => 0.76,
+            "N"  => 0.71,
+            "O"  => 0.66,
+            "F"  => 0.57,
+            "P"  => 1.07,
+            "S"  => 1.05,
+            "Cl" => 1.02,
+            "Br" => 1.14,
+            "I"  => 1.33,
+            _    => 0.77,
         }
     }
     
@@ -195,19 +213,22 @@ impl Structure {
         (min, max)
     }
     
-    /// Auto-perceive bonds based on covalent radii
+    /// Auto-perceive bonds using covalent radii thresholds
     pub fn perceive_bonds(&mut self) {
         self.bonds.clear();
-        
+
         for i in 0..self.atoms.len() {
             for j in (i + 1)..self.atoms.len() {
                 let atom_i = &self.atoms[i];
                 let atom_j = &self.atoms[j];
-                
+
                 let distance = atom_i.position.distance(atom_j.position);
-                let max_bond_dist = (atom_i.radius + atom_j.radius) * 1.2;
-                
-                if distance < max_bond_dist && distance > 0.4 {
+                let max_bond_dist =
+                    (Atom::covalent_radius(&atom_i.element)
+                        + Atom::covalent_radius(&atom_j.element))
+                        * 1.3;
+
+                if distance > 0.4 && distance < max_bond_dist {
                     self.bonds.push(Bond::new(i as u32, j as u32, BondOrder::Single));
                 }
             }
