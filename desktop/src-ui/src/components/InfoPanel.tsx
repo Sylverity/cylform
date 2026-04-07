@@ -1,14 +1,35 @@
 import type {
+  ElementColorOverrides,
   MoleculeData,
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
 } from '../App';
+
+const DEFAULT_ELEMENT_COLORS: Record<string, string> = {
+  H: '#cfd3d7',
+  C: '#8d949c',
+  N: '#4b84d8',
+  O: '#ea6a1a',
+  F: '#33cc55',
+  P: '#ff8800',
+  S: '#ddaa00',
+  Cl: '#22bb44',
+  Br: '#aa2200',
+  I: '#770088',
+};
+
+function defaultElementColor(element: string): string {
+  return DEFAULT_ELEMENT_COLORS[element] ?? '#888888';
+}
 
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
+  elementColorOverrides: ElementColorOverrides;
+  onElementColorChange: (element: string, color: string) => void;
+  onResetElementColor: (element: string) => void;
   error: string | null;
 }
 
@@ -17,11 +38,15 @@ export function InfoPanel({
   showHydrogens,
   selectedBond,
   selectedAngle,
+  elementColorOverrides,
+  onElementColorChange,
+  onResetElementColor,
   error,
 }: InfoPanelProps) {
   const visibleAtoms = moleculeData
     ? moleculeData.atoms.filter((atom) => showHydrogens || atom.element !== 'H')
     : [];
+  const visibleElements = Array.from(new Set(visibleAtoms.map((atom) => atom.element))).sort();
   const visibleBonds = moleculeData
     ? moleculeData.bonds.filter((bond) => {
         if (showHydrogens) return true;
@@ -187,6 +212,35 @@ export function InfoPanel({
             {anglePrompt}
           </span>
         </div>
+      </div>
+
+      <div className="info-section">
+        <h4>Colours</h4>
+        {visibleElements.length === 0 ? (
+          <p className="info-note">Load a molecule to adjust atom colours.</p>
+        ) : (
+          <div className="color-list">
+            {visibleElements.map((element) => (
+              <div key={element} className="color-row">
+                <span className="color-label">{element}</span>
+                <input
+                  className="color-input"
+                  type="color"
+                  value={elementColorOverrides[element] ?? defaultElementColor(element)}
+                  onChange={(event) => onElementColorChange(element, event.target.value)}
+                  aria-label={`${element} colour`}
+                />
+                <button
+                  type="button"
+                  className="color-reset"
+                  onClick={() => onResetElementColor(element)}
+                >
+                  Default
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

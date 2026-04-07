@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type {
+  ElementColorOverrides,
   MoleculeData,
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
@@ -45,6 +46,10 @@ function atomColor(element: string): number {
   return ATOM_COLORS[element] ?? 0x888888;
 }
 
+function atomColorHex(element: string): string {
+  return `#${atomColor(element).toString(16).padStart(6, '0')}`;
+}
+
 function atomDisplayRadius(element: string): number {
   return ATOM_DISPLAY_RADIUS[element] ?? 0.12;
 }
@@ -68,6 +73,7 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 interface Props {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
+  elementColorOverrides: ElementColorOverrides;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
   onAngleSelected: (angle: SelectedAngleMeasurement | null) => void;
   onError: (msg: string) => void;
@@ -131,6 +137,7 @@ function updateAngleSelection(
 export function MoleculeCanvas({
   moleculeData,
   showHydrogens,
+  elementColorOverrides,
   onBondSelected,
   onAngleSelected,
   onError,
@@ -581,7 +588,7 @@ export function MoleculeCanvas({
 
       if (!atomMats.has(atom.element)) {
         atomMats.set(atom.element, new THREE.MeshPhongMaterial({
-          color:     atomColor(atom.element),
+          color:     elementColorOverrides[atom.element] ?? atomColorHex(atom.element),
           shininess: 42,
           specular:  new THREE.Color(0.18, 0.18, 0.18),
         }));
@@ -612,7 +619,7 @@ export function MoleculeCanvas({
     controls.update();
     controls.saveState();
 
-  }, [moleculeData, showHydrogens, onBondSelected, onAngleSelected]);
+  }, [moleculeData, showHydrogens, elementColorOverrides, onBondSelected, onAngleSelected]);
 
   return (
     <div ref={containerRef} className="molecule-canvas">

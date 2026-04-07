@@ -31,6 +31,8 @@ export interface SelectedAngleMeasurement {
   stage: 1 | 2 | 3;
 }
 
+export type ElementColorOverrides = Record<string, string>;
+
 export interface MoleculeData {
   name: string;
   atoms: AtomData[];
@@ -44,12 +46,14 @@ function App() {
   const [showHydrogens, setShowHydrogens] = useState(true);
   const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
   const [selectedAngle, setSelectedAngle] = useState<SelectedAngleMeasurement | null>(null);
+  const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
     setError(null);
     setSelectedBond(null);
     setSelectedAngle(null);
+    setElementColorOverrides({});
   }, []);
 
   const handleError = useCallback((err: string) => {
@@ -108,6 +112,7 @@ function App() {
         <MoleculeCanvas
           moleculeData={moleculeData}
           showHydrogens={showHydrogens}
+          elementColorOverrides={elementColorOverrides}
           onBondSelected={setSelectedBond}
           onAngleSelected={setSelectedAngle}
           onError={handleError}
@@ -118,6 +123,17 @@ function App() {
           showHydrogens={showHydrogens}
           selectedBond={selectedBond}
           selectedAngle={selectedAngle}
+          elementColorOverrides={elementColorOverrides}
+          onElementColorChange={(element, color) => {
+            setElementColorOverrides((current) => ({ ...current, [element]: color }));
+          }}
+          onResetElementColor={(element) => {
+            setElementColorOverrides((current) => {
+              const next = { ...current };
+              delete next[element];
+              return next;
+            });
+          }}
           error={error}
         />
       </div>

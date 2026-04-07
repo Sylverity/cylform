@@ -18,6 +18,7 @@ A modern reimplementation of CYLview — the chemistry community's favourite too
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
 - **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
+- **Element colour customisation** — adjust atom colours per element for the current molecule view
 - **Interactive measurements** — click a bond for distance, click three atoms for angle
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
 - **Rust file I/O** — fast, reliable parsing with automatic format detection
@@ -130,6 +131,7 @@ CYLview-NG.exe                                        ← auto-copied repo-root 
 | Zoom | Scroll wheel |
 | Reset view | **Reset View** button, or press **R** |
 | Toggle hydrogens | **Hide H / Show H** button |
+| Adjust atom colours | Use the **Colours** controls in the side panel |
 | Measure bond distance | Click a bond |
 | Measure bond angle | Click three atoms progressively |
 | Export PNG | Click **Export PNG** → choose a `.png` save location |
@@ -185,12 +187,12 @@ CYLviewClone/
 - [x] Native OS file dialog
 - [x] Auto-fit camera to loaded molecule
 - [x] Hydrogen visibility toggle (hide/show H)
+- [x] Element colour customisation
 - [x] Distance label on selected bond
 - [x] Angle label on three selected atoms
 - [x] PNG export with native save dialog
 
 ### Next
-- [ ] Element colour customisation
 - [ ] Dihedral label on four selected atoms
 - [ ] Multi-frame XYZ trajectory playback
 - [ ] PDB residue-level colouring
