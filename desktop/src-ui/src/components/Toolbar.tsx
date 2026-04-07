@@ -8,6 +8,8 @@ interface ToolbarProps {
   onResetView: () => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
+  showHydrogens: boolean;
+  onToggleHydrogens: () => void;
 }
 
 export function Toolbar({
@@ -16,6 +18,8 @@ export function Toolbar({
   onResetView,
   isLoading,
   setIsLoading,
+  showHydrogens,
+  onToggleHydrogens,
 }: ToolbarProps) {
 
   const handleOpenFile = async () => {
@@ -62,6 +66,14 @@ export function Toolbar({
           disabled={isLoading}
         >
           Export PNG
+        </button>
+
+        <button
+          onClick={onToggleHydrogens}
+          disabled={isLoading}
+          className={showHydrogens ? 'toggle-active' : ''}
+        >
+          {showHydrogens ? 'Hide H' : 'Show H'}
         </button>
       </div>
 

@@ -17,7 +17,9 @@ A modern reimplementation of CYLview — the chemistry community's favourite too
 - **CYLview visual style** — glossy cyan cylinders, tiny CPK atom spheres, white background, 4-point lighting
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
-- **PNG export** — save the current view at full resolution with one click
+- **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
+- **Interactive measurements** — click a bond for distance, click three atoms for angle
+- **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
 - **Rust file I/O** — fast, reliable parsing with automatic format detection
 
 ---
@@ -127,7 +129,10 @@ CYLview-NG.exe                                        ← auto-copied repo-root 
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
 | Reset view | **Reset View** button, or press **R** |
-| Export PNG | Click **Export PNG** → saves `molecule.png` |
+| Toggle hydrogens | **Hide H / Show H** button |
+| Measure bond distance | Click a bond |
+| Measure bond angle | Click three atoms progressively |
+| Export PNG | Click **Export PNG** → choose a `.png` save location |
 
 ---
 
@@ -159,8 +164,10 @@ CYLviewClone/
 │               ├── Toolbar.tsx
 │               └── InfoPanel.tsx
 │
-├── epsilon_viniferin_triton.xyz # Sample molecule (56 atoms)
-└── reference-image-goal.png     # Target visual style
+├── docs/
+│   └── references/              # CYLview manuals, reference image, sample structures
+└── scripts/
+    └── build-desktop.ps1        # Builds standalone exe and copies to repo root
 ```
 
 ---
@@ -177,12 +184,14 @@ CYLviewClone/
 - [x] Orbit / pan / zoom camera with damping
 - [x] Native OS file dialog
 - [x] Auto-fit camera to loaded molecule
-- [x] PNG export at full canvas resolution
+- [x] Hydrogen visibility toggle (hide/show H)
+- [x] Distance label on selected bond
+- [x] Angle label on three selected atoms
+- [x] PNG export with native save dialog
 
 ### Next
-- [ ] Hydrogen visibility toggle (hide/show H)
 - [ ] Element colour customisation
-- [ ] Distance, angle, and dihedral labels on selected atoms/bonds
+- [ ] Dihedral label on four selected atoms
 - [ ] Multi-frame XYZ trajectory playback
 - [ ] PDB residue-level colouring
 - [ ] Gaussian output file support (opt steps, frequencies)

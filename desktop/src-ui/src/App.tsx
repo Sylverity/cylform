@@ -19,6 +19,18 @@ export interface BondData {
   radius: number;
 }
 
+export interface SelectedBondMeasurement {
+  atom1Element: string;
+  atom2Element: string;
+  distance: number;
+}
+
+export interface SelectedAngleMeasurement {
+  atomElements: [string, string, string];
+  angleDegrees: number;
+  stage: 1 | 2 | 3;
+}
+
 export interface MoleculeData {
   name: string;
   atoms: AtomData[];
@@ -29,10 +41,15 @@ function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showHydrogens, setShowHydrogens] = useState(true);
+  const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
+  const [selectedAngle, setSelectedAngle] = useState<SelectedAngleMeasurement | null>(null);
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
     setError(null);
+    setSelectedBond(null);
+    setSelectedAngle(null);
   }, []);
 
   const handleError = useCallback((err: string) => {
@@ -83,16 +100,24 @@ function App() {
         onResetView={handleResetView}
         isLoading={isLoading}
         setIsLoading={setIsLoading}
+        showHydrogens={showHydrogens}
+        onToggleHydrogens={() => setShowHydrogens((current) => !current)}
       />
 
       <div className="main-content">
         <MoleculeCanvas
           moleculeData={moleculeData}
+          showHydrogens={showHydrogens}
+          onBondSelected={setSelectedBond}
+          onAngleSelected={setSelectedAngle}
           onError={handleError}
         />
 
         <InfoPanel
           moleculeData={moleculeData}
+          showHydrogens={showHydrogens}
+          selectedBond={selectedBond}
+          selectedAngle={selectedAngle}
           error={error}
         />
       </div>
