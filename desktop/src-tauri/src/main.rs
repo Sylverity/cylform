@@ -16,7 +16,13 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuItemBuilder, SubmenuBuilder};
 use tauri::{Manager, State};
+
+const MENU_FILE_QUIT: &str = "file_quit";
+const MENU_EDIT_COMING_SOON: &str = "edit_coming_soon";
+const MENU_VIEW_COMING_SOON: &str = "view_coming_soon";
+const MENU_WINDOW_COMING_SOON: &str = "window_coming_soon";
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -146,6 +152,58 @@ fn get_startup_file() -> Option<String> {
     })
 }
 
+fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
+    let quit = MenuItemBuilder::with_id(MENU_FILE_QUIT, "Quit CYLview-NG")
+        .accelerator("Ctrl+Q")
+        .build(manager)?;
+    let edit_coming_soon = MenuItemBuilder::with_id(MENU_EDIT_COMING_SOON, "Coming soon")
+        .enabled(false)
+        .build(manager)?;
+    let view_coming_soon = MenuItemBuilder::with_id(MENU_VIEW_COMING_SOON, "Coming soon")
+        .enabled(false)
+        .build(manager)?;
+    let window_coming_soon = MenuItemBuilder::with_id(MENU_WINDOW_COMING_SOON, "Coming soon")
+        .enabled(false)
+        .build(manager)?;
+
+    let about = AboutMetadataBuilder::new()
+        .name(Some("CYLview-NG"))
+        .version(Some(env!("CARGO_PKG_VERSION")))
+        .authors(Some(vec!["CYLview-NG Contributors".to_string()]))
+        .comments(Some(
+            "Publication-minded molecular viewing for XYZ and PDB structures.",
+        ))
+        .license(Some("Apache-2.0"))
+        .website(Some("https://github.com/Summykai/CYLview-NG"))
+        .website_label(Some("CYLview-NG on GitHub"))
+        .build();
+
+    let file_menu = SubmenuBuilder::new(manager, "File").item(&quit).build()?;
+    let edit_menu = SubmenuBuilder::new(manager, "Edit")
+        .item(&edit_coming_soon)
+        .build()?;
+    let view_menu = SubmenuBuilder::new(manager, "View")
+        .item(&view_coming_soon)
+        .build()?;
+    let window_menu = SubmenuBuilder::new(manager, "Window")
+        .item(&window_coming_soon)
+        .build()?;
+    let help_menu = SubmenuBuilder::new(manager, "Help")
+        .about_with_text("About CYLview-NG", Some(about))
+        .build()?;
+
+    Menu::with_items(
+        manager,
+        &[
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -158,6 +216,12 @@ fn main() {
     let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
+        .menu(build_app_menu)
+        .on_menu_event(|app, event| {
+            if event.id() == MENU_FILE_QUIT {
+                app.exit(0);
+            }
+        })
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();

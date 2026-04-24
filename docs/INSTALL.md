@@ -70,7 +70,10 @@ sudo apt remove cylview-ng
 2. Choose an `.xyz` or `.pdb` molecular structure.
 3. Rotate with left-drag, pan with right-drag, and zoom with the scroll wheel.
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
-5. Click **Export PNG** to save the current view as an image.
+5. Use **Style** to adjust element colours and global atom size for the current view.
+6. Click **Export PNG** to save the current view as an image.
+
+The desktop app also includes a standard menu bar. Use **File** → **Quit CYLview-NG** to close the app and **Help** → **About CYLview-NG** for version/about details. The **Edit**, **View**, and **Window** menus are scaffolded for future commands.
 
 ## File Safety
 

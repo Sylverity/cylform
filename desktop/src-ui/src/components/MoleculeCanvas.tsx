@@ -97,6 +97,7 @@ interface Props {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
   elementColorOverrides: ElementColorOverrides;
+  atomSizeScale: number;
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
@@ -174,6 +175,7 @@ export function MoleculeCanvas({
   moleculeData,
   showHydrogens,
   elementColorOverrides,
+  atomSizeScale,
   selectedBond,
   selectedAngle,
   selectedDihedral,
@@ -193,6 +195,7 @@ export function MoleculeCanvas({
   const angleLabelRef = useRef<HTMLDivElement>(null);
   const dihedralLabelRef = useRef<HTMLDivElement>(null);
   const selectionModeRef = useRef<SelectionMode>(selectionMode);
+  const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -755,7 +758,7 @@ export function MoleculeCanvas({
   ]);
 
   // ------------------------------------------------------------------
-  // Rebuild molecule meshes when data changes
+  // Rebuild molecule meshes when topology or visibility changes.
   // ------------------------------------------------------------------
   useEffect(() => {
     const ctx = ctxRef.current;
@@ -765,14 +768,17 @@ export function MoleculeCanvas({
       molGroup, camera, controls, sphereGeom, cylGeom, atomMats, bondMat,
       selectedBondMat, selectedAtomMat,
     } = ctx;
+    const shouldFitCamera = moleculeData !== previousMoleculeDataRef.current;
 
-    // Clear previous meshes (dispose per-atom materials, not the shared bondMat)
+    // Clear previous meshes while keeping shared element materials alive.
+    const sharedAtomMaterials = new Set(atomMats.values());
     molGroup.traverse(obj => {
       if (
         obj instanceof Mesh &&
         obj.material !== bondMat &&
         obj.material !== selectedBondMat &&
-        obj.material !== selectedAtomMat
+        obj.material !== selectedAtomMat &&
+        !sharedAtomMaterials.has(obj.material as MeshPhongMaterial)
       ) {
         (obj.material as Material).dispose();
       }
@@ -795,7 +801,10 @@ export function MoleculeCanvas({
     onDihedralSelected(null);
     onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
 
-    if (!moleculeData || moleculeData.atoms.length === 0) return;
+    if (!moleculeData || moleculeData.atoms.length === 0) {
+      previousMoleculeDataRef.current = moleculeData;
+      return;
+    }
 
     const UP = new Vector3(0, 1, 0);
 
@@ -844,7 +853,7 @@ export function MoleculeCanvas({
 
       if (!atomMats.has(atom.element)) {
         atomMats.set(atom.element, new MeshPhongMaterial({
-          color:     elementColorOverrides[atom.element] ?? atomColorHex(atom.element),
+          color:     atomColorHex(atom.element),
           shininess: 42,
           specular:  new Color(0.18, 0.18, 0.18),
         }));
@@ -855,35 +864,62 @@ export function MoleculeCanvas({
       mesh.position.set(atom.x, atom.y, atom.z);
       mesh.scale.setScalar(r);
       mesh.userData.element = atom.element;
+      mesh.userData.baseRadius = r;
       mesh.userData.defaultMaterial = mat;
       molGroup.add(mesh);
       ctx.atomMeshes.push(mesh);
     }
 
     // --- Fit camera ---
-    const box    = new Box3().setFromObject(molGroup);
-    const size   = box.getSize(new Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fovRad = camera.fov * (Math.PI / 180);
-    const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.9;
+    if (shouldFitCamera) {
+      const box    = new Box3().setFromObject(molGroup);
+      const size   = box.getSize(new Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fovRad = camera.fov * (Math.PI / 180);
+      const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.9;
 
-    camera.near = dist / 100;
-    camera.far  = dist * 100;
-    camera.updateProjectionMatrix();
-    camera.position.set(0.15, 0.1, dist);
-    controls.target.set(0, 0, 0);
-    controls.update();
-    controls.saveState();
+      camera.near = dist / 100;
+      camera.far  = dist * 100;
+      camera.updateProjectionMatrix();
+      camera.position.set(0.15, 0.1, dist);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      controls.saveState();
+    }
+
+    previousMoleculeDataRef.current = moleculeData;
 
   }, [
     moleculeData,
     showHydrogens,
-    elementColorOverrides,
     onBondSelected,
     onAngleSelected,
     onDihedralSelected,
     onSelectionSummaryChange,
   ]);
+
+  // Update atom colours without rebuilding meshes or touching the camera.
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
+    for (const [element, material] of ctx.atomMats.entries()) {
+      material.color.set(elementColorOverrides[element] ?? atomColorHex(element));
+    }
+  }, [elementColorOverrides, moleculeData, showHydrogens]);
+
+  // Update atom scale without rebuilding meshes or touching the camera.
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
+    for (const atomMesh of ctx.atomMeshes) {
+      const baseRadius = typeof atomMesh.userData.baseRadius === 'number'
+        ? atomMesh.userData.baseRadius
+        : atomDisplayRadius(String(atomMesh.userData.element ?? ''));
+      atomMesh.scale.setScalar(baseRadius * atomSizeScale);
+    }
+  }, [atomSizeScale, moleculeData, showHydrogens]);
 
   const measureHelpText = selectedDihedral?.stage === 1
     ? 'Select atom 2'

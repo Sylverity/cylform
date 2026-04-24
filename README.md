@@ -43,6 +43,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - Covalent-radius bond perception (no phantom bonds)
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
+- Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
 
@@ -59,9 +60,10 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
 - **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
-- **Element colour customisation** — adjust atom colours per element for the current molecule view
+- **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
+- **Desktop menu scaffold** — standard File / Edit / View / Window / Help menus, with Quit and About wired
 - **Rust file I/O** — fast, reliable parsing with automatic format detection
 
 ---
@@ -222,12 +224,15 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
 | Reset view | **Reset View** button, or press **R** |
-| Toggle hydrogens | **Hide H / Show H** button |
-| Adjust atom colours | Use the **Colours** controls in the side panel |
+| Toggle hydrogens | **Hide H / Show H** button, or press **H** |
+| Change selection mode | Use the toolbar mode buttons, or press **V**, **M**, **A**, **B**, or **Z** |
+| Adjust atom style | Use **Style** in the side panel for element colours and atom size |
 | Measure bond distance | Click a bond |
 | Measure bond angle | Click three atoms progressively |
 | Measure dihedral angle | Click four atoms progressively |
-| Export PNG | Click **Export PNG** → choose a `.png` save location |
+| Export PNG | Click **Export PNG**, or press **Ctrl+E** |
+| Quit | Use **File → Quit CYLview-NG** |
+| About | Use **Help → About CYLview-NG** |
 
 ---
 

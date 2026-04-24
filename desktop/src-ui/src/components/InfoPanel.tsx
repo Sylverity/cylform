@@ -55,8 +55,11 @@ interface InfoPanelProps {
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   elementColorOverrides: ElementColorOverrides;
+  atomSizeScale: number;
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
+  onResetAllElementColors: () => void;
+  onAtomSizeScaleChange: (scale: number) => void;
   error: string | null;
 }
 
@@ -69,8 +72,11 @@ export function InfoPanel({
   selectionMode,
   selectionSummary,
   elementColorOverrides,
+  atomSizeScale,
   onElementColorChange,
   onResetElementColor,
+  onResetAllElementColors,
+  onAtomSizeScaleChange,
   error,
 }: InfoPanelProps) {
   const visibleAtoms = moleculeData
@@ -92,6 +98,7 @@ export function InfoPanel({
     selectionSummary.atomCount > 0 ||
     selectionSummary.bondCount > 0,
   );
+  const hasColorOverrides = Object.keys(elementColorOverrides).length > 0;
 
   if (!moleculeData) {
     return (
@@ -291,30 +298,70 @@ export function InfoPanel({
           <span className="info-label">Hydrogens</span>
           <span className="info-value">{showHydrogens ? 'Shown' : 'Hidden'}</span>
         </div>
+        <div className="style-control">
+          <div className="style-control-header">
+            <span className="info-label">Atom size</span>
+            <span className="info-value">{atomSizeScale.toFixed(2)}x</span>
+          </div>
+          <input
+            className="style-range"
+            type="range"
+            min="0.6"
+            max="1.8"
+            step="0.05"
+            value={atomSizeScale}
+            onChange={(event) => onAtomSizeScaleChange(Number(event.target.value))}
+            aria-label="Atom size"
+          />
+        </div>
         {visibleElements.length === 0 ? (
           <p className="info-note">Load a molecule to adjust atom colours.</p>
         ) : (
-          <div className="color-list">
-            {visibleElements.map((element) => (
-              <div key={element} className="color-row">
-                <span className="color-label">{element}</span>
-                <input
-                  className="color-input"
-                  type="color"
-                  value={elementColorOverrides[element] ?? defaultElementColor(element)}
-                  onChange={(event) => onElementColorChange(element, event.target.value)}
-                  aria-label={`${element} colour`}
-                />
+          <>
+            <div className="style-control-header color-header">
+              <span className="info-label">Element colours</span>
+              {hasColorOverrides && (
                 <button
                   type="button"
-                  className="color-reset"
-                  onClick={() => onResetElementColor(element)}
+                  className="color-reset-all"
+                  onClick={onResetAllElementColors}
                 >
-                  Default
+                  Reset all
                 </button>
-              </div>
-            ))}
-          </div>
+              )}
+            </div>
+            <div className="color-list">
+              {visibleElements.map((element) => {
+                const color = elementColorOverrides[element] ?? defaultElementColor(element);
+                const isCustom = Boolean(elementColorOverrides[element]);
+
+                return (
+                  <div key={element} className="color-row">
+                    <span className="color-label">{element}</span>
+                    <input
+                      className="color-input"
+                      type="color"
+                      value={color}
+                      onChange={(event) => onElementColorChange(element, event.target.value)}
+                      aria-label={`${element} colour`}
+                    />
+                    <span className={isCustom ? 'color-status custom' : 'color-status'}>
+                      {isCustom ? color.toUpperCase() : 'Default'}
+                    </span>
+                    {isCustom && (
+                      <button
+                        type="button"
+                        className="color-reset"
+                        onClick={() => onResetElementColor(element)}
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

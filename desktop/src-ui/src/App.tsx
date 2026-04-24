@@ -73,6 +73,7 @@ function App() {
     bondCount: 0,
   });
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
+  const [atomSizeScale, setAtomSizeScale] = useState(1);
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
@@ -82,6 +83,7 @@ function App() {
     setSelectedDihedral(null);
     setSelectionSummary({ atomCount: 0, bondCount: 0 });
     setElementColorOverrides({});
+    setAtomSizeScale(1);
   }, []);
 
   const handleError = useCallback((err: string) => {
@@ -298,6 +300,7 @@ function App() {
             moleculeData={moleculeData}
             showHydrogens={showHydrogens}
             elementColorOverrides={elementColorOverrides}
+            atomSizeScale={atomSizeScale}
             selectedBond={selectedBond}
             selectedAngle={selectedAngle}
             selectedDihedral={selectedDihedral}
@@ -322,6 +325,7 @@ function App() {
           selectionMode={selectionMode}
           selectionSummary={selectionSummary}
           elementColorOverrides={elementColorOverrides}
+          atomSizeScale={atomSizeScale}
           onElementColorChange={(element, color) => {
             setElementColorOverrides((current) => ({ ...current, [element]: color }));
           }}
@@ -332,6 +336,8 @@ function App() {
               return next;
             });
           }}
+          onResetAllElementColors={() => setElementColorOverrides({})}
+          onAtomSizeScaleChange={setAtomSizeScale}
           error={error}
         />
       </div>

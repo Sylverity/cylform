@@ -495,15 +495,16 @@
 .color-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .color-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 30px auto minmax(70px, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 28px;
 }
 
 .color-label {
@@ -522,9 +523,47 @@
   cursor: pointer;
 }
 
+.color-status {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.color-status.custom {
+  color: var(--text-primary);
+}
+
 .color-reset {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.color-reset-all {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.style-control {
+  margin-top: 12px;
+}
+
+.style-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.color-header {
+  margin-top: 14px;
+}
+
+.style-range {
+  width: 100%;
+  margin-top: 8px;
+  accent-color: var(--accent);
 }
 
 .panel-action {
