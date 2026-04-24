@@ -131,6 +131,106 @@ function App() {
     window.dispatchEvent(new CustomEvent('reset-camera'));
   }, []);
 
+  const handleExportPng = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('export-png'));
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('clear-selection'));
+  }, []);
+
+  const hasSelection = Boolean(
+    selectedBond
+    || selectedAngle
+    || selectedDihedral
+    || selectionSummary.atomCount > 0
+    || selectionSummary.bondCount > 0,
+  );
+
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return (
+        target.isContentEditable
+        || target.tagName === 'INPUT'
+        || target.tagName === 'TEXTAREA'
+        || target.tagName === 'SELECT'
+      );
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target) || isLoading) return;
+
+      const key = event.key.toLowerCase();
+      const commandOrControl = event.ctrlKey || event.metaKey;
+
+      if (commandOrControl && key === 'o') {
+        event.preventDefault();
+        void handleOpenFile();
+        return;
+      }
+
+      if (commandOrControl && key === 'e') {
+        event.preventDefault();
+        handleExportPng();
+        return;
+      }
+
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      switch (key) {
+        case 'escape':
+          event.preventDefault();
+          handleClearSelection();
+          break;
+        case 'r':
+          event.preventDefault();
+          handleResetView();
+          break;
+        case 'h':
+          event.preventDefault();
+          setShowHydrogens((current) => !current);
+          break;
+        case 'v':
+          event.preventDefault();
+          setSelectionMode('view');
+          handleClearSelection();
+          break;
+        case 'm':
+          event.preventDefault();
+          setSelectionMode('measure');
+          handleClearSelection();
+          break;
+        case 'a':
+          event.preventDefault();
+          setSelectionMode('atom');
+          handleClearSelection();
+          break;
+        case 'b':
+          event.preventDefault();
+          setSelectionMode('bond');
+          handleClearSelection();
+          break;
+        case 'z':
+          event.preventDefault();
+          setSelectionMode('atom-bond');
+          handleClearSelection();
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    handleClearSelection,
+    handleExportPng,
+    handleOpenFile,
+    handleResetView,
+    isLoading,
+  ]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -164,14 +264,17 @@ function App() {
       <Toolbar
         onOpenFile={handleOpenFile}
         onResetView={handleResetView}
+        onExportPng={handleExportPng}
         isLoading={isLoading}
         showHydrogens={showHydrogens}
         onToggleHydrogens={() => setShowHydrogens((current) => !current)}
         selectionMode={selectionMode}
         onSelectionModeChange={(mode) => {
           setSelectionMode(mode);
-          window.dispatchEvent(new CustomEvent('clear-selection'));
+          handleClearSelection();
         }}
+        onClearSelection={handleClearSelection}
+        hasSelection={hasSelection}
       />
 
       <div className="main-content">

@@ -353,13 +353,7 @@ export function MoleculeCanvas({
     });
     ro.observe(container);
 
-    // R key — reset view
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'r' || e.key === 'R') ctxRef.current?.controls.reset();
-    };
-    window.addEventListener('keydown', onKey);
-
-    // Toolbar reset button
+    // Toolbar button and global keyboard shortcut
     const onReset = () => ctxRef.current?.controls.reset();
     window.addEventListener('reset-camera', onReset);
 
@@ -735,7 +729,6 @@ export function MoleculeCanvas({
 
     return () => {
       ro.disconnect();
-      window.removeEventListener('keydown', onKey);
       window.removeEventListener('reset-camera', onReset);
       window.removeEventListener('export-png', onExport);
       window.removeEventListener('clear-selection', onClearSelection);

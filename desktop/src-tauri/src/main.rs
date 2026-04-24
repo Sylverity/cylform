@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 // ---------------------------------------------------------------------------
 // Application state
@@ -158,6 +158,13 @@ fn main() {
     let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)

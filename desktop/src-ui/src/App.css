@@ -54,6 +54,34 @@
   border-left: 1px solid var(--border);
 }
 
+.toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.toolbar kbd {
+  min-width: 18px;
+  padding: 1px 5px 2px;
+  border: 1px solid rgba(170, 182, 194, 0.72);
+  border-bottom-color: rgba(132, 145, 158, 0.8);
+  border-radius: 5px;
+  background: rgba(245, 247, 249, 0.92);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.toolbar button.primary kbd,
+.toolbar button.toggle-active kbd {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: currentColor;
+}
+
 .toggle-active {
   background: rgba(47, 157, 244, 0.12);
   border-color: rgba(47, 157, 244, 0.34);
@@ -80,6 +108,9 @@
 }
 
 .mode-selector button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: auto;
   padding: 6px 9px;
   border-color: transparent;

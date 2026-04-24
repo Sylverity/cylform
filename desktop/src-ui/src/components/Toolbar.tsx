@@ -1,32 +1,38 @@
 import type { SelectionMode } from '../App';
 
-const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; disabled?: boolean }> = [
-  { mode: 'view', label: 'View' },
-  { mode: 'measure', label: 'Measure' },
-  { mode: 'atom', label: 'Atom' },
-  { mode: 'bond', label: 'Bond' },
-  { mode: 'atom-bond', label: 'Atom+Bond' },
+const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; shortcut?: string; disabled?: boolean }> = [
+  { mode: 'view', label: 'View', shortcut: 'V' },
+  { mode: 'measure', label: 'Measure', shortcut: 'M' },
+  { mode: 'atom', label: 'Atom', shortcut: 'A' },
+  { mode: 'bond', label: 'Bond', shortcut: 'B' },
+  { mode: 'atom-bond', label: 'Atom+Bond', shortcut: 'Z' },
   { mode: 'label', label: 'Label', disabled: true },
 ];
 
 interface ToolbarProps {
   onOpenFile: () => void;
   onResetView: () => void;
+  onExportPng: () => void;
   isLoading: boolean;
   showHydrogens: boolean;
   onToggleHydrogens: () => void;
   selectionMode: SelectionMode;
   onSelectionModeChange: (mode: SelectionMode) => void;
+  onClearSelection: () => void;
+  hasSelection: boolean;
 }
 
 export function Toolbar({
   onOpenFile,
   onResetView,
+  onExportPng,
   isLoading,
   showHydrogens,
   onToggleHydrogens,
   selectionMode,
   onSelectionModeChange,
+  onClearSelection,
+  hasSelection,
 }: ToolbarProps) {
 
   return (
@@ -35,16 +41,17 @@ export function Toolbar({
 
       <div className="toolbar-section">
         <div className="mode-selector" aria-label="Selection mode">
-          {SELECTION_MODES.map(({ mode, label, disabled }) => (
+          {SELECTION_MODES.map(({ mode, label, shortcut, disabled }) => (
             <button
               key={mode}
               type="button"
               className={selectionMode === mode ? 'mode-active' : ''}
               disabled={isLoading || disabled}
-              title={disabled ? 'Persistent labels are planned for a later v1 milestone.' : `${label} mode`}
+              title={disabled ? 'Persistent labels are planned for a later v1 milestone.' : `${label} mode${shortcut ? ` (${shortcut})` : ''}`}
               onClick={() => onSelectionModeChange(mode)}
             >
-              {label}
+              <span>{label}</span>
+              {shortcut && <kbd>{shortcut}</kbd>}
             </button>
           ))}
         </div>
@@ -52,18 +59,29 @@ export function Toolbar({
 
       <div className="toolbar-section">
         <button onClick={onOpenFile} disabled={isLoading} className="primary">
-          {isLoading ? 'Loading…' : 'Open File'}
+          <span>{isLoading ? 'Loading...' : 'Open File'}</span>
+          <kbd>Ctrl O</kbd>
         </button>
 
         <button onClick={onResetView} disabled={isLoading}>
-          Reset View
+          <span>Reset View</span>
+          <kbd>R</kbd>
         </button>
 
         <button
-          onClick={() => window.dispatchEvent(new CustomEvent('export-png'))}
+          onClick={onExportPng}
           disabled={isLoading}
         >
-          Export PNG
+          <span>Export PNG</span>
+          <kbd>Ctrl E</kbd>
+        </button>
+
+        <button
+          onClick={onClearSelection}
+          disabled={isLoading || !hasSelection}
+        >
+          <span>Clear Selection</span>
+          <kbd>Esc</kbd>
         </button>
 
         <button
@@ -71,7 +89,8 @@ export function Toolbar({
           disabled={isLoading}
           className={showHydrogens ? 'toggle-active' : ''}
         >
-          {showHydrogens ? 'Hide H' : 'Show H'}
+          <span>{showHydrogens ? 'Hide H' : 'Show H'}</span>
+          <kbd>H</kbd>
         </button>
       </div>
 
