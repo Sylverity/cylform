@@ -36,7 +36,7 @@ jobs:
 
       - name: Build Windows bundles
         working-directory: desktop
-        run: src-ui/node_modules/.bin/tauri build --bundles nsis,msi
+        run: src-ui\node_modules\.bin\tauri.cmd build --bundles nsis,msi
 
       - name: Stage Windows artifacts
         shell: pwsh
