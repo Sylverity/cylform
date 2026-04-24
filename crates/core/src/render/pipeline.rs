@@ -1,12 +1,12 @@
 //! Render pipelines for bonds and atoms
 
-use wgpu::util::DeviceExt;
-use crate::camera::Camera;
 use super::{
     context::RenderContext,
-    mesh::{CylinderMesh, SphereImpostor, InstanceData},
+    mesh::{CylinderMesh, InstanceData, SphereImpostor},
     shaders,
 };
+use crate::camera::Camera;
+use wgpu::util::DeviceExt;
 
 /// Uniform buffer data for camera
 #[repr(C)]
@@ -20,7 +20,7 @@ impl CameraUniform {
     fn from_camera(camera: &Camera) -> Self {
         let view_proj = camera.view_projection_matrix();
         let view_pos = camera.position();
-        
+
         Self {
             view_proj: view_proj.to_cols_array_2d(),
             view_pos: [view_pos.x, view_pos.y, view_pos.z, 1.0],
@@ -45,53 +45,55 @@ impl BondPipeline {
     pub fn new(context: &RenderContext) -> Self {
         let device = &context.device;
         let config = &context.config;
-        
+
         // Create bind group layouts
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("camera_bind_group_layout"),
-        });
-        
-        let lighting_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("lighting_bind_group_layout"),
-        });
-        
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let lighting_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("lighting_bind_group_layout"),
+            });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("bond_pipeline_layout"),
             bind_group_layouts: &[&camera_bind_group_layout, &lighting_bind_group_layout],
             push_constant_ranges: &[],
         });
-        
+
         // Compile shaders
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("cylinder_vertex"),
             source: wgpu::ShaderSource::Wgsl(shaders::CYLINDER_VERTEX_SHADER.into()),
         });
-        
+
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("cylinder_fragment"),
             source: wgpu::ShaderSource::Wgsl(shaders::CYLINDER_FRAGMENT_SHADER.into()),
         });
-        
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("bond_pipeline"),
             layout: Some(&pipeline_layout),
@@ -132,7 +134,7 @@ impl BondPipeline {
             },
             multiview: None,
         });
-        
+
         // Create lighting uniform buffer with default CYLview lighting
         let lighting_data = shaders::default_lighting_uniform();
         let lighting_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -140,7 +142,7 @@ impl BondPipeline {
             contents: bytemuck::cast_slice(&lighting_data),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        
+
         let lighting_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &lighting_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -149,7 +151,7 @@ impl BondPipeline {
             }],
             label: Some("lighting_bind_group"),
         });
-        
+
         // Create reusable camera buffer
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera_buffer"),
@@ -157,7 +159,7 @@ impl BondPipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -166,7 +168,7 @@ impl BondPipeline {
             }],
             label: Some("camera_bind_group"),
         });
-        
+
         Self {
             pipeline,
             camera_bind_group_layout,
@@ -176,13 +178,17 @@ impl BondPipeline {
             camera_bind_group,
         }
     }
-    
+
     /// Update camera uniform
     pub fn update_camera(&self, queue: &wgpu::Queue, camera: &Camera) {
         let camera_uniform = CameraUniform::from_camera(camera);
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+        queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[camera_uniform]),
+        );
     }
-    
+
     /// Render bonds
     pub fn render<'a>(
         &'a self,
@@ -199,9 +205,13 @@ impl BondPipeline {
         render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..mesh.index_count, 0, 0..instance_count);
     }
-    
+
     /// Create an instance buffer for bonds
-    pub fn create_instance_buffer(&self, device: &wgpu::Device, instances: &[InstanceData]) -> wgpu::Buffer {
+    pub fn create_instance_buffer(
+        &self,
+        device: &wgpu::Device,
+        instances: &[InstanceData],
+    ) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("bond_instances"),
             contents: bytemuck::cast_slice(instances),
@@ -227,51 +237,53 @@ impl AtomPipeline {
     pub fn new(context: &RenderContext) -> Self {
         let device = &context.device;
         let config = &context.config;
-        
-        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("camera_bind_group_layout"),
-        });
-        
-        let lighting_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("lighting_bind_group_layout"),
-        });
-        
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let lighting_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("lighting_bind_group_layout"),
+            });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("atom_pipeline_layout"),
             bind_group_layouts: &[&camera_bind_group_layout, &lighting_bind_group_layout],
             push_constant_ranges: &[],
         });
-        
+
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sphere_vertex"),
             source: wgpu::ShaderSource::Wgsl(shaders::SPHERE_VERTEX_SHADER.into()),
         });
-        
+
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sphere_fragment"),
             source: wgpu::ShaderSource::Wgsl(shaders::SPHERE_FRAGMENT_SHADER.into()),
         });
-        
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("atom_pipeline"),
             layout: Some(&pipeline_layout),
@@ -316,7 +328,7 @@ impl AtomPipeline {
             },
             multiview: None,
         });
-        
+
         // Reuse same lighting data as bonds
         let lighting_data = shaders::default_lighting_uniform();
         let lighting_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -324,7 +336,7 @@ impl AtomPipeline {
             contents: bytemuck::cast_slice(&lighting_data),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        
+
         let lighting_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &lighting_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -333,14 +345,14 @@ impl AtomPipeline {
             }],
             label: Some("atom_lighting_bind_group"),
         });
-        
+
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("atom_camera_buffer"),
             size: std::mem::size_of::<CameraUniform>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        
+
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -349,7 +361,7 @@ impl AtomPipeline {
             }],
             label: Some("atom_camera_bind_group"),
         });
-        
+
         Self {
             pipeline,
             camera_bind_group_layout,
@@ -359,13 +371,17 @@ impl AtomPipeline {
             camera_bind_group,
         }
     }
-    
+
     /// Update camera uniform
     pub fn update_camera(&self, queue: &wgpu::Queue, camera: &Camera) {
         let camera_uniform = CameraUniform::from_camera(camera);
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[camera_uniform]));
+        queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[camera_uniform]),
+        );
     }
-    
+
     /// Render atoms
     pub fn render<'a>(
         &'a self,
@@ -382,9 +398,13 @@ impl AtomPipeline {
         render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..6, 0, 0..instance_count);
     }
-    
+
     /// Create an instance buffer for atoms
-    pub fn create_instance_buffer(&self, device: &wgpu::Device, instances: &[InstanceData]) -> wgpu::Buffer {
+    pub fn create_instance_buffer(
+        &self,
+        device: &wgpu::Device,
+        instances: &[InstanceData],
+    ) -> wgpu::Buffer {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("atom_instances"),
             contents: bytemuck::cast_slice(instances),

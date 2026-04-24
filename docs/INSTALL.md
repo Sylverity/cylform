@@ -72,6 +72,12 @@ sudo apt remove cylview-ng
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
 5. Click **Export PNG** to save the current view as an image.
 
+## File Safety
+
+CYLview-NG treats molecule files as data only. It does not run scripts, shell commands, macros, or computational chemistry job directives embedded in `.xyz`, `.pdb`, or other selected files.
+
+The current app supports XYZ and PDB files for normal opening. To keep the desktop app responsive, files larger than 25 MB and structures larger than 5,000 atoms are rejected with a clear error.
+
 ## Troubleshooting
 
 - **Windows says the app is unrecognized:** this usually means the build is unsigned. Only continue if the file came from the official GitHub Releases page.
@@ -79,3 +85,4 @@ sudo apt remove cylview-ng
 - **Ubuntu/Debian cannot install the `.deb`:** run `sudo apt update`, then try the `sudo apt install ./CYLview-NG_..._amd64.deb` command again so apt can resolve dependencies.
 - **The app does not open on Linux:** install system WebView/runtime packages for Tauri apps, then retry. On Ubuntu/Debian, the contributor dependency list in `CONTRIBUTING.md` includes the relevant GTK/WebKit packages.
 - **A molecule file does not appear in the picker:** CYLview-NG currently advertises `.xyz` and `.pdb`. Use **All Files** only if you know the file is one of those supported formats with a non-standard extension.
+- **A file is rejected as too large:** reduce the structure size or split trajectories into individual structures. Large trajectory workflows are planned separately.

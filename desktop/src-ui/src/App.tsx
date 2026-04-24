@@ -1,9 +1,15 @@
-import { useState, useCallback, useEffect } from 'react'
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import './App.css'
 import { Toolbar } from './components/Toolbar'
 import { InfoPanel } from './components/InfoPanel'
-import { MoleculeCanvas } from './components/MoleculeCanvas'
+
+const MoleculeCanvas = lazy(() =>
+  import('./components/MoleculeCanvas').then((module) => ({
+    default: module.MoleculeCanvas,
+  })),
+);
 
 export interface AtomData {
   x: number;
@@ -55,6 +61,7 @@ export interface MoleculeData {
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState<string>('Preparing molecular workspace');
   const [error, setError] = useState<string | null>(null);
   const [showHydrogens, setShowHydrogens] = useState(true);
   const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
@@ -81,6 +88,45 @@ function App() {
     setError(err);
   }, []);
 
+  const loadMoleculePath = useCallback(async (path: string, label?: string) => {
+    setIsLoading(true);
+    setLoadingLabel(label ?? 'Loading molecule');
+
+    try {
+      const data = await invoke<MoleculeData>('load_molecule', { path });
+      handleFileLoaded(data);
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleError, handleFileLoaded]);
+
+  const handleOpenFile = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setLoadingLabel('Waiting for file selection');
+
+      const selected = await open({
+        multiple: false,
+        filters: [
+          { name: 'Molecular Files', extensions: ['xyz', 'pdb'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+
+      if (!selected || typeof selected !== 'string') {
+        return;
+      }
+
+      await loadMoleculePath(selected, 'Parsing atoms and perceiving bonds');
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [handleError, loadMoleculePath]);
+
   const handleResetView = useCallback(() => {
     window.dispatchEvent(new CustomEvent('reset-camera'));
   }, []);
@@ -93,12 +139,8 @@ function App() {
         const startupPath = await invoke<string | null>('get_startup_file');
         if (!startupPath) return;
 
-        setIsLoading(true);
-        const data = await invoke<MoleculeData>('load_molecule', { path: startupPath });
-        if (!cancelled) {
-          setMoleculeData(data);
-          setError(null);
-        }
+        setLoadingLabel('Opening startup molecule');
+        await loadMoleculePath(startupPath, 'Opening startup molecule');
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
@@ -115,16 +157,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadMoleculePath]);
 
   return (
     <div className="app">
       <Toolbar
-        onFileLoaded={handleFileLoaded}
-        onError={handleError}
+        onOpenFile={handleOpenFile}
         onResetView={handleResetView}
         isLoading={isLoading}
-        setIsLoading={setIsLoading}
         showHydrogens={showHydrogens}
         onToggleHydrogens={() => setShowHydrogens((current) => !current)}
         selectionMode={selectionMode}
@@ -135,20 +175,40 @@ function App() {
       />
 
       <div className="main-content">
-        <MoleculeCanvas
-          moleculeData={moleculeData}
-          showHydrogens={showHydrogens}
-          elementColorOverrides={elementColorOverrides}
-          selectedBond={selectedBond}
-          selectedAngle={selectedAngle}
-          selectedDihedral={selectedDihedral}
-          selectionMode={selectionMode}
-          onBondSelected={setSelectedBond}
-          onAngleSelected={setSelectedAngle}
-          onDihedralSelected={setSelectedDihedral}
-          onSelectionSummaryChange={setSelectionSummary}
-          onError={handleError}
-        />
+        <Suspense
+          fallback={(
+            <div className="canvas-shell-loading" role="status" aria-live="polite">
+              <div className="loading-card">
+                <div className="loading-orbit" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <p className="loading-kicker">CYLview-NG</p>
+                <h3>Preparing molecular workspace</h3>
+                <p>Loading the 3-D renderer and desktop workspace.</p>
+              </div>
+            </div>
+          )}
+        >
+          <MoleculeCanvas
+            moleculeData={moleculeData}
+            showHydrogens={showHydrogens}
+            elementColorOverrides={elementColorOverrides}
+            selectedBond={selectedBond}
+            selectedAngle={selectedAngle}
+            selectedDihedral={selectedDihedral}
+            selectionMode={selectionMode}
+            onBondSelected={setSelectedBond}
+            onAngleSelected={setSelectedAngle}
+            onDihedralSelected={setSelectedDihedral}
+            onSelectionSummaryChange={setSelectionSummary}
+            isLoading={isLoading}
+            loadingLabel={loadingLabel}
+            onOpenFile={handleOpenFile}
+            onError={handleError}
+          />
+        </Suspense>
 
         <InfoPanel
           moleculeData={moleculeData}

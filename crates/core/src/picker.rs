@@ -1,5 +1,5 @@
 //! Object picking and selection
-//! 
+//!
 //! Supports:
 //! - Single click selection
 //! - Rectangle/lasso selection
@@ -34,25 +34,25 @@ impl Selection {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Clear the selection
     pub fn clear(&mut self) {
         self.atoms.clear();
         self.bonds.clear();
     }
-    
+
     /// Add an atom to selection
     pub fn add_atom(&mut self, index: u32) {
         if !self.atoms.contains(&index) {
             self.atoms.push(index);
         }
     }
-    
+
     /// Remove an atom from selection
     pub fn remove_atom(&mut self, index: u32) {
         self.atoms.retain(|&i| i != index);
     }
-    
+
     /// Toggle atom selection
     pub fn toggle_atom(&mut self, index: u32) {
         if self.atoms.contains(&index) {
@@ -61,17 +61,17 @@ impl Selection {
             self.add_atom(index);
         }
     }
-    
+
     /// Check if an atom is selected
     pub fn is_atom_selected(&self, index: u32) -> bool {
         self.atoms.contains(&index)
     }
-    
+
     /// Get selection count
     pub fn count(&self) -> usize {
         self.atoms.len() + self.bonds.len()
     }
-    
+
     /// Check if selection is empty
     pub fn is_empty(&self) -> bool {
         self.atoms.is_empty() && self.bonds.is_empty()
@@ -100,32 +100,32 @@ impl Picker {
             screen_size: Vec2::new(width as f32, height as f32),
         }
     }
-    
+
     /// Update screen dimensions
     pub fn resize(&mut self, width: u32, height: u32) {
         self.screen_size = Vec2::new(width as f32, height as f32);
     }
-    
+
     /// Pick an object at screen coordinates
     pub fn pick(&self, screen_x: f32, screen_y: f32, structure: &Structure) -> PickedObject {
         // TODO: Implement ray-sphere intersection for atoms
         // TODO: Implement ray-cylinder intersection for bonds
-        
+
         // Placeholder: simple distance check
         let closest = self.find_closest_atom(screen_x, screen_y, structure);
-        
+
         match closest {
             Some(index) => PickedObject::Atom(index),
             None => PickedObject::None,
         }
     }
-    
+
     /// Select objects within a rectangle
     pub fn select_rect(&self, _min: Vec2, _max: Vec2, _structure: &Structure) -> Selection {
         // TODO: Implement rectangle selection
         Selection::new()
     }
-    
+
     /// Find closest atom to screen position (placeholder)
     fn find_closest_atom(&self, _x: f32, _y: f32, _structure: &Structure) -> Option<u32> {
         // TODO: Transform atoms to screen space and find closest
@@ -146,7 +146,7 @@ impl SmartsQuery {
             pattern: pattern.into(),
         }
     }
-    
+
     /// Execute the query on a structure
     pub fn execute(&self, _structure: &Structure) -> Selection {
         // TODO: Integrate with a SMARTS parser (like RDKit bindings or pure Rust implementation)
@@ -158,22 +158,22 @@ impl SmartsQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_selection() {
         let mut sel = Selection::new();
-        
+
         sel.add_atom(0);
         sel.add_atom(1);
         assert_eq!(sel.count(), 2);
-        
+
         sel.toggle_atom(0); // Remove
         assert_eq!(sel.count(), 1);
-        
+
         sel.toggle_atom(2); // Add
         assert_eq!(sel.count(), 2);
     }
-    
+
     #[test]
     fn test_selection_clear() {
         let mut sel = Selection::new();

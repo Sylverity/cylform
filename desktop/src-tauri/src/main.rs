@@ -8,8 +8,9 @@
 )]
 
 use cylview_core::{
-    io::{read_structure, FileFormat},
+    io::{read_structure, FileFormat, IoError},
     molecule::Structure,
+    CoreError,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -69,14 +70,10 @@ struct MoleculeData {
 /// Load a molecular file and return the full atom/bond geometry to the frontend.
 /// Coordinates are re-centred to the geometric centre of the molecule.
 #[tauri::command]
-fn load_molecule(
-    path: String,
-    state: State<'_, Arc<AppState>>,
-) -> Result<MoleculeData, String> {
+fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<MoleculeData, String> {
     log::info!("Loading molecule from: {}", path);
 
-    let structure = read_structure(&path, FileFormat::Auto)
-        .map_err(|e| format!("Failed to load file: {}", e))?;
+    let structure = read_structure(&path, FileFormat::Auto).map_err(format_load_error)?;
 
     let center = structure.center();
 
@@ -120,15 +117,33 @@ fn load_molecule(
     Ok(data)
 }
 
+fn format_load_error(error: CoreError) -> String {
+    match error {
+        CoreError::Io(IoError::NotFound(message)) => {
+            format!("File not found or not readable: {message}")
+        }
+        CoreError::Io(IoError::UnsupportedFormat(message)) => message,
+        CoreError::Io(IoError::Parse(message)) => message,
+        CoreError::Io(IoError::FileTooLarge { size_mb, limit_mb }) => format!(
+            "File is too large ({size_mb:.1} MB). CYLview-NG currently supports files up to {limit_mb:.1} MB."
+        ),
+        CoreError::Io(IoError::TooManyAtoms { count, limit }) => format!(
+            "Molecule is too large ({count} atoms). CYLview-NG currently supports up to {limit} atoms per structure."
+        ),
+        CoreError::Io(IoError::Io(message)) => {
+            format!("Could not read file: {message}")
+        }
+        other => other.to_string(),
+    }
+}
+
 /// Return an optional molecular file path passed on app launch.
 #[tauri::command]
 fn get_startup_file() -> Option<String> {
-    std::env::args()
-        .skip(1)
-        .find(|arg| {
-            let path = Path::new(arg);
-            path.exists() && path.is_file()
-        })
+    std::env::args().skip(1).find(|arg| {
+        let path = Path::new(arg);
+        path.exists() && path.is_file()
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +158,6 @@ fn main() {
     let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
@@ -153,9 +167,8 @@ fn main() {
             let url = tauri::WebviewUrl::App("index.html".into());
 
             #[cfg(debug_assertions)]
-            let url = tauri::WebviewUrl::External(
-                tauri::Url::parse("http://localhost:5173").unwrap(),
-            );
+            let url =
+                tauri::WebviewUrl::External(tauri::Url::parse("http://localhost:5173").unwrap());
 
             tauri::WebviewWindowBuilder::new(app, "main", url)
                 .title("CYLview-NG")

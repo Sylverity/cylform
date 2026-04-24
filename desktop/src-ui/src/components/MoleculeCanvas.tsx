@@ -1,5 +1,25 @@
 import { useEffect, useRef } from 'react';
-import * as THREE from 'three';
+import {
+  AmbientLight,
+  Box3,
+  Color,
+  CylinderGeometry,
+  DirectionalLight,
+  Fog,
+  Group,
+  Material,
+  MathUtils,
+  Mesh,
+  MeshPhongMaterial,
+  MOUSE,
+  PerspectiveCamera,
+  Raycaster,
+  Scene,
+  SphereGeometry,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
@@ -85,6 +105,9 @@ interface Props {
   onAngleSelected: (angle: SelectedAngleMeasurement | null) => void;
   onDihedralSelected: (dihedral: SelectedDihedralMeasurement | null) => void;
   onSelectionSummaryChange: (summary: SelectionSummary) => void;
+  isLoading: boolean;
+  loadingLabel: string;
+  onOpenFile: () => void;
   onError: (msg: string) => void;
 }
 
@@ -92,35 +115,35 @@ interface BondSelectionData {
   atom1Element: string;
   atom2Element: string;
   distance: number;
-  midpoint: THREE.Vector3;
+  midpoint: Vector3;
 }
 
 interface SceneCtx {
-  renderer:   THREE.WebGLRenderer;
-  scene:      THREE.Scene;
-  camera:     THREE.PerspectiveCamera;
+  renderer:   WebGLRenderer;
+  scene:      Scene;
+  camera:     PerspectiveCamera;
   controls:   OrbitControls;
-  molGroup:   THREE.Group;
+  molGroup:   Group;
   animId:     number;
-  sphereGeom: THREE.SphereGeometry;
-  cylGeom:    THREE.CylinderGeometry;
-  atomMats:   Map<string, THREE.MeshPhongMaterial>;
-  bondMat:    THREE.MeshPhongMaterial;
-  selectedBondMat: THREE.MeshPhongMaterial;
-  raycaster: THREE.Raycaster;
-  pointer: THREE.Vector2;
-  selectedBondMesh: THREE.Mesh | null;
+  sphereGeom: SphereGeometry;
+  cylGeom:    CylinderGeometry;
+  atomMats:   Map<string, MeshPhongMaterial>;
+  bondMat:    MeshPhongMaterial;
+  selectedBondMat: MeshPhongMaterial;
+  raycaster: Raycaster;
+  pointer: Vector2;
+  selectedBondMesh: Mesh | null;
   selectedBondData: BondSelectionData | null;
-  bondMeshes: THREE.Mesh[];
-  selectedAtomMat: THREE.MeshPhongMaterial;
-  atomMeshes: THREE.Mesh[];
-  selectedAtomMeshes: THREE.Mesh[];
-  modeSelectedAtomMeshes: THREE.Mesh[];
-  modeSelectedBondMeshes: THREE.Mesh[];
-  angleSelection: THREE.Mesh[];
-  angleLabelPosition: THREE.Vector3 | null;
+  bondMeshes: Mesh[];
+  selectedAtomMat: MeshPhongMaterial;
+  atomMeshes: Mesh[];
+  selectedAtomMeshes: Mesh[];
+  modeSelectedAtomMeshes: Mesh[];
+  modeSelectedBondMeshes: Mesh[];
+  angleSelection: Mesh[];
+  angleLabelPosition: Vector3 | null;
   angleDegrees: number | null;
-  dihedralLabelPosition: THREE.Vector3 | null;
+  dihedralLabelPosition: Vector3 | null;
   dihedralDegrees: number | null;
 }
 
@@ -129,9 +152,9 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function updateAngleSelection(
-  selection: THREE.Mesh[],
-  clickedAtom: THREE.Mesh,
-): THREE.Mesh[] {
+  selection: Mesh[],
+  clickedAtom: Mesh,
+): Mesh[] {
   if (selection.length >= 4) {
     return [clickedAtom];
   }
@@ -159,6 +182,9 @@ export function MoleculeCanvas({
   onAngleSelected,
   onDihedralSelected,
   onSelectionSummaryChange,
+  isLoading,
+  loadingLabel,
+  onOpenFile,
   onError,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -183,34 +209,34 @@ export function MoleculeCanvas({
     const h = container.clientHeight || 600;
 
     // preserveDrawingBuffer is required for toDataURL PNG export
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     container.appendChild(renderer.domElement);
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xffffff);
-    scene.fog = new THREE.Fog(0xffffff, 42, 120);
+    const scene = new Scene();
+    scene.background = new Color(0xffffff);
+    scene.fog = new Fog(0xffffff, 42, 120);
 
-    const camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 1000);
+    const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
     camera.position.set(0, 0, 25);
 
     // Bright, print-oriented lighting tuned toward the CYLview reference.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.52));
+    scene.add(new AmbientLight(0xffffff, 0.52));
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.65);
+    const key = new DirectionalLight(0xffffff, 1.65);
     key.position.set(3.2, 4.4, 6.4);
     scene.add(key);
 
-    const fill = new THREE.DirectionalLight(0xffffff, 0.72);
+    const fill = new DirectionalLight(0xffffff, 0.72);
     fill.position.set(-5.2, 1.4, 3.2);
     scene.add(fill);
 
-    const rim = new THREE.DirectionalLight(0xffffff, 0.24);
+    const rim = new DirectionalLight(0xffffff, 0.24);
     rim.position.set(-1.6, -3.6, -4.8);
     scene.add(rim);
 
-    const topLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    const topLight = new DirectionalLight(0xffffff, 0.35);
     topLight.position.set(0, 7, 1.5);
     scene.add(topLight);
 
@@ -219,38 +245,38 @@ export function MoleculeCanvas({
     controls.enableDamping  = true;
     controls.dampingFactor  = 0.08;
     controls.mouseButtons   = {
-      LEFT:   THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT:  THREE.MOUSE.PAN,
+      LEFT:   MOUSE.ROTATE,
+      MIDDLE: MOUSE.DOLLY,
+      RIGHT:  MOUSE.PAN,
     };
 
-    const molGroup = new THREE.Group();
+    const molGroup = new Group();
     scene.add(molGroup);
 
     // Shared geometries — 16-segment cylinders for smooth tubes
-    const sphereGeom = new THREE.SphereGeometry(1, 20, 16);
-    const cylGeom    = new THREE.CylinderGeometry(1, 1, 1, 24);
+    const sphereGeom = new SphereGeometry(1, 20, 16);
+    const cylGeom    = new CylinderGeometry(1, 1, 1, 24);
 
     // Saturated cyan cylinders with enough gloss to read like polished tubes.
-    const bondMat = new THREE.MeshPhongMaterial({
+    const bondMat = new MeshPhongMaterial({
       color:     0x2f9df4,
       shininess: 175,
-      specular:  new THREE.Color(0.86, 0.9, 0.96),
+      specular:  new Color(0.86, 0.9, 0.96),
     });
-    const selectedBondMat = new THREE.MeshPhongMaterial({
+    const selectedBondMat = new MeshPhongMaterial({
       color:     0xffa24c,
       shininess: 190,
-      specular:  new THREE.Color(0.98, 0.88, 0.78),
+      specular:  new Color(0.98, 0.88, 0.78),
     });
-    const selectedAtomMat = new THREE.MeshPhongMaterial({
+    const selectedAtomMat = new MeshPhongMaterial({
       color:     0xffbf73,
       shininess: 150,
-      specular:  new THREE.Color(0.98, 0.9, 0.78),
+      specular:  new Color(0.98, 0.9, 0.78),
     });
 
-    const atomMats = new Map<string, THREE.MeshPhongMaterial>();
-    const raycaster = new THREE.Raycaster();
-    const pointer = new THREE.Vector2();
+    const atomMats = new Map<string, MeshPhongMaterial>();
+    const raycaster = new Raycaster();
+    const pointer = new Vector2();
 
     // Render loop
     let animId = 0;
@@ -351,10 +377,10 @@ export function MoleculeCanvas({
       current.selectedBondMesh = null;
       current.selectedBondData = null;
       for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
       }
       for (const atomMesh of current.modeSelectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
       }
       for (const bondMesh of current.modeSelectedBondMeshes) {
         bondMesh.material = current.bondMat;
@@ -382,7 +408,7 @@ export function MoleculeCanvas({
       current.selectedBondMesh = null;
       current.selectedBondData = null;
       for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
       }
       current.selectedAtomMeshes = [];
       current.angleSelection = [];
@@ -402,12 +428,12 @@ export function MoleculeCanvas({
       });
     };
 
-    const toggleModeAtom = (atomMesh: THREE.Mesh) => {
+    const toggleModeAtom = (atomMesh: Mesh) => {
       const current = ctxRef.current;
       if (!current) return;
       const index = current.modeSelectedAtomMeshes.indexOf(atomMesh);
       if (index >= 0) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
         current.modeSelectedAtomMeshes.splice(index, 1);
       } else {
         atomMesh.material = current.selectedAtomMat;
@@ -416,7 +442,7 @@ export function MoleculeCanvas({
       publishModeSelectionSummary(current);
     };
 
-    const toggleModeBond = (bondMesh: THREE.Mesh) => {
+    const toggleModeBond = (bondMesh: Mesh) => {
       const current = ctxRef.current;
       if (!current) return;
       const index = current.modeSelectedBondMeshes.indexOf(bondMesh);
@@ -458,7 +484,7 @@ export function MoleculeCanvas({
         if (
           (activeMode === 'atom' || activeMode === 'atom-bond') &&
           atomHit &&
-          atomHit.object instanceof THREE.Mesh
+          atomHit.object instanceof Mesh
         ) {
           toggleModeAtom(atomHit.object);
           return;
@@ -467,14 +493,14 @@ export function MoleculeCanvas({
         if (
           (activeMode === 'bond' || activeMode === 'atom-bond') &&
           bondHit &&
-          bondHit.object instanceof THREE.Mesh
+          bondHit.object instanceof Mesh
         ) {
           toggleModeBond(bondHit.object);
         }
         return;
       }
 
-      if (atomHit && atomHit.object instanceof THREE.Mesh) {
+      if (atomHit && atomHit.object instanceof Mesh) {
         if (current.selectedBondMesh) {
           current.selectedBondMesh.material = current.bondMat;
         }
@@ -483,7 +509,7 @@ export function MoleculeCanvas({
         onBondSelected(null);
 
         for (const atomMesh of current.selectedAtomMeshes) {
-          atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+          atomMesh.material = atomMesh.userData.defaultMaterial as Material;
         }
 
         current.angleSelection = updateAngleSelection(current.angleSelection, atomHit.object);
@@ -555,10 +581,10 @@ export function MoleculeCanvas({
         const baNorm = ba.clone().normalize();
         const bcNorm = bc.clone().normalize();
         const angleRadians = Math.acos(clamp(baNorm.dot(bcNorm), -1, 1));
-        const angleDegrees = THREE.MathUtils.radToDeg(angleRadians);
+        const angleDegrees = MathUtils.radToDeg(angleRadians);
         const bisector = baNorm.add(bcNorm);
         const offsetDirection =
-          bisector.lengthSq() > 1e-6 ? bisector.normalize() : new THREE.Vector3(0.35, 0.35, 0);
+          bisector.lengthSq() > 1e-6 ? bisector.normalize() : new Vector3(0.35, 0.35, 0);
 
         current.angleDegrees = angleDegrees;
         current.angleLabelPosition = b.position.clone().add(offsetDirection.multiplyScalar(0.9));
@@ -589,9 +615,9 @@ export function MoleculeCanvas({
         }
 
         const pd = d.position.clone();
-        const b0 = new THREE.Vector3().subVectors(pa, pb);
-        const b1 = new THREE.Vector3().subVectors(pc, pb);
-        const b2 = new THREE.Vector3().subVectors(pd, pc);
+        const b0 = new Vector3().subVectors(pa, pb);
+        const b1 = new Vector3().subVectors(pc, pb);
+        const b2 = new Vector3().subVectors(pd, pc);
         const b1Len = b1.length();
 
         if (b1Len < 1e-4) {
@@ -611,13 +637,13 @@ export function MoleculeCanvas({
         }
 
         const x = v.normalize().dot(w.normalize());
-        const y = new THREE.Vector3().crossVectors(b1Norm, v).dot(w);
-        const dihedralDegrees = THREE.MathUtils.radToDeg(Math.atan2(y, x));
+        const y = new Vector3().crossVectors(b1Norm, v).dot(w);
+        const dihedralDegrees = MathUtils.radToDeg(Math.atan2(y, x));
         current.dihedralDegrees = dihedralDegrees;
-        current.dihedralLabelPosition = new THREE.Vector3()
+        current.dihedralLabelPosition = new Vector3()
           .addVectors(b.position, c.position)
           .multiplyScalar(0.5)
-          .add(new THREE.Vector3(0.35, 0.35, 0));
+          .add(new Vector3(0.35, 0.35, 0));
         onDihedralSelected({
           atomElements: [
             a.userData.element as string,
@@ -632,13 +658,13 @@ export function MoleculeCanvas({
       }
 
       const hit = bondHit;
-      if (!hit || !(hit.object instanceof THREE.Mesh)) {
+      if (!hit || !(hit.object instanceof Mesh)) {
         clearSelection();
         return;
       }
 
       for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
       }
       current.selectedAtomMeshes = [];
       current.angleSelection = [];
@@ -750,12 +776,12 @@ export function MoleculeCanvas({
     // Clear previous meshes (dispose per-atom materials, not the shared bondMat)
     molGroup.traverse(obj => {
       if (
-        obj instanceof THREE.Mesh &&
+        obj instanceof Mesh &&
         obj.material !== bondMat &&
         obj.material !== selectedBondMat &&
         obj.material !== selectedAtomMat
       ) {
-        (obj.material as THREE.Material).dispose();
+        (obj.material as Material).dispose();
       }
     });
     molGroup.clear();
@@ -778,7 +804,7 @@ export function MoleculeCanvas({
 
     if (!moleculeData || moleculeData.atoms.length === 0) return;
 
-    const UP = new THREE.Vector3(0, 1, 0);
+    const UP = new Vector3(0, 1, 0);
 
     // --- Bonds first (atoms rendered on top) ---
     for (const bond of moleculeData.bonds) {
@@ -787,14 +813,14 @@ export function MoleculeCanvas({
       if (!a1 || !a2) continue;
       if (!showHydrogens && (a1.element === 'H' || a2.element === 'H')) continue;
 
-      const start   = new THREE.Vector3(a1.x, a1.y, a1.z);
-      const end     = new THREE.Vector3(a2.x, a2.y, a2.z);
-      const dir     = new THREE.Vector3().subVectors(end, start);
+      const start   = new Vector3(a1.x, a1.y, a1.z);
+      const end     = new Vector3(a2.x, a2.y, a2.z);
+      const dir     = new Vector3().subVectors(end, start);
       const len     = dir.length();
       if (len < 0.01) continue;
 
       const dirNorm = dir.clone().normalize();
-      const mesh    = new THREE.Mesh(cylGeom, bondMat);
+      const mesh    = new Mesh(cylGeom, bondMat);
       mesh.position.addVectors(start, end).multiplyScalar(0.5);
       const displayRadius = Math.max(0.055, bond.radius * 0.82);
       mesh.scale.set(displayRadius, len, displayRadius);
@@ -808,7 +834,7 @@ export function MoleculeCanvas({
       if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
         // Bond nearly parallel to Y — rotate 180° around X to point the right way
         mesh.quaternion.setFromAxisAngle(
-          new THREE.Vector3(1, 0, 0),
+          new Vector3(1, 0, 0),
           dirNorm.y < 0 ? Math.PI : 0,
         );
       } else {
@@ -824,15 +850,15 @@ export function MoleculeCanvas({
       if (!showHydrogens && atom.element === 'H') continue;
 
       if (!atomMats.has(atom.element)) {
-        atomMats.set(atom.element, new THREE.MeshPhongMaterial({
+        atomMats.set(atom.element, new MeshPhongMaterial({
           color:     elementColorOverrides[atom.element] ?? atomColorHex(atom.element),
           shininess: 42,
-          specular:  new THREE.Color(0.18, 0.18, 0.18),
+          specular:  new Color(0.18, 0.18, 0.18),
         }));
       }
       const mat  = atomMats.get(atom.element)!;
       const r    = atomDisplayRadius(atom.element);
-      const mesh = new THREE.Mesh(sphereGeom, mat);
+      const mesh = new Mesh(sphereGeom, mat);
       mesh.position.set(atom.x, atom.y, atom.z);
       mesh.scale.setScalar(r);
       mesh.userData.element = atom.element;
@@ -842,8 +868,8 @@ export function MoleculeCanvas({
     }
 
     // --- Fit camera ---
-    const box    = new THREE.Box3().setFromObject(molGroup);
-    const size   = box.getSize(new THREE.Vector3());
+    const box    = new Box3().setFromObject(molGroup);
+    const size   = box.getSize(new Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     const fovRad = camera.fov * (Math.PI / 180);
     const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.9;
@@ -902,8 +928,44 @@ export function MoleculeCanvas({
       <div ref={dihedralLabelRef} className="dihedral-measure-label" />
       {!moleculeData && (
         <div className="canvas-placeholder">
-          <h3>CYLview-NG</h3>
-          <p>Open a molecular file to begin</p>
+          <div className="placeholder-mark" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <p className="placeholder-kicker">Publication-minded molecular viewing</p>
+          <h3>Open XYZ or PDB</h3>
+          <p>
+            Load a structure to inspect bonds, measure distances, angles, and dihedrals,
+            then export a clean PNG view.
+          </p>
+          <button
+            type="button"
+            className="placeholder-action"
+            disabled={isLoading}
+            onClick={onOpenFile}
+          >
+            {isLoading ? 'Loading...' : 'Open File'}
+          </button>
+          <div className="placeholder-shortcuts">
+            <span>Left drag rotate</span>
+            <span>Right drag pan</span>
+            <span>Scroll zoom</span>
+          </div>
+        </div>
+      )}
+      {isLoading && (
+        <div className="loading-overlay" role="status" aria-live="polite">
+          <div className="loading-card">
+            <div className="loading-orbit" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <p className="loading-kicker">CYLview-NG</p>
+            <h3>{loadingLabel}</h3>
+            <p>Parsing atoms, perceiving bonds, and preparing the 3-D workspace.</p>
+          </div>
         </div>
       )}
     </div>

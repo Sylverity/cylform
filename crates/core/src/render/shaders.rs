@@ -273,17 +273,13 @@ pub fn default_lighting_uniform() -> [f32; 32] {
     // 4 light directions (4 floats each) + 4 light colors (4 floats each)
     [
         // Light 0: Upper right, warm
-        0.577, 0.577, 0.577, 0.0,
-        // Light 1: Upper left, cool
-        -0.577, 0.577, 0.577, 0.0,
-        // Light 2: Lower right, neutral
-        0.707, -0.5, 0.5, 0.0,
-        // Light 3: Back light, fill
-        0.0, 0.2, -0.98, 0.0,
-        // Colors
-        1.0, 0.95, 0.9, 1.0,   // Warm white
-        0.9, 0.95, 1.0, 1.0,   // Cool white
+        0.577, 0.577, 0.577, 0.0, // Light 1: Upper left, cool
+        -0.577, 0.577, 0.577, 0.0, // Light 2: Lower right, neutral
+        0.707, -0.5, 0.5, 0.0, // Light 3: Back light, fill
+        0.0, 0.2, -0.98, 0.0, // Colors
+        1.0, 0.95, 0.9, 1.0, // Warm white
+        0.9, 0.95, 1.0, 1.0, // Cool white
         0.85, 0.85, 0.85, 1.0, // Neutral
-        0.5, 0.5, 0.55, 1.0,   // Back fill
+        0.5, 0.5, 0.55, 1.0, // Back fill
     ]
 }

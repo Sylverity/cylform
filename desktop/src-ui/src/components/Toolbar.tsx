@@ -1,6 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
-import type { MoleculeData, SelectionMode } from '../App';
+import type { SelectionMode } from '../App';
 
 const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; disabled?: boolean }> = [
   { mode: 'view', label: 'View' },
@@ -12,11 +10,9 @@ const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; disabled?: bo
 ];
 
 interface ToolbarProps {
-  onFileLoaded: (data: MoleculeData) => void;
-  onError: (error: string) => void;
+  onOpenFile: () => void;
   onResetView: () => void;
   isLoading: boolean;
-  setIsLoading: (loading: boolean) => void;
   showHydrogens: boolean;
   onToggleHydrogens: () => void;
   selectionMode: SelectionMode;
@@ -24,42 +20,14 @@ interface ToolbarProps {
 }
 
 export function Toolbar({
-  onFileLoaded,
-  onError,
+  onOpenFile,
   onResetView,
   isLoading,
-  setIsLoading,
   showHydrogens,
   onToggleHydrogens,
   selectionMode,
   onSelectionModeChange,
 }: ToolbarProps) {
-
-  const handleOpenFile = async () => {
-    try {
-      setIsLoading(true);
-
-      const selected = await open({
-        multiple: false,
-        filters: [
-          { name: 'Molecular Files', extensions: ['xyz', 'pdb'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      });
-
-      if (!selected || typeof selected !== 'string') {
-        return; // user cancelled
-      }
-
-      const data = await invoke<MoleculeData>('load_molecule', { path: selected });
-      onFileLoaded(data);
-
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="toolbar">
@@ -83,7 +51,7 @@ export function Toolbar({
       </div>
 
       <div className="toolbar-section">
-        <button onClick={handleOpenFile} disabled={isLoading} className="primary">
+        <button onClick={onOpenFile} disabled={isLoading} className="primary">
           {isLoading ? 'Loading…' : 'Open File'}
         </button>
 
