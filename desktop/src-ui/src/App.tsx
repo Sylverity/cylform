@@ -31,6 +31,19 @@ export interface SelectedAngleMeasurement {
   stage: 1 | 2 | 3;
 }
 
+export interface SelectedDihedralMeasurement {
+  atomElements: [string, string, string, string];
+  dihedralDegrees: number;
+  stage: 1 | 2 | 3 | 4;
+}
+
+export type SelectionMode = 'view' | 'measure' | 'atom' | 'bond' | 'atom-bond' | 'label';
+
+export interface SelectionSummary {
+  atomCount: number;
+  bondCount: number;
+}
+
 export type ElementColorOverrides = Record<string, string>;
 
 export interface MoleculeData {
@@ -46,6 +59,12 @@ function App() {
   const [showHydrogens, setShowHydrogens] = useState(true);
   const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
   const [selectedAngle, setSelectedAngle] = useState<SelectedAngleMeasurement | null>(null);
+  const [selectedDihedral, setSelectedDihedral] = useState<SelectedDihedralMeasurement | null>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('measure');
+  const [selectionSummary, setSelectionSummary] = useState<SelectionSummary>({
+    atomCount: 0,
+    bondCount: 0,
+  });
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
@@ -53,6 +72,8 @@ function App() {
     setError(null);
     setSelectedBond(null);
     setSelectedAngle(null);
+    setSelectedDihedral(null);
+    setSelectionSummary({ atomCount: 0, bondCount: 0 });
     setElementColorOverrides({});
   }, []);
 
@@ -106,6 +127,11 @@ function App() {
         setIsLoading={setIsLoading}
         showHydrogens={showHydrogens}
         onToggleHydrogens={() => setShowHydrogens((current) => !current)}
+        selectionMode={selectionMode}
+        onSelectionModeChange={(mode) => {
+          setSelectionMode(mode);
+          window.dispatchEvent(new CustomEvent('clear-selection'));
+        }}
       />
 
       <div className="main-content">
@@ -113,8 +139,14 @@ function App() {
           moleculeData={moleculeData}
           showHydrogens={showHydrogens}
           elementColorOverrides={elementColorOverrides}
+          selectedBond={selectedBond}
+          selectedAngle={selectedAngle}
+          selectedDihedral={selectedDihedral}
+          selectionMode={selectionMode}
           onBondSelected={setSelectedBond}
           onAngleSelected={setSelectedAngle}
+          onDihedralSelected={setSelectedDihedral}
+          onSelectionSummaryChange={setSelectionSummary}
           onError={handleError}
         />
 
@@ -123,6 +155,9 @@ function App() {
           showHydrogens={showHydrogens}
           selectedBond={selectedBond}
           selectedAngle={selectedAngle}
+          selectedDihedral={selectedDihedral}
+          selectionMode={selectionMode}
+          selectionSummary={selectionSummary}
           elementColorOverrides={elementColorOverrides}
           onElementColorChange={(element, color) => {
             setElementColorOverrides((current) => ({ ...current, [element]: color }));

@@ -1,8 +1,11 @@
 import type {
   ElementColorOverrides,
   MoleculeData,
+  SelectionMode,
+  SelectionSummary,
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
+  SelectedDihedralMeasurement,
 } from '../App';
 
 const DEFAULT_ELEMENT_COLORS: Record<string, string> = {
@@ -22,11 +25,35 @@ function defaultElementColor(element: string): string {
   return DEFAULT_ELEMENT_COLORS[element] ?? '#888888';
 }
 
+function clearSelection(): void {
+  window.dispatchEvent(new CustomEvent('clear-selection'));
+}
+
+function selectionModeLabel(mode: SelectionMode): string {
+  switch (mode) {
+    case 'view':
+      return 'View';
+    case 'measure':
+      return 'Measure';
+    case 'atom':
+      return 'Atom';
+    case 'bond':
+      return 'Bond';
+    case 'atom-bond':
+      return 'Atom+Bond';
+    case 'label':
+      return 'Label';
+  }
+}
+
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
+  selectedDihedral: SelectedDihedralMeasurement | null;
+  selectionMode: SelectionMode;
+  selectionSummary: SelectionSummary;
   elementColorOverrides: ElementColorOverrides;
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
@@ -38,6 +65,9 @@ export function InfoPanel({
   showHydrogens,
   selectedBond,
   selectedAngle,
+  selectedDihedral,
+  selectionMode,
+  selectionSummary,
   elementColorOverrides,
   onElementColorChange,
   onResetElementColor,
@@ -55,48 +85,65 @@ export function InfoPanel({
         return atom1?.element !== 'H' && atom2?.element !== 'H';
       })
     : [];
-
-  if (error) {
-    return (
-      <div className="info-panel">
-        <div className="error-message">
-          <strong>Error</strong>
-          <p>{error}</p>
-        </div>
-      </div>
-    );
-  }
+  const hasSelection = Boolean(
+    selectedBond ||
+    selectedAngle ||
+    selectedDihedral ||
+    selectionSummary.atomCount > 0 ||
+    selectionSummary.bondCount > 0,
+  );
 
   if (!moleculeData) {
     return (
       <div className="info-panel">
+        {error && (
+          <div className="error-message">
+            <strong>Error</strong>
+            <p>{error}</p>
+          </div>
+        )}
+
         <div className="info-section">
-          <h4>Welcome</h4>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6' }}>
-            CYLview-NG — molecular visualization tool.
-          </p>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', marginTop: '12px' }}>
-            Click "Open File" to load a molecule (XYZ, PDB supported).
-          </p>
+          <h4>Molecule</h4>
+          <div className="info-row">
+            <span className="info-label">File</span>
+            <span className="info-value muted">No molecule loaded</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Formats</span>
+            <span className="info-value">XYZ, PDB</span>
+          </div>
         </div>
 
         <div className="info-section">
-          <h4>Controls</h4>
+          <h4>Measure</h4>
           <div className="info-row">
-            <span className="info-label">Rotate</span>
-            <span className="info-value">Left drag</span>
+            <span className="info-label">Mode</span>
+            <span className="info-value">{selectionModeLabel(selectionMode)}</span>
           </div>
           <div className="info-row">
-            <span className="info-label">Pan</span>
-            <span className="info-value">Right drag</span>
+            <span className="info-label">Distance</span>
+            <span className="info-value muted">Load molecule</span>
           </div>
           <div className="info-row">
-            <span className="info-label">Zoom</span>
-            <span className="info-value">Scroll</span>
+            <span className="info-label">Angle</span>
+            <span className="info-value muted">Load molecule</span>
           </div>
           <div className="info-row">
-            <span className="info-label">Reset</span>
-            <span className="info-value">R key</span>
+            <span className="info-label">Dihedral</span>
+            <span className="info-value muted">Load molecule</span>
+          </div>
+        </div>
+
+        <div className="info-section">
+          <h4>Style</h4>
+          <div className="info-row">
+            <span className="info-label">Hydrogens</span>
+            <span className="info-value">{showHydrogens ? 'Shown' : 'Hidden'}</span>
+          </div>
+          <div className="info-row">
+            <span className="info-label">Colours</span>
+            <span className="info-value muted">Load molecule</span>
           </div>
         </div>
       </div>
@@ -104,16 +151,37 @@ export function InfoPanel({
   }
 
   const anglePrompt =
-    selectedAngle?.stage === 1
+    selectedDihedral
+      ? selectedDihedral.stage < 3
+        ? 'Click three atoms'
+        : `${selectedAngle?.angleDegrees.toFixed(2) ?? '0.00'} deg`
+      : selectedAngle?.stage === 1
       ? `First atom: ${selectedAngle.atomElements[0]}`
       : selectedAngle?.stage === 2
         ? `Next: ${selectedAngle.atomElements[0]}-${selectedAngle.atomElements[1]}-?`
         : selectedAngle
           ? `${selectedAngle.angleDegrees.toFixed(2)} deg`
           : 'Click three atoms';
+  const dihedralPrompt =
+    selectedDihedral?.stage === 1
+      ? `First atom: ${selectedDihedral.atomElements[0]}`
+      : selectedDihedral?.stage === 2
+        ? `Next: ${selectedDihedral.atomElements[0]}-${selectedDihedral.atomElements[1]}-?`
+        : selectedDihedral?.stage === 3
+          ? `Next: ${selectedDihedral.atomElements.slice(0, 3).join('-')}-?`
+          : selectedDihedral
+            ? `${selectedDihedral.dihedralDegrees.toFixed(2)} deg`
+            : 'Click four atoms';
 
   return (
     <div className="info-panel">
+      {error && (
+        <div className="error-message">
+          <strong>Error</strong>
+          <p>{error}</p>
+        </div>
+      )}
+
       <div className="info-section">
         <h4>Molecule</h4>
         <div className="info-row">
@@ -144,30 +212,6 @@ export function InfoPanel({
             {showHydrogens ? 'Shown' : 'Hidden'}
           </span>
         </div>
-      </div>
-
-      <div className="info-section">
-        <h4>Controls</h4>
-        <div className="info-row">
-          <span className="info-label">Rotate</span>
-          <span className="info-value">Left drag</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Pan</span>
-          <span className="info-value">Right drag</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Zoom</span>
-          <span className="info-value">Scroll</span>
-        </div>
-        <div className="info-row">
-          <span className="info-label">Reset</span>
-          <span className="info-value">R key</span>
-        </div>
-      </div>
-
-      <div className="info-section">
-        <h4>Renderer</h4>
         <div className="info-row">
           <span className="info-label">Engine</span>
           <span className="info-value" style={{ color: '#22c55e' }}>WebGL · Three.js</span>
@@ -175,47 +219,78 @@ export function InfoPanel({
       </div>
 
       <div className="info-section">
-        <h4>Selection</h4>
+        <h4>Measure</h4>
         <div className="info-row">
-          <span className="info-label">Bond</span>
-          <span className="info-value">
-            {!selectedAngle && selectedBond
-              ? `${selectedBond.atom1Element}-${selectedBond.atom2Element}`
-              : 'None'}
-          </span>
+          <span className="info-label">Mode</span>
+          <span className="info-value">{selectionModeLabel(selectionMode)}</span>
         </div>
+        {selectionMode !== 'measure' && (
+          <div className="info-row">
+            <span className="info-label">Selected</span>
+            <span className="info-value">
+              {selectionSummary.atomCount} atoms · {selectionSummary.bondCount} bonds
+            </span>
+          </div>
+        )}
         <div className="info-row">
           <span className="info-label">Distance</span>
           <span className="info-value">
-            {!selectedAngle && selectedBond ? `${selectedBond.distance.toFixed(2)} A` : 'Click bond'}
-          </span>
-        </div>
-      </div>
-
-      <div className="info-section">
-        <h4>Angle</h4>
-        <div className="info-row">
-          <span className="info-label">Atoms</span>
-          <span className="info-value">
-            {selectedAngle
-              ? selectedAngle.stage === 1
-                ? `${selectedAngle.atomElements[0]}`
-                : selectedAngle.stage === 2
-                  ? `${selectedAngle.atomElements[0]}-${selectedAngle.atomElements[1]}`
-                  : selectedAngle.atomElements.join('-')
-              : 'None'}
+            {!selectedAngle && selectedBond
+              ? `${selectedBond.atom1Element}-${selectedBond.atom2Element} · ${selectedBond.distance.toFixed(2)} A`
+              : 'Click bond'}
           </span>
         </div>
         <div className="info-row">
-          <span className="info-label">Value</span>
+          <span className="info-label">Angle</span>
           <span className="info-value">
             {anglePrompt}
           </span>
         </div>
+        <div className="info-row">
+          <span className="info-label">Dihedral</span>
+          <span className="info-value">
+            {dihedralPrompt}
+          </span>
+        </div>
+        {selectedAngle && (
+          <div className="info-row">
+            <span className="info-label">Angle atoms</span>
+            <span className="info-value">
+              {selectedAngle.stage === 1
+                ? selectedAngle.atomElements[0]
+                : selectedAngle.stage === 2
+                  ? `${selectedAngle.atomElements[0]}-${selectedAngle.atomElements[1]}`
+                  : selectedAngle.atomElements.join('-')}
+            </span>
+          </div>
+        )}
+        {selectedDihedral && (
+          <div className="info-row">
+            <span className="info-label">Dihedral atoms</span>
+            <span className="info-value">
+              {selectedDihedral.atomElements
+                .filter(Boolean)
+                .join('-')}
+            </span>
+          </div>
+        )}
+        {hasSelection && (
+          <button
+            type="button"
+            className="panel-action"
+            onClick={clearSelection}
+          >
+            Clear Selection
+          </button>
+        )}
       </div>
 
       <div className="info-section">
-        <h4>Colours</h4>
+        <h4>Style</h4>
+        <div className="info-row">
+          <span className="info-label">Hydrogens</span>
+          <span className="info-value">{showHydrogens ? 'Shown' : 'Hidden'}</span>
+        </div>
         {visibleElements.length === 0 ? (
           <p className="info-note">Load a molecule to adjust atom colours.</p>
         ) : (

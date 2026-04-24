@@ -6,8 +6,11 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import type {
   ElementColorOverrides,
   MoleculeData,
+  SelectionMode,
+  SelectionSummary,
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
+  SelectedDihedralMeasurement,
 } from '../App';
 
 // ---------------------------------------------------------------------------
@@ -74,8 +77,14 @@ interface Props {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
   elementColorOverrides: ElementColorOverrides;
+  selectedBond: SelectedBondMeasurement | null;
+  selectedAngle: SelectedAngleMeasurement | null;
+  selectedDihedral: SelectedDihedralMeasurement | null;
+  selectionMode: SelectionMode;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
   onAngleSelected: (angle: SelectedAngleMeasurement | null) => void;
+  onDihedralSelected: (dihedral: SelectedDihedralMeasurement | null) => void;
+  onSelectionSummaryChange: (summary: SelectionSummary) => void;
   onError: (msg: string) => void;
 }
 
@@ -106,9 +115,13 @@ interface SceneCtx {
   selectedAtomMat: THREE.MeshPhongMaterial;
   atomMeshes: THREE.Mesh[];
   selectedAtomMeshes: THREE.Mesh[];
+  modeSelectedAtomMeshes: THREE.Mesh[];
+  modeSelectedBondMeshes: THREE.Mesh[];
   angleSelection: THREE.Mesh[];
   angleLabelPosition: THREE.Vector3 | null;
   angleDegrees: number | null;
+  dihedralLabelPosition: THREE.Vector3 | null;
+  dihedralDegrees: number | null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -119,7 +132,7 @@ function updateAngleSelection(
   selection: THREE.Mesh[],
   clickedAtom: THREE.Mesh,
 ): THREE.Mesh[] {
-  if (selection.length >= 3) {
+  if (selection.length >= 4) {
     return [clickedAtom];
   }
 
@@ -138,14 +151,26 @@ export function MoleculeCanvas({
   moleculeData,
   showHydrogens,
   elementColorOverrides,
+  selectedBond,
+  selectedAngle,
+  selectedDihedral,
+  selectionMode,
   onBondSelected,
   onAngleSelected,
+  onDihedralSelected,
+  onSelectionSummaryChange,
   onError,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<SceneCtx | null>(null);
   const bondLabelRef = useRef<HTMLDivElement>(null);
   const angleLabelRef = useRef<HTMLDivElement>(null);
+  const dihedralLabelRef = useRef<HTMLDivElement>(null);
+  const selectionModeRef = useRef<SelectionMode>(selectionMode);
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -262,6 +287,22 @@ export function MoleculeCanvas({
       } else if (angleLabel) {
         angleLabel.style.display = 'none';
       }
+
+      const dihedralLabel = dihedralLabelRef.current;
+      const dihedralPosition = ctxRef.current?.dihedralLabelPosition;
+      const dihedralDegrees = ctxRef.current?.dihedralDegrees;
+      if (dihedralLabel && dihedralPosition && typeof dihedralDegrees === 'number') {
+        const projected = dihedralPosition.clone().project(camera);
+        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
+        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
+        const visible = projected.z >= -1 && projected.z <= 1;
+
+        dihedralLabel.style.display = visible ? 'block' : 'none';
+        dihedralLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
+        dihedralLabel.textContent = `${dihedralDegrees.toFixed(2)} deg`;
+      } else if (dihedralLabel) {
+        dihedralLabel.style.display = 'none';
+      }
       renderer.render(scene, camera);
     }
     animate();
@@ -270,8 +311,10 @@ export function MoleculeCanvas({
       renderer, scene, camera, controls, molGroup, animId,
       sphereGeom, cylGeom, atomMats, bondMat, selectedBondMat,
       raycaster, pointer, selectedBondMesh: null, selectedBondData: null, bondMeshes: [],
-      selectedAtomMat, atomMeshes: [], selectedAtomMeshes: [], angleSelection: [],
-      angleLabelPosition: null, angleDegrees: null,
+      selectedAtomMat, atomMeshes: [], selectedAtomMeshes: [], modeSelectedAtomMeshes: [],
+      modeSelectedBondMeshes: [], angleSelection: [],
+      angleLabelPosition: null, angleDegrees: null, dihedralLabelPosition: null,
+      dihedralDegrees: null,
     };
 
     // Resize
@@ -310,12 +353,81 @@ export function MoleculeCanvas({
       for (const atomMesh of current.selectedAtomMeshes) {
         atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
       }
+      for (const atomMesh of current.modeSelectedAtomMeshes) {
+        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+      }
+      for (const bondMesh of current.modeSelectedBondMeshes) {
+        bondMesh.material = current.bondMat;
+      }
+      current.selectedAtomMeshes = [];
+      current.modeSelectedAtomMeshes = [];
+      current.modeSelectedBondMeshes = [];
+      current.angleSelection = [];
+      current.angleLabelPosition = null;
+      current.angleDegrees = null;
+      current.dihedralLabelPosition = null;
+      current.dihedralDegrees = null;
+      onBondSelected(null);
+      onAngleSelected(null);
+      onDihedralSelected(null);
+      onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
+    };
+
+    const clearMeasurementSelection = () => {
+      const current = ctxRef.current;
+      if (!current) return;
+      if (current.selectedBondMesh) {
+        current.selectedBondMesh.material = current.bondMat;
+      }
+      current.selectedBondMesh = null;
+      current.selectedBondData = null;
+      for (const atomMesh of current.selectedAtomMeshes) {
+        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+      }
       current.selectedAtomMeshes = [];
       current.angleSelection = [];
       current.angleLabelPosition = null;
       current.angleDegrees = null;
+      current.dihedralLabelPosition = null;
+      current.dihedralDegrees = null;
       onBondSelected(null);
       onAngleSelected(null);
+      onDihedralSelected(null);
+    };
+
+    const publishModeSelectionSummary = (current: SceneCtx) => {
+      onSelectionSummaryChange({
+        atomCount: current.modeSelectedAtomMeshes.length,
+        bondCount: current.modeSelectedBondMeshes.length,
+      });
+    };
+
+    const toggleModeAtom = (atomMesh: THREE.Mesh) => {
+      const current = ctxRef.current;
+      if (!current) return;
+      const index = current.modeSelectedAtomMeshes.indexOf(atomMesh);
+      if (index >= 0) {
+        atomMesh.material = atomMesh.userData.defaultMaterial as THREE.Material;
+        current.modeSelectedAtomMeshes.splice(index, 1);
+      } else {
+        atomMesh.material = current.selectedAtomMat;
+        current.modeSelectedAtomMeshes.push(atomMesh);
+      }
+      publishModeSelectionSummary(current);
+    };
+
+    const toggleModeBond = (bondMesh: THREE.Mesh) => {
+      const current = ctxRef.current;
+      if (!current) return;
+      const index = current.modeSelectedBondMeshes.indexOf(bondMesh);
+      if (index >= 0) {
+        bondMesh.material = current.bondMat;
+        current.modeSelectedBondMeshes.splice(index, 1);
+      } else {
+        bondMesh.material = current.selectedBondMat;
+        current.modeSelectedBondMeshes.push(bondMesh);
+      }
+      publishModeSelectionSummary(current);
     };
 
     const onPointerUp = (event: PointerEvent) => {
@@ -332,7 +444,36 @@ export function MoleculeCanvas({
       current.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       current.raycaster.setFromCamera(current.pointer, current.camera);
 
+      const activeMode = selectionModeRef.current;
+
+      if (activeMode === 'view' || activeMode === 'label') {
+        return;
+      }
+
       const atomHit = current.raycaster.intersectObjects(current.atomMeshes, false)[0];
+      const bondHit = current.raycaster.intersectObjects(current.bondMeshes, false)[0];
+
+      if (activeMode === 'atom' || activeMode === 'bond' || activeMode === 'atom-bond') {
+        clearMeasurementSelection();
+        if (
+          (activeMode === 'atom' || activeMode === 'atom-bond') &&
+          atomHit &&
+          atomHit.object instanceof THREE.Mesh
+        ) {
+          toggleModeAtom(atomHit.object);
+          return;
+        }
+
+        if (
+          (activeMode === 'bond' || activeMode === 'atom-bond') &&
+          bondHit &&
+          bondHit.object instanceof THREE.Mesh
+        ) {
+          toggleModeBond(bondHit.object);
+        }
+        return;
+      }
+
       if (atomHit && atomHit.object instanceof THREE.Mesh) {
         if (current.selectedBondMesh) {
           current.selectedBondMesh.material = current.bondMat;
@@ -355,9 +496,16 @@ export function MoleculeCanvas({
         if (current.angleSelection.length === 1) {
           current.angleLabelPosition = null;
           current.angleDegrees = null;
+          current.dihedralLabelPosition = null;
+          current.dihedralDegrees = null;
           onAngleSelected({
             atomElements: [atomHit.object.userData.element as string, '', ''],
             angleDegrees: 0,
+            stage: 1,
+          });
+          onDihedralSelected({
+            atomElements: [atomHit.object.userData.element as string, '', '', ''],
+            dihedralDegrees: 0,
             stage: 1,
           });
           return;
@@ -366,6 +514,8 @@ export function MoleculeCanvas({
         if (current.angleSelection.length === 2) {
           current.angleLabelPosition = null;
           current.angleDegrees = null;
+          current.dihedralLabelPosition = null;
+          current.dihedralDegrees = null;
           onAngleSelected({
             atomElements: [
               current.angleSelection[0].userData.element as string,
@@ -375,10 +525,20 @@ export function MoleculeCanvas({
             angleDegrees: 0,
             stage: 2,
           });
+          onDihedralSelected({
+            atomElements: [
+              current.angleSelection[0].userData.element as string,
+              current.angleSelection[1].userData.element as string,
+              '',
+              '',
+            ],
+            dihedralDegrees: 0,
+            stage: 2,
+          });
           return;
         }
 
-        const [a, b, c] = current.angleSelection;
+        const [a, b, c, d] = current.angleSelection;
         const pa = a.position.clone();
         const pb = b.position.clone();
         const pc = c.position.clone();
@@ -411,10 +571,67 @@ export function MoleculeCanvas({
           angleDegrees,
           stage: 3,
         });
+
+        if (current.angleSelection.length === 3) {
+          current.dihedralLabelPosition = null;
+          current.dihedralDegrees = null;
+          onDihedralSelected({
+            atomElements: [
+              a.userData.element as string,
+              b.userData.element as string,
+              c.userData.element as string,
+              '',
+            ],
+            dihedralDegrees: 0,
+            stage: 3,
+          });
+          return;
+        }
+
+        const pd = d.position.clone();
+        const b0 = new THREE.Vector3().subVectors(pa, pb);
+        const b1 = new THREE.Vector3().subVectors(pc, pb);
+        const b2 = new THREE.Vector3().subVectors(pd, pc);
+        const b1Len = b1.length();
+
+        if (b1Len < 1e-4) {
+          clearSelection();
+          return;
+        }
+
+        const b1Norm = b1.clone().normalize();
+        const v = b0.sub(b1Norm.clone().multiplyScalar(b0.dot(b1Norm)));
+        const w = b2.sub(b1Norm.clone().multiplyScalar(b2.dot(b1Norm)));
+        const vLen = v.length();
+        const wLen = w.length();
+
+        if (vLen < 1e-4 || wLen < 1e-4) {
+          clearSelection();
+          return;
+        }
+
+        const x = v.normalize().dot(w.normalize());
+        const y = new THREE.Vector3().crossVectors(b1Norm, v).dot(w);
+        const dihedralDegrees = THREE.MathUtils.radToDeg(Math.atan2(y, x));
+        current.dihedralDegrees = dihedralDegrees;
+        current.dihedralLabelPosition = new THREE.Vector3()
+          .addVectors(b.position, c.position)
+          .multiplyScalar(0.5)
+          .add(new THREE.Vector3(0.35, 0.35, 0));
+        onDihedralSelected({
+          atomElements: [
+            a.userData.element as string,
+            b.userData.element as string,
+            c.userData.element as string,
+            d.userData.element as string,
+          ],
+          dihedralDegrees,
+          stage: 4,
+        });
         return;
       }
 
-      const hit = current.raycaster.intersectObjects(current.bondMeshes, false)[0];
+      const hit = bondHit;
       if (!hit || !(hit.object instanceof THREE.Mesh)) {
         clearSelection();
         return;
@@ -427,7 +644,10 @@ export function MoleculeCanvas({
       current.angleSelection = [];
       current.angleLabelPosition = null;
       current.angleDegrees = null;
+      current.dihedralLabelPosition = null;
+      current.dihedralDegrees = null;
       onAngleSelected(null);
+      onDihedralSelected(null);
 
       if (current.selectedBondMesh && current.selectedBondMesh !== hit.object) {
         current.selectedBondMesh.material = current.bondMat;
@@ -484,11 +704,15 @@ export function MoleculeCanvas({
     };
     window.addEventListener('export-png', onExport);
 
+    const onClearSelection = () => clearSelection();
+    window.addEventListener('clear-selection', onClearSelection);
+
     return () => {
       ro.disconnect();
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('reset-camera', onReset);
       window.removeEventListener('export-png', onExport);
+      window.removeEventListener('clear-selection', onClearSelection);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(animId);
@@ -502,7 +726,14 @@ export function MoleculeCanvas({
       container.removeChild(renderer.domElement);
       ctxRef.current = null;
     };
-  }, [moleculeData, onAngleSelected, onBondSelected, onError]);
+  }, [
+    moleculeData,
+    onAngleSelected,
+    onBondSelected,
+    onDihedralSelected,
+    onError,
+    onSelectionSummaryChange,
+  ]);
 
   // ------------------------------------------------------------------
   // Rebuild molecule meshes when data changes
@@ -533,11 +764,17 @@ export function MoleculeCanvas({
     ctx.selectedBondMesh = null;
     ctx.selectedBondData = null;
     ctx.selectedAtomMeshes = [];
+    ctx.modeSelectedAtomMeshes = [];
+    ctx.modeSelectedBondMeshes = [];
     ctx.angleSelection = [];
     ctx.angleLabelPosition = null;
     ctx.angleDegrees = null;
+    ctx.dihedralLabelPosition = null;
+    ctx.dihedralDegrees = null;
     onBondSelected(null);
     onAngleSelected(null);
+    onDihedralSelected(null);
+    onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
 
     if (!moleculeData || moleculeData.atoms.length === 0) return;
 
@@ -619,12 +856,50 @@ export function MoleculeCanvas({
     controls.update();
     controls.saveState();
 
-  }, [moleculeData, showHydrogens, elementColorOverrides, onBondSelected, onAngleSelected]);
+  }, [
+    moleculeData,
+    showHydrogens,
+    elementColorOverrides,
+    onBondSelected,
+    onAngleSelected,
+    onDihedralSelected,
+    onSelectionSummaryChange,
+  ]);
+
+  const measureHelpText = selectedDihedral?.stage === 1
+    ? 'Select atom 2'
+    : selectedDihedral?.stage === 2
+      ? 'Select atom 3'
+      : selectedDihedral?.stage === 3
+        ? 'Select atom 4'
+        : selectedDihedral?.stage === 4
+          ? `Dihedral ${selectedDihedral.dihedralDegrees.toFixed(2)} deg`
+          : selectedAngle
+        ? `Angle ${selectedAngle.angleDegrees.toFixed(2)} deg`
+        : selectedBond
+          ? `Distance ${selectedBond.distance.toFixed(2)} A`
+          : 'Click a bond for distance, or atoms for angle/dihedral';
+
+  const helpText = !moleculeData
+    ? 'Open XYZ or PDB'
+    : selectionMode === 'view'
+      ? 'View mode: orbit, pan, and zoom'
+      : selectionMode === 'atom'
+        ? 'Atom mode: click atoms to select'
+        : selectionMode === 'bond'
+          ? 'Bond mode: click bonds to select'
+          : selectionMode === 'atom-bond'
+            ? 'Atom+Bond mode: click atoms or bonds to select'
+            : selectionMode === 'label'
+              ? 'Label mode is planned for a later v1 milestone'
+              : measureHelpText;
 
   return (
     <div ref={containerRef} className="molecule-canvas">
+      <div className="canvas-help-strip">{helpText}</div>
       <div ref={bondLabelRef} className="bond-distance-label" />
       <div ref={angleLabelRef} className="angle-measure-label" />
+      <div ref={dihedralLabelRef} className="dihedral-measure-label" />
       {!moleculeData && (
         <div className="canvas-placeholder">
           <h3>CYLview-NG</h3>

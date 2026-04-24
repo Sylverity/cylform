@@ -1,7 +1,6 @@
 # Rust
 /target
 **/*.rs.bk
-Cargo.lock
 
 # Tauri
 dist/
@@ -9,7 +8,6 @@ dist-js/
 
 # Node
 node_modules/
-package-lock.json
 yarn.lock
 
 # IDE

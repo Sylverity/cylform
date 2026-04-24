@@ -1,29 +1,51 @@
 # Contributing to CYLview-NG
 
+This guide is for contributors building from source. If you only want to use CYLview-NG, download a Windows or Ubuntu/Debian release from GitHub Releases instead; release builds do not require Rust, Node.js, or Tauri tooling.
+
 ## Prerequisites
 
 - Rust 1.70+ via [rustup](https://rustup.rs/)
 - Node.js 20 LTS
 - Tauri system dependencies — [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/)
 
+On Ubuntu / Debian, install:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential \
+  pkg-config \
+  libgtk-3-dev \
+  libwebkit2gtk-4.1-dev \
+  libappindicator3-dev \
+  librsvg2-dev \
+  patchelf
+```
+
 ## Building from source
 
 ```bash
-# Frontend deps
-cd desktop/src-ui && npm install
+# Install frontend dependencies
+npm --prefix desktop/src-ui ci
 
 # Dev mode (hot-reload)
-cd .. && cargo tauri dev
+cargo tauri dev
 
-# Release build
-cd desktop/src-ui && npm run build && cd ../..
+# Standalone local release binary
+npm --prefix desktop/src-ui run build:desktop
+
+# Installer/package bundles for the current OS
 cargo tauri build
 ```
+
+The `build:desktop` script is a developer convenience for producing a local standalone executable. User-friendly installers and packages should come from the Tauri bundle output and GitHub Releases.
 
 ## Running tests
 
 ```bash
+npm --prefix desktop/src-ui run build
 cargo test -p cylview-core
+cargo check -p cylview-core
 ```
 
 ## Project structure
@@ -49,7 +71,7 @@ desktop/src-ui/src/
 ## Conventions
 
 - Rust: `cargo fmt` + `cargo clippy` before committing
-- TypeScript: `npx tsc --noEmit` to check types
+- TypeScript: `npm --prefix desktop/src-ui run build` to check types and build the frontend
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, `chore:`)
 
