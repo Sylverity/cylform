@@ -34,11 +34,9 @@ jobs:
         working-directory: desktop/src-ui
         run: npm ci
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0" --locked
-
       - name: Build Windows bundles
-        run: cargo tauri build --bundles nsis,msi
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles nsis,msi
 
       - name: Stage Windows artifacts
         shell: pwsh
@@ -88,11 +86,9 @@ jobs:
         working-directory: desktop/src-ui
         run: npm ci
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0" --locked
-
       - name: Build Debian package
-        run: cargo tauri build --bundles deb
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles deb
 
       - name: Stage Linux artifacts
         run: |
