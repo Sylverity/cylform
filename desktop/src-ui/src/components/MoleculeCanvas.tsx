@@ -1,18 +1,23 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
   Color,
   CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
   Fog,
+  GridHelper,
   Group,
   Material,
   MathUtils,
   Mesh,
+  MeshBasicMaterial,
   MeshPhongMaterial,
   MOUSE,
+  OrthographicCamera,
   PerspectiveCamera,
+  PlaneGeometry,
   Raycaster,
   Scene,
   SphereGeometry,
@@ -31,6 +36,7 @@ import type {
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
+  ViewOptions,
 } from '../App';
 
 // ---------------------------------------------------------------------------
@@ -98,6 +104,8 @@ interface Props {
   showHydrogens: boolean;
   elementColorOverrides: ElementColorOverrides;
   atomSizeScale: number;
+  viewOptions: ViewOptions;
+  onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
@@ -122,9 +130,24 @@ interface BondSelectionData {
 interface SceneCtx {
   renderer:   WebGLRenderer;
   scene:      Scene;
-  camera:     PerspectiveCamera;
+  camera:     PerspectiveCamera | OrthographicCamera;
+  perspectiveCamera: PerspectiveCamera;
+  orthographicCamera: OrthographicCamera;
   controls:   OrbitControls;
   molGroup:   Group;
+  floorGroup: Group;
+  floorPlane: Mesh;
+  floorGrid: GridHelper;
+  floorMat: MeshBasicMaterial;
+  lights: {
+    ambient: AmbientLight;
+    key: DirectionalLight;
+    fill: DirectionalLight;
+    rim: DirectionalLight;
+    topLight: DirectionalLight;
+  };
+  lastCameraDistance: number;
+  lastMoleculeBox: Box3 | null;
   animId:     number;
   sphereGeom: SphereGeometry;
   cylGeom:    CylinderGeometry;
@@ -152,6 +175,93 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function backdropColor(tone: ViewOptions['backdropTone']): number {
+  if (tone === 'warm') return 0xf2eee7;
+  if (tone === 'slate') return 0xdce3ea;
+  return 0xffffff;
+}
+
+function syncOrthographicCamera(ctx: SceneCtx): void {
+  const { renderer, orthographicCamera, controls } = ctx;
+  const width = renderer.domElement.clientWidth || 800;
+  const height = renderer.domElement.clientHeight || 600;
+  const aspect = width / height;
+  const distance = Math.max(ctx.camera.position.distanceTo(controls.target), ctx.lastCameraDistance, 8);
+  const viewHeight = Math.max(distance * 0.55, 4);
+
+  orthographicCamera.left = (-viewHeight * aspect) / 2;
+  orthographicCamera.right = (viewHeight * aspect) / 2;
+  orthographicCamera.top = viewHeight / 2;
+  orthographicCamera.bottom = -viewHeight / 2;
+  orthographicCamera.near = Math.max(distance / 120, 0.01);
+  orthographicCamera.far = distance * 120;
+  orthographicCamera.updateProjectionMatrix();
+}
+
+function setActiveCamera(ctx: SceneCtx, projection: ViewOptions['projection']): void {
+  const nextCamera = projection === 'orthographic'
+    ? ctx.orthographicCamera
+    : ctx.perspectiveCamera;
+
+  if (ctx.camera === nextCamera) {
+    if (nextCamera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
+    return;
+  }
+
+  nextCamera.position.copy(ctx.camera.position);
+  nextCamera.quaternion.copy(ctx.camera.quaternion);
+  nextCamera.up.copy(ctx.camera.up);
+  nextCamera.near = ctx.camera.near;
+  nextCamera.far = ctx.camera.far;
+  if (nextCamera instanceof PerspectiveCamera) {
+    nextCamera.updateProjectionMatrix();
+  }
+
+  ctx.camera = nextCamera;
+  if (nextCamera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
+  ctx.controls.object = nextCamera;
+  ctx.controls.update();
+}
+
+function updateFloorPlacement(ctx: SceneCtx): void {
+  if (!ctx.lastMoleculeBox) {
+    ctx.floorGroup.visible = false;
+    return;
+  }
+
+  const box = ctx.lastMoleculeBox;
+  const size = box.getSize(new Vector3());
+  const center = box.getCenter(new Vector3());
+  const floorSize = Math.max(size.x, size.z, size.y, 4) * 2.35;
+
+  ctx.floorGroup.position.set(center.x, box.min.y - 0.45, center.z);
+  ctx.floorPlane.scale.set(floorSize, floorSize, 1);
+  ctx.floorGrid.scale.setScalar(floorSize / 10);
+}
+
+function applyCameraPreset(ctx: SceneCtx, preset: 'front' | 'top' | 'right' | 'iso'): void {
+  const target = ctx.controls.target.clone();
+  const distance = Math.max(ctx.camera.position.distanceTo(target), ctx.lastCameraDistance, 8);
+  const offsets = {
+    front: new Vector3(0, 0, distance),
+    top: new Vector3(0, distance, 0.001),
+    right: new Vector3(distance, 0, 0),
+    iso: new Vector3(0.62, 0.48, 0.62).normalize().multiplyScalar(distance),
+  };
+
+  ctx.camera.position.copy(target).add(offsets[preset]);
+  ctx.camera.up.set(0, 1, 0);
+  if (preset === 'top') {
+    ctx.camera.up.set(0, 0, -1);
+  }
+  ctx.camera.lookAt(target);
+  ctx.controls.target.copy(target);
+  ctx.controls.update();
+  ctx.controls.saveState();
+  ctx.lastCameraDistance = distance;
+  if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
+}
+
 function updateAngleSelection(
   selection: Mesh[],
   clickedAtom: Mesh,
@@ -176,6 +286,8 @@ export function MoleculeCanvas({
   showHydrogens,
   elementColorOverrides,
   atomSizeScale,
+  viewOptions,
+  onViewOptionsChange,
   selectedBond,
   selectedAngle,
   selectedDihedral,
@@ -195,11 +307,16 @@ export function MoleculeCanvas({
   const angleLabelRef = useRef<HTMLDivElement>(null);
   const dihedralLabelRef = useRef<HTMLDivElement>(null);
   const selectionModeRef = useRef<SelectionMode>(selectionMode);
+  const viewOptionsRef = useRef<ViewOptions>(viewOptions);
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
   }, [selectionMode]);
+
+  useEffect(() => {
+    viewOptionsRef.current = viewOptions;
+  }, [viewOptions]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -222,10 +339,13 @@ export function MoleculeCanvas({
     scene.fog = new Fog(0xffffff, 42, 120);
 
     const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
+    const orthographicCamera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
     camera.position.set(0, 0, 25);
+    orthographicCamera.position.copy(camera.position);
 
     // Bright, print-oriented lighting tuned toward the CYLview reference.
-    scene.add(new AmbientLight(0xffffff, 0.52));
+    const ambient = new AmbientLight(0xffffff, 0.52);
+    scene.add(ambient);
 
     const key = new DirectionalLight(0xffffff, 1.65);
     key.position.set(3.2, 4.4, 6.4);
@@ -255,6 +375,21 @@ export function MoleculeCanvas({
 
     const molGroup = new Group();
     scene.add(molGroup);
+
+    const floorGroup = new Group();
+    const floorMat = new MeshBasicMaterial({
+      color: 0x2d3035,
+      side: DoubleSide,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const floorPlane = new Mesh(new PlaneGeometry(1, 1), floorMat);
+    floorPlane.rotation.x = -Math.PI / 2;
+    const floorGrid = new GridHelper(10, 20, 0x737983, 0x4c525a);
+    floorGroup.add(floorPlane);
+    floorGroup.add(floorGrid);
+    floorGroup.visible = false;
+    scene.add(floorGroup);
 
     // Shared geometries — 16-segment cylinders for smooth tubes
     const sphereGeom = new SphereGeometry(1, 20, 16);
@@ -288,8 +423,9 @@ export function MoleculeCanvas({
       controls.update();
       const bondLabel = bondLabelRef.current;
       const selectedBond = ctxRef.current?.selectedBondData;
+      const activeCamera = ctxRef.current?.camera ?? camera;
       if (bondLabel && selectedBond) {
-        const projected = selectedBond.midpoint.clone().project(camera);
+        const projected = selectedBond.midpoint.clone().project(activeCamera);
         const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
         const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
         const visible = projected.z >= -1 && projected.z <= 1;
@@ -305,7 +441,7 @@ export function MoleculeCanvas({
       const anglePosition = ctxRef.current?.angleLabelPosition;
       const angleDegrees = ctxRef.current?.angleDegrees;
       if (angleLabel && anglePosition && typeof angleDegrees === 'number') {
-        const projected = anglePosition.clone().project(camera);
+        const projected = anglePosition.clone().project(activeCamera);
         const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
         const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
         const visible = projected.z >= -1 && projected.z <= 1;
@@ -321,7 +457,7 @@ export function MoleculeCanvas({
       const dihedralPosition = ctxRef.current?.dihedralLabelPosition;
       const dihedralDegrees = ctxRef.current?.dihedralDegrees;
       if (dihedralLabel && dihedralPosition && typeof dihedralDegrees === 'number') {
-        const projected = dihedralPosition.clone().project(camera);
+        const projected = dihedralPosition.clone().project(activeCamera);
         const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
         const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
         const visible = projected.z >= -1 && projected.z <= 1;
@@ -332,12 +468,17 @@ export function MoleculeCanvas({
       } else if (dihedralLabel) {
         dihedralLabel.style.display = 'none';
       }
-      renderer.render(scene, camera);
+      renderer.render(scene, activeCamera);
     }
     animate();
 
     ctxRef.current = {
-      renderer, scene, camera, controls, molGroup, animId,
+      renderer, scene, camera, perspectiveCamera: camera, orthographicCamera, controls,
+      molGroup, floorGroup, floorPlane, floorGrid, floorMat,
+      lights: { ambient, key, fill, rim, topLight },
+      lastCameraDistance: 25,
+      lastMoleculeBox: null,
+      animId,
       sphereGeom, cylGeom, atomMats, bondMat, selectedBondMat,
       raycaster, pointer, selectedBondMesh: null, selectedBondData: null, bondMeshes: [],
       selectedAtomMat, atomMeshes: [], selectedAtomMeshes: [], modeSelectedAtomMeshes: [],
@@ -351,8 +492,10 @@ export function MoleculeCanvas({
       const cw = container.clientWidth;
       const ch = container.clientHeight;
       renderer.setSize(cw, ch);
+      const current = ctxRef.current;
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
+      if (current) syncOrthographicCamera(current);
     });
     ro.observe(container);
 
@@ -740,6 +883,8 @@ export function MoleculeCanvas({
       cancelAnimationFrame(animId);
       sphereGeom.dispose();
       cylGeom.dispose();
+      floorPlane.geometry.dispose();
+      floorMat.dispose();
       bondMat.dispose();
       selectedBondMat.dispose();
       selectedAtomMat.dispose();
@@ -765,7 +910,7 @@ export function MoleculeCanvas({
     if (!ctx) return;
 
     const {
-      molGroup, camera, controls, sphereGeom, cylGeom, atomMats, bondMat,
+      molGroup, perspectiveCamera, camera, controls, sphereGeom, cylGeom, atomMats, bondMat,
       selectedBondMat, selectedAtomMat,
     } = ctx;
     const shouldFitCamera = moleculeData !== previousMoleculeDataRef.current;
@@ -802,6 +947,8 @@ export function MoleculeCanvas({
     onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
 
     if (!moleculeData || moleculeData.atoms.length === 0) {
+      ctx.lastMoleculeBox = null;
+      updateFloorPlacement(ctx);
       previousMoleculeDataRef.current = moleculeData;
       return;
     }
@@ -871,20 +1018,34 @@ export function MoleculeCanvas({
     }
 
     // --- Fit camera ---
-    if (shouldFitCamera) {
-      const box    = new Box3().setFromObject(molGroup);
+    const box = new Box3().setFromObject(molGroup);
+    ctx.lastMoleculeBox = box.isEmpty() ? null : box.clone();
+    updateFloorPlacement(ctx);
+    const currentViewOptions = viewOptionsRef.current;
+    ctx.floorGroup.visible = Boolean(
+      ctx.lastMoleculeBox && (currentViewOptions.showFloor || currentViewOptions.showGrid),
+    );
+    ctx.floorPlane.visible = currentViewOptions.showFloor;
+    ctx.floorGrid.visible = currentViewOptions.showGrid;
+
+    if (shouldFitCamera && ctx.lastMoleculeBox) {
       const size   = box.getSize(new Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      const fovRad = camera.fov * (Math.PI / 180);
+      const fovRad = perspectiveCamera.fov * (Math.PI / 180);
       const dist   = (maxDim / 2 / Math.tan(fovRad / 2)) * 1.9;
 
+      perspectiveCamera.near = dist / 100;
+      perspectiveCamera.far  = dist * 100;
+      perspectiveCamera.updateProjectionMatrix();
       camera.near = dist / 100;
-      camera.far  = dist * 100;
+      camera.far = dist * 100;
       camera.updateProjectionMatrix();
       camera.position.set(0.15, 0.1, dist);
       controls.target.set(0, 0, 0);
       controls.update();
       controls.saveState();
+      ctx.lastCameraDistance = dist;
+      if (camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
     }
 
     previousMoleculeDataRef.current = moleculeData;
@@ -897,6 +1058,51 @@ export function MoleculeCanvas({
     onDihedralSelected,
     onSelectionSummaryChange,
   ]);
+
+  // Apply scene/view options in place so rendering controls do not rebuild meshes.
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
+    setActiveCamera(ctx, viewOptions.projection);
+
+    const bg = backdropColor(viewOptions.backdropTone);
+    ctx.scene.background = new Color(bg);
+
+    const distance = Math.max(
+      ctx.camera.position.distanceTo(ctx.controls.target),
+      ctx.lastCameraDistance,
+      12,
+    );
+    if (viewOptions.fogEnabled) {
+      const intensity = clamp(viewOptions.fogIntensity, 0.1, 1);
+      ctx.scene.fog = new Fog(
+        bg,
+        distance * (1.42 - intensity * 0.32),
+        distance * (4.8 - intensity * 1.55),
+      );
+    } else {
+      ctx.scene.fog = null;
+    }
+
+    const moods = {
+      publication: { ambient: 0.52, key: 1.65, fill: 0.72, rim: 0.24, topLight: 0.35 },
+      'soft-studio': { ambient: 0.72, key: 1.12, fill: 0.92, rim: 0.2, topLight: 0.46 },
+      'high-contrast': { ambient: 0.32, key: 2.08, fill: 0.32, rim: 0.58, topLight: 0.22 },
+    }[viewOptions.lightingMood];
+
+    ctx.lights.ambient.intensity = moods.ambient;
+    ctx.lights.key.intensity = moods.key;
+    ctx.lights.fill.intensity = moods.fill;
+    ctx.lights.rim.intensity = moods.rim;
+    ctx.lights.topLight.intensity = moods.topLight;
+
+    ctx.controls.autoRotate = viewOptions.autoRotate;
+    ctx.controls.autoRotateSpeed = viewOptions.autoRotateSpeed;
+    ctx.floorGroup.visible = Boolean(ctx.lastMoleculeBox && (viewOptions.showFloor || viewOptions.showGrid));
+    ctx.floorPlane.visible = viewOptions.showFloor;
+    ctx.floorGrid.visible = viewOptions.showGrid;
+  }, [viewOptions]);
 
   // Update atom colours without rebuilding meshes or touching the camera.
   useEffect(() => {
@@ -949,8 +1155,133 @@ export function MoleculeCanvas({
               ? 'Label mode is planned for a later v1 milestone'
               : measureHelpText;
 
+  const patchViewOptions = (patch: Partial<ViewOptions>) => {
+    onViewOptionsChange((current) => ({ ...current, ...patch }));
+  };
+
+  const handleCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
+    const ctx = ctxRef.current;
+    if (!ctx || !moleculeData) return;
+    applyCameraPreset(ctx, preset);
+  };
+
   return (
     <div ref={containerRef} className="molecule-canvas">
+      <aside
+        className="view-options-panel"
+        aria-label="View options"
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="view-panel-header">
+          <span>View</span>
+          <span className="view-panel-status">Session</span>
+        </div>
+
+        <div className="view-toggle-row">
+          <button
+            type="button"
+            className={viewOptions.showFloor ? 'view-toggle active' : 'view-toggle'}
+            onClick={() => patchViewOptions({ showFloor: !viewOptions.showFloor })}
+          >
+            Floor
+          </button>
+          <button
+            type="button"
+            className={viewOptions.showGrid ? 'view-toggle active' : 'view-toggle'}
+            onClick={() => patchViewOptions({ showGrid: !viewOptions.showGrid })}
+          >
+            Grid
+          </button>
+        </div>
+
+        <label className="view-control">
+          <span>Backdrop</span>
+          <select
+            value={viewOptions.backdropTone}
+            onChange={(event) => patchViewOptions({ backdropTone: event.target.value as ViewOptions['backdropTone'] })}
+          >
+            <option value="clean">Clean white</option>
+            <option value="warm">Warm grey</option>
+            <option value="slate">Slate</option>
+          </select>
+        </label>
+
+        <label className="view-control">
+          <span>Projection</span>
+          <select
+            value={viewOptions.projection}
+            onChange={(event) => patchViewOptions({ projection: event.target.value as ViewOptions['projection'] })}
+          >
+            <option value="perspective">Perspective</option>
+            <option value="orthographic">Orthographic</option>
+          </select>
+        </label>
+
+        <label className="view-control">
+          <span>Lighting</span>
+          <select
+            value={viewOptions.lightingMood}
+            onChange={(event) => patchViewOptions({ lightingMood: event.target.value as ViewOptions['lightingMood'] })}
+          >
+            <option value="publication">Publication</option>
+            <option value="soft-studio">Soft studio</option>
+            <option value="high-contrast">High contrast</option>
+          </select>
+        </label>
+
+        <div className="view-split-row">
+          <button
+            type="button"
+            className={viewOptions.fogEnabled ? 'view-toggle active' : 'view-toggle'}
+            onClick={() => patchViewOptions({ fogEnabled: !viewOptions.fogEnabled })}
+          >
+            Depth cue
+          </button>
+          <span>{Math.round(viewOptions.fogIntensity * 100)}%</span>
+        </div>
+        <input
+          className="view-range"
+          type="range"
+          min="0.15"
+          max="1"
+          step="0.05"
+          value={viewOptions.fogIntensity}
+          disabled={!viewOptions.fogEnabled}
+          aria-label="Depth cue intensity"
+          onChange={(event) => patchViewOptions({ fogIntensity: Number(event.target.value) })}
+        />
+
+        <div className="view-split-row">
+          <button
+            type="button"
+            className={viewOptions.autoRotate ? 'view-toggle active' : 'view-toggle'}
+            onClick={() => patchViewOptions({ autoRotate: !viewOptions.autoRotate })}
+          >
+            Auto-rotate
+          </button>
+          <span>{viewOptions.autoRotateSpeed.toFixed(2)}x</span>
+        </div>
+        <input
+          className="view-range"
+          type="range"
+          min="0.15"
+          max="0.8"
+          step="0.05"
+          value={viewOptions.autoRotateSpeed}
+          disabled={!viewOptions.autoRotate}
+          aria-label="Auto-rotate speed"
+          onChange={(event) => patchViewOptions({ autoRotateSpeed: Number(event.target.value) })}
+        />
+
+        <div className="camera-preset-grid" aria-label="Camera presets">
+          <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('front')}>Front</button>
+          <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('top')}>Top</button>
+          <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('right')}>Right</button>
+          <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('iso')}>Iso</button>
+        </div>
+      </aside>
       <div className="canvas-help-strip">{helpText}</div>
       <div ref={bondLabelRef} className="bond-distance-label" />
       <div ref={angleLabelRef} className="angle-measure-label" />

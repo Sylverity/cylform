@@ -52,6 +52,22 @@ export interface SelectionSummary {
 
 export type ElementColorOverrides = Record<string, string>;
 
+export type BackdropTone = 'clean' | 'warm' | 'slate';
+export type ProjectionMode = 'perspective' | 'orthographic';
+export type LightingMood = 'publication' | 'soft-studio' | 'high-contrast';
+
+export interface ViewOptions {
+  showFloor: boolean;
+  showGrid: boolean;
+  backdropTone: BackdropTone;
+  projection: ProjectionMode;
+  lightingMood: LightingMood;
+  fogEnabled: boolean;
+  fogIntensity: number;
+  autoRotate: boolean;
+  autoRotateSpeed: number;
+}
+
 export interface MoleculeData {
   name: string;
   atoms: AtomData[];
@@ -74,6 +90,17 @@ function App() {
   });
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
+  const [viewOptions, setViewOptions] = useState<ViewOptions>({
+    showFloor: true,
+    showGrid: true,
+    backdropTone: 'clean',
+    projection: 'perspective',
+    lightingMood: 'publication',
+    fogEnabled: true,
+    fogIntensity: 0.45,
+    autoRotate: false,
+    autoRotateSpeed: 0.35,
+  });
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
@@ -301,6 +328,8 @@ function App() {
             showHydrogens={showHydrogens}
             elementColorOverrides={elementColorOverrides}
             atomSizeScale={atomSizeScale}
+            viewOptions={viewOptions}
+            onViewOptionsChange={setViewOptions}
             selectedBond={selectedBond}
             selectedAngle={selectedAngle}
             selectedDihedral={selectedDihedral}

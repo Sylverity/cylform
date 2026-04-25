@@ -40,6 +40,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - XYZ and PDB file loading via native dialog
 - Three.js scene: cylinder bonds (CYLview blue), CPK atom spheres, 4-point lighting
 - OrbitControls: rotate / pan / zoom / reset
+- In-canvas View overlay for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
 - Covalent-radius bond perception (no phantom bonds)
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
@@ -56,6 +57,7 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **Friendly desktop downloads** — Windows installers and Ubuntu/Debian packages from GitHub Releases
 - **Real-time 3-D rendering** — WebGL via Three.js, smooth 60 fps orbit/pan/zoom
 - **CYLview visual style** — glossy cyan cylinders, tiny CPK atom spheres, white background, 4-point lighting
+- **View controls overlay** — floor/grid reference plane, backdrop tones, projection mode, lighting moods, fog, auto-rotate, and camera presets
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
 - **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
@@ -224,6 +226,10 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
 | Reset view | **Reset View** button, or press **R** |
+| Change camera preset | Use **View** overlay → **Front**, **Top**, **Right**, or **Iso** |
+| Toggle floor/grid/backdrop | Use the left-side **View** overlay |
+| Toggle perspective/orthographic | Use **View** overlay → **Projection** |
+| Adjust lighting/fog/auto-rotate | Use the left-side **View** overlay |
 | Toggle hydrogens | **Hide H / Show H** button, or press **H** |
 | Change selection mode | Use the toolbar mode buttons, or press **V**, **M**, **A**, **B**, or **Z** |
 | Adjust atom style | Use **Style** in the side panel for element colours and atom size |
@@ -283,6 +289,7 @@ CYLviewClone/
 - [x] Three.js real-time renderer — glossy cyan cylinders, tiny CPK atom spheres
 - [x] White background, 4-point CYLview-style lighting
 - [x] Orbit / pan / zoom camera with damping
+- [x] Session view controls for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
 - [x] Native OS file dialog
 - [x] Auto-fit camera to loaded molecule
 - [x] Hydrogen visibility toggle (hide/show H)
