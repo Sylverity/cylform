@@ -6,7 +6,7 @@ const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; shortcut?: st
   { mode: 'atom', label: 'Atom', shortcut: 'A' },
   { mode: 'bond', label: 'Bond', shortcut: 'B' },
   { mode: 'atom-bond', label: 'Atom+Bond', shortcut: 'Z' },
-  { mode: 'label', label: 'Label', disabled: true },
+  { mode: 'label', label: 'Label', shortcut: 'L' },
 ];
 
 interface ToolbarProps {
@@ -47,7 +47,7 @@ export function Toolbar({
               type="button"
               className={selectionMode === mode ? 'mode-active' : ''}
               disabled={isLoading || disabled}
-              title={disabled ? 'Persistent labels are planned for a later v1 milestone.' : `${label} mode${shortcut ? ` (${shortcut})` : ''}`}
+              title={`${label} mode${shortcut ? ` (${shortcut})` : ''}`}
               onClick={() => onSelectionModeChange(mode)}
             >
               <span>{label}</span>

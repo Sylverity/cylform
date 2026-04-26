@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useEffect } from 'react'
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import './App.css'
@@ -26,22 +26,34 @@ export interface BondData {
   radius: number;
 }
 
+export interface LabelAnchor {
+  x: number;
+  y: number;
+  z: number;
+}
+
 export interface SelectedBondMeasurement {
   atom1Element: string;
   atom2Element: string;
   distance: number;
+  anchor: LabelAnchor;
+  atomIndices?: [number, number];
 }
 
 export interface SelectedAngleMeasurement {
   atomElements: [string, string, string];
   angleDegrees: number;
   stage: 1 | 2 | 3;
+  anchor?: LabelAnchor;
+  atomIndices?: [number, number, number];
 }
 
 export interface SelectedDihedralMeasurement {
   atomElements: [string, string, string, string];
   dihedralDegrees: number;
   stage: 1 | 2 | 3 | 4;
+  anchor?: LabelAnchor;
+  atomIndices?: [number, number, number, number];
 }
 
 export type SelectionMode = 'view' | 'measure' | 'atom' | 'bond' | 'atom-bond' | 'label';
@@ -52,6 +64,20 @@ export interface SelectionSummary {
 }
 
 export type ElementColorOverrides = Record<string, string>;
+export type LabelType = 'atom' | 'distance' | 'angle' | 'dihedral';
+
+export interface PersistentLabel {
+  id: string;
+  type: LabelType;
+  text: string;
+  anchor: LabelAnchor;
+  visible: boolean;
+  source?: {
+    atomIndex?: number;
+    atomIndices?: number[];
+    bond?: [number, number];
+  };
+}
 
 export type BackdropTone = 'clean' | 'warm' | 'slate';
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -114,6 +140,8 @@ function App() {
     atomCount: 0,
     bondCount: 0,
   });
+  const [persistentLabels, setPersistentLabels] = useState<PersistentLabel[]>([]);
+  const nextLabelId = useRef(1);
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
@@ -135,6 +163,7 @@ function App() {
     setSelectedAngle(null);
     setSelectedDihedral(null);
     setSelectionSummary({ atomCount: 0, bondCount: 0 });
+    setPersistentLabels([]);
     setElementColorOverrides({});
     setAtomSizeScale(1);
   }, []);
@@ -192,6 +221,61 @@ function App() {
 
   const handleClearSelection = useCallback(() => {
     window.dispatchEvent(new CustomEvent('clear-selection'));
+  }, []);
+
+  const handleCreatePersistentLabel = useCallback((label: Omit<PersistentLabel, 'id' | 'visible'>) => {
+    setPersistentLabels((current) => [
+      ...current,
+      {
+        ...label,
+        id: `label-${nextLabelId.current++}`,
+        visible: true,
+      },
+    ]);
+  }, []);
+
+  const handleAddMeasurementLabel = useCallback(() => {
+    if (selectedDihedral?.stage === 4 && selectedDihedral.anchor) {
+      handleCreatePersistentLabel({
+        type: 'dihedral',
+        text: `${selectedDihedral.atomElements.join('-')} ${selectedDihedral.dihedralDegrees.toFixed(2)} deg`,
+        anchor: selectedDihedral.anchor,
+        source: { atomIndices: selectedDihedral.atomIndices },
+      });
+      return;
+    }
+
+    if (selectedAngle?.stage === 3 && selectedAngle.anchor) {
+      handleCreatePersistentLabel({
+        type: 'angle',
+        text: `${selectedAngle.atomElements.join('-')} ${selectedAngle.angleDegrees.toFixed(2)} deg`,
+        anchor: selectedAngle.anchor,
+        source: { atomIndices: selectedAngle.atomIndices },
+      });
+      return;
+    }
+
+    if (selectedBond) {
+      handleCreatePersistentLabel({
+        type: 'distance',
+        text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${selectedBond.distance.toFixed(2)} A`,
+        anchor: selectedBond.anchor,
+        source: {
+          bond: selectedBond.atomIndices,
+          atomIndices: selectedBond.atomIndices,
+        },
+      });
+    }
+  }, [handleCreatePersistentLabel, selectedAngle, selectedBond, selectedDihedral]);
+
+  const handleTogglePersistentLabel = useCallback((id: string) => {
+    setPersistentLabels((current) => current.map((label) => (
+      label.id === id ? { ...label, visible: !label.visible } : label
+    )));
+  }, []);
+
+  const handleDeletePersistentLabel = useCallback((id: string) => {
+    setPersistentLabels((current) => current.filter((label) => label.id !== id));
   }, []);
 
   const hasSelection = Boolean(
@@ -269,6 +353,11 @@ function App() {
         case 'z':
           event.preventDefault();
           setSelectionMode('atom-bond');
+          handleClearSelection();
+          break;
+        case 'l':
+          event.preventDefault();
+          setSelectionMode('label');
           handleClearSelection();
           break;
         default:
@@ -359,10 +448,12 @@ function App() {
             selectedBond={selectedBond}
             selectedAngle={selectedAngle}
             selectedDihedral={selectedDihedral}
+            persistentLabels={persistentLabels}
             selectionMode={selectionMode}
             onBondSelected={setSelectedBond}
             onAngleSelected={setSelectedAngle}
             onDihedralSelected={setSelectedDihedral}
+            onPersistentLabelCreate={handleCreatePersistentLabel}
             onSelectionSummaryChange={setSelectionSummary}
             isLoading={isLoading}
             loadingLabel={loadingLabel}
@@ -377,6 +468,7 @@ function App() {
           selectedBond={selectedBond}
           selectedAngle={selectedAngle}
           selectedDihedral={selectedDihedral}
+          persistentLabels={persistentLabels}
           selectionMode={selectionMode}
           selectionSummary={selectionSummary}
           elementColorOverrides={elementColorOverrides}
@@ -393,6 +485,10 @@ function App() {
           }}
           onResetAllElementColors={() => setElementColorOverrides({})}
           onAtomSizeScaleChange={setAtomSizeScale}
+          onAddMeasurementLabel={handleAddMeasurementLabel}
+          onTogglePersistentLabel={handleTogglePersistentLabel}
+          onDeletePersistentLabel={handleDeletePersistentLabel}
+          onClearPersistentLabels={() => setPersistentLabels([])}
           error={error}
         />
       </div>

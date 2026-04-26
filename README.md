@@ -45,6 +45,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - XYZ/PDB metadata awareness for titles, energies, PDB atom/residue fields, multi-frame/model detection, and PDB CONECT bonds
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
+- Session-persistent atom and measurement labels with show/hide/delete controls
 - Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
@@ -64,6 +65,7 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
 - **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
+- **Session labels** — add persistent atom, distance, angle, and dihedral labels for the current molecule session
 - **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
@@ -233,11 +235,14 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Toggle perspective/orthographic | Use **View** overlay → **Projection** |
 | Adjust lighting/fog/auto-rotate | Use the left-side **View** overlay |
 | Toggle hydrogens | **Hide H / Show H** button, or press **H** |
-| Change selection mode | Use the toolbar mode buttons, or press **V**, **M**, **A**, **B**, or **Z** |
+| Change selection mode | Use the toolbar mode buttons, or press **V**, **M**, **A**, **B**, **Z**, or **L** |
 | Adjust atom style | Use **Style** in the side panel for element colours and atom size |
 | Measure bond distance | Click a bond |
 | Measure bond angle | Click three atoms progressively |
 | Measure dihedral angle | Click four atoms progressively |
+| Add atom label | Switch to **Label** mode, then click an atom |
+| Add measurement label | Measure a distance/angle/dihedral, then click **Add Label** in the side panel |
+| Manage labels | Use **Labels** in the side panel to show, hide, delete, or clear session labels |
 | Export PNG | Click **Export PNG**, or press **Ctrl+E** |
 | Quit | Use **File → Quit CYLview-NG** |
 | About | Use **Help → About CYLview-NG** |
@@ -301,11 +306,11 @@ CYLviewClone/
 - [x] Angle label on three selected atoms
 - [x] Dihedral label on four selected atoms
 - [x] Transient selection mode foundation for view, measure, atom, bond, and atom+bond workflows
+- [x] Session-persistent labels for atoms, distances, angles, and dihedrals
 - [x] PNG export with native save dialog
 
 ### V1 Release Target
-- [ ] Persistent label mode built on the explicit selection-mode foundation
-- [ ] Persistent labels for atoms, distances, angles, dihedrals, and custom text
+- [ ] Saved labels for atoms, distances, angles, dihedrals, and custom text through centralized presentation state
 - [ ] Basic per-atom and per-bond styling, including selected-region style application
 - [ ] Hide/show selected atoms, show all atoms, hide all hydrogens, and hide C-H hydrogens
 - [ ] Add, remove, and restyle simple bond types such as full, TS, dative, interaction, and thin

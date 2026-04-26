@@ -1,6 +1,7 @@
 import type {
   ElementColorOverrides,
   MoleculeData,
+  PersistentLabel,
   SelectionMode,
   SelectionSummary,
   SelectedAngleMeasurement,
@@ -82,6 +83,7 @@ interface InfoPanelProps {
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
+  persistentLabels: PersistentLabel[];
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   elementColorOverrides: ElementColorOverrides;
@@ -90,6 +92,10 @@ interface InfoPanelProps {
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
   onAtomSizeScaleChange: (scale: number) => void;
+  onAddMeasurementLabel: () => void;
+  onTogglePersistentLabel: (id: string) => void;
+  onDeletePersistentLabel: (id: string) => void;
+  onClearPersistentLabels: () => void;
   error: string | null;
 }
 
@@ -99,6 +105,7 @@ export function InfoPanel({
   selectedBond,
   selectedAngle,
   selectedDihedral,
+  persistentLabels,
   selectionMode,
   selectionSummary,
   elementColorOverrides,
@@ -107,6 +114,10 @@ export function InfoPanel({
   onResetElementColor,
   onResetAllElementColors,
   onAtomSizeScaleChange,
+  onAddMeasurementLabel,
+  onTogglePersistentLabel,
+  onDeletePersistentLabel,
+  onClearPersistentLabels,
   error,
 }: InfoPanelProps) {
   const visibleAtoms = moleculeData
@@ -130,6 +141,11 @@ export function InfoPanel({
   );
   const hasColorOverrides = Object.keys(elementColorOverrides).length > 0;
   const sourceMetadata = moleculeData ? metadataSummary(moleculeData) : null;
+  const canAddMeasurementLabel = Boolean(
+    selectedBond ||
+    (selectedAngle?.stage === 3 && selectedAngle.anchor) ||
+    (selectedDihedral?.stage === 4 && selectedDihedral.anchor),
+  );
 
   if (!moleculeData) {
     return (
@@ -388,6 +404,64 @@ export function InfoPanel({
           >
             Clear Selection
           </button>
+        )}
+        {selectionMode === 'measure' && canAddMeasurementLabel && (
+          <button
+            type="button"
+            className="panel-action"
+            onClick={onAddMeasurementLabel}
+          >
+            Add Label
+          </button>
+        )}
+      </div>
+
+      <div className="info-section">
+        <div className="style-control-header">
+          <h4>Labels</h4>
+          {persistentLabels.length > 0 && (
+            <button
+              type="button"
+              className="color-reset-all"
+              onClick={onClearPersistentLabels}
+            >
+              Clear labels
+            </button>
+          )}
+        </div>
+        {persistentLabels.length === 0 ? (
+          <p className="info-note">
+            Use Label mode to click atoms, or add labels from active measurements.
+          </p>
+        ) : (
+          <div className="label-list">
+            {persistentLabels.map((label) => (
+              <div key={label.id} className="label-row">
+                <div className="label-row-text">
+                  <span className="label-type">{label.type}</span>
+                  <span className={label.visible ? 'label-text' : 'label-text muted'}>
+                    {label.text}
+                  </span>
+                </div>
+                <div className="label-actions">
+                  <button
+                    type="button"
+                    className="color-reset"
+                    onClick={() => onTogglePersistentLabel(label.id)}
+                  >
+                    {label.visible ? 'Hide' : 'Show'}
+                  </button>
+                  <button
+                    type="button"
+                    className="color-reset"
+                    onClick={() => onDeletePersistentLabel(label.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

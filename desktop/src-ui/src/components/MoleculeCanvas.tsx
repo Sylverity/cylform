@@ -30,6 +30,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type {
   ElementColorOverrides,
+  PersistentLabel,
   MoleculeData,
   SelectionMode,
   SelectionSummary,
@@ -109,10 +110,12 @@ interface Props {
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
+  persistentLabels: PersistentLabel[];
   selectionMode: SelectionMode;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
   onAngleSelected: (angle: SelectedAngleMeasurement | null) => void;
   onDihedralSelected: (dihedral: SelectedDihedralMeasurement | null) => void;
+  onPersistentLabelCreate: (label: Omit<PersistentLabel, 'id' | 'visible'>) => void;
   onSelectionSummaryChange: (summary: SelectionSummary) => void;
   isLoading: boolean;
   loadingLabel: string;
@@ -125,6 +128,8 @@ interface BondSelectionData {
   atom2Element: string;
   distance: number;
   midpoint: Vector3;
+  atom1Index: number;
+  atom2Index: number;
 }
 
 interface SceneCtx {
@@ -291,10 +296,12 @@ export function MoleculeCanvas({
   selectedBond,
   selectedAngle,
   selectedDihedral,
+  persistentLabels,
   selectionMode,
   onBondSelected,
   onAngleSelected,
   onDihedralSelected,
+  onPersistentLabelCreate,
   onSelectionSummaryChange,
   isLoading,
   loadingLabel,
@@ -308,6 +315,8 @@ export function MoleculeCanvas({
   const dihedralLabelRef = useRef<HTMLDivElement>(null);
   const selectionModeRef = useRef<SelectionMode>(selectionMode);
   const viewOptionsRef = useRef<ViewOptions>(viewOptions);
+  const persistentLabelsRef = useRef<PersistentLabel[]>(persistentLabels);
+  const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
 
   useEffect(() => {
@@ -317,6 +326,10 @@ export function MoleculeCanvas({
   useEffect(() => {
     viewOptionsRef.current = viewOptions;
   }, [viewOptions]);
+
+  useEffect(() => {
+    persistentLabelsRef.current = persistentLabels;
+  }, [persistentLabels]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -468,6 +481,24 @@ export function MoleculeCanvas({
       } else if (dihedralLabel) {
         dihedralLabel.style.display = 'none';
       }
+
+      for (const label of persistentLabelsRef.current) {
+        const labelElement = persistentLabelRefs.current.get(label.id);
+        if (!labelElement) continue;
+        if (!label.visible) {
+          labelElement.style.display = 'none';
+          continue;
+        }
+
+        const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
+          .project(activeCamera);
+        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
+        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
+        const visible = projected.z >= -1 && projected.z <= 1;
+
+        labelElement.style.display = visible ? 'block' : 'none';
+        labelElement.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 10}px)`;
+      }
       renderer.render(scene, activeCamera);
     }
     animate();
@@ -612,12 +643,33 @@ export function MoleculeCanvas({
 
       const activeMode = selectionModeRef.current;
 
-      if (activeMode === 'view' || activeMode === 'label') {
+      if (activeMode === 'view') {
         return;
       }
 
       const atomHit = current.raycaster.intersectObjects(current.atomMeshes, false)[0];
       const bondHit = current.raycaster.intersectObjects(current.bondMeshes, false)[0];
+
+      if (activeMode === 'label') {
+        clearMeasurementSelection();
+        if (atomHit && atomHit.object instanceof Mesh) {
+          const atomMesh = atomHit.object;
+          const atomIndex = Number(atomMesh.userData.atomIndex ?? 0);
+          const element = String(atomMesh.userData.element ?? 'Atom');
+          const serial = atomIndex + 1;
+          onPersistentLabelCreate({
+            type: 'atom',
+            text: `${element}${serial}`,
+            anchor: {
+              x: atomMesh.position.x,
+              y: atomMesh.position.y + 0.25,
+              z: atomMesh.position.z,
+            },
+            source: { atomIndex },
+          });
+        }
+        return;
+      }
 
       if (activeMode === 'atom' || activeMode === 'bond' || activeMode === 'atom-bond') {
         clearMeasurementSelection();
@@ -728,6 +780,7 @@ export function MoleculeCanvas({
 
         current.angleDegrees = angleDegrees;
         current.angleLabelPosition = b.position.clone().add(offsetDirection.multiplyScalar(0.9));
+        const angleAnchor = current.angleLabelPosition.clone();
         onAngleSelected({
           atomElements: [
             a.userData.element as string,
@@ -736,6 +789,12 @@ export function MoleculeCanvas({
           ],
           angleDegrees,
           stage: 3,
+          anchor: { x: angleAnchor.x, y: angleAnchor.y, z: angleAnchor.z },
+          atomIndices: [
+            Number(a.userData.atomIndex ?? 0),
+            Number(b.userData.atomIndex ?? 0),
+            Number(c.userData.atomIndex ?? 0),
+          ],
         });
 
         if (current.angleSelection.length === 3) {
@@ -784,6 +843,7 @@ export function MoleculeCanvas({
           .addVectors(b.position, c.position)
           .multiplyScalar(0.5)
           .add(new Vector3(0.35, 0.35, 0));
+        const dihedralAnchor = current.dihedralLabelPosition.clone();
         onDihedralSelected({
           atomElements: [
             a.userData.element as string,
@@ -793,6 +853,13 @@ export function MoleculeCanvas({
           ],
           dihedralDegrees,
           stage: 4,
+          anchor: { x: dihedralAnchor.x, y: dihedralAnchor.y, z: dihedralAnchor.z },
+          atomIndices: [
+            Number(a.userData.atomIndex ?? 0),
+            Number(b.userData.atomIndex ?? 0),
+            Number(c.userData.atomIndex ?? 0),
+            Number(d.userData.atomIndex ?? 0),
+          ],
         });
         return;
       }
@@ -833,6 +900,8 @@ export function MoleculeCanvas({
         atom1Element: bond.atom1Element,
         atom2Element: bond.atom2Element,
         distance: bond.distance,
+        anchor: { x: bond.midpoint.x, y: bond.midpoint.y, z: bond.midpoint.z },
+        atomIndices: [bond.atom1Index, bond.atom2Index],
       });
     };
 
@@ -899,6 +968,7 @@ export function MoleculeCanvas({
     onBondSelected,
     onDihedralSelected,
     onError,
+    onPersistentLabelCreate,
     onSelectionSummaryChange,
   ]);
 
@@ -978,6 +1048,8 @@ export function MoleculeCanvas({
         atom2Element: a2.element,
         distance: len,
         midpoint: mesh.position.clone(),
+        atom1Index: bond.atom1,
+        atom2Index: bond.atom2,
       } satisfies BondSelectionData;
 
       if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
@@ -1011,6 +1083,7 @@ export function MoleculeCanvas({
       mesh.position.set(atom.x, atom.y, atom.z);
       mesh.scale.setScalar(r);
       mesh.userData.element = atom.element;
+      mesh.userData.atomIndex = moleculeData.atoms.indexOf(atom);
       mesh.userData.baseRadius = r;
       mesh.userData.defaultMaterial = mat;
       molGroup.add(mesh);
@@ -1152,7 +1225,7 @@ export function MoleculeCanvas({
           : selectionMode === 'atom-bond'
             ? 'Atom+Bond mode: click atoms or bonds to select'
             : selectionMode === 'label'
-              ? 'Label mode is planned for a later v1 milestone'
+              ? 'Label mode: click atoms to add persistent labels'
               : measureHelpText;
 
   const patchViewOptions = (patch: Partial<ViewOptions>) => {
@@ -1286,6 +1359,22 @@ export function MoleculeCanvas({
       <div ref={bondLabelRef} className="bond-distance-label" />
       <div ref={angleLabelRef} className="angle-measure-label" />
       <div ref={dihedralLabelRef} className="dihedral-measure-label" />
+      {persistentLabels.map((label) => (
+        <div
+          key={label.id}
+          ref={(element) => {
+            if (element) {
+              persistentLabelRefs.current.set(label.id, element);
+            } else {
+              persistentLabelRefs.current.delete(label.id);
+            }
+          }}
+          className={`persistent-label persistent-label-${label.type}`}
+          title={label.type}
+        >
+          {label.text}
+        </div>
+      ))}
       {!moleculeData && (
         <div className="canvas-placeholder">
           <div className="placeholder-mark" aria-hidden="true">
