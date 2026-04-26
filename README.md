@@ -46,6 +46,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
 - Session-persistent atom and measurement labels with show/hide/delete controls
+- Session atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
 - Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
@@ -63,9 +64,10 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Source metadata disclosure** — preserves common XYZ/PDB titles, energies, PDB atom/residue fields, frame/model counts, parser notes, and explicit PDB `CONECT` bonds
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
-- **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
+- **Atom visibility controls** — hide selected atoms, show all atoms, hide all hydrogens, or hide only C-H hydrogens for cleaner figures
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
 - **Session labels** — add persistent atom, distance, angle, and dihedral labels for the current molecule session
+- **Session visibility** — atom hiding and hydrogen filters persist while the molecule is loaded, then reset on the next load
 - **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
@@ -234,7 +236,10 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Toggle floor/grid/backdrop | Use the left-side **View** overlay |
 | Toggle perspective/orthographic | Use **View** overlay → **Projection** |
 | Adjust lighting/fog/auto-rotate | Use the left-side **View** overlay |
-| Toggle hydrogens | **Hide H / Show H** button, or press **H** |
+| Cycle hydrogen visibility | **Hide H / Hide C-H / Show H** button, or press **H** |
+| Choose hydrogen mode | Use **Style** → **Show H**, **Hide H**, or **Hide C-H H** |
+| Hide selected atoms | Switch to **Atom** or **Atom+Bond**, select atoms, then click **Hide Selected Atoms** |
+| Show hidden atoms | Use **Style** → **Show All Atoms** |
 | Change selection mode | Use the toolbar mode buttons, or press **V**, **M**, **A**, **B**, **Z**, or **L** |
 | Adjust atom style | Use **Style** in the side panel for element colours and atom size |
 | Measure bond distance | Click a bond |
@@ -301,6 +306,7 @@ CYLviewClone/
 - [x] XYZ/PDB source metadata disclosure, including PDB atom/residue fields and CONECT bonds
 - [x] Auto-fit camera to loaded molecule
 - [x] Hydrogen visibility toggle (hide/show H)
+- [x] Atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
 - [x] Element colour customisation
 - [x] Distance label on selected bond
 - [x] Angle label on three selected atoms
@@ -312,7 +318,7 @@ CYLviewClone/
 ### V1 Release Target
 - [ ] Saved labels for atoms, distances, angles, dihedrals, and custom text through centralized presentation state
 - [ ] Basic per-atom and per-bond styling, including selected-region style application
-- [ ] Hide/show selected atoms, show all atoms, hide all hydrogens, and hide C-H hydrogens
+- [ ] Saved atom visibility state through centralized presentation state
 - [ ] Add, remove, and restyle simple bond types such as full, TS, dative, interaction, and thin
 - [ ] Saved poses for reusable publication viewpoints
 - [ ] Recent files plus previous/next navigation within the current structure directory

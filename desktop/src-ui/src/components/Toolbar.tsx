@@ -1,4 +1,4 @@
-import type { SelectionMode } from '../App';
+import type { HydrogenVisibility, SelectionMode } from '../App';
 
 const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; shortcut?: string; disabled?: boolean }> = [
   { mode: 'view', label: 'View', shortcut: 'V' },
@@ -14,12 +14,18 @@ interface ToolbarProps {
   onResetView: () => void;
   onExportPng: () => void;
   isLoading: boolean;
-  showHydrogens: boolean;
-  onToggleHydrogens: () => void;
+  hydrogenVisibility: HydrogenVisibility;
+  onCycleHydrogenVisibility: () => void;
   selectionMode: SelectionMode;
   onSelectionModeChange: (mode: SelectionMode) => void;
   onClearSelection: () => void;
   hasSelection: boolean;
+}
+
+function hydrogenButtonLabel(mode: HydrogenVisibility): string {
+  if (mode === 'shown') return 'Hide H';
+  if (mode === 'hidden') return 'Hide C-H';
+  return 'Show H';
 }
 
 export function Toolbar({
@@ -27,8 +33,8 @@ export function Toolbar({
   onResetView,
   onExportPng,
   isLoading,
-  showHydrogens,
-  onToggleHydrogens,
+  hydrogenVisibility,
+  onCycleHydrogenVisibility,
   selectionMode,
   onSelectionModeChange,
   onClearSelection,
@@ -85,11 +91,12 @@ export function Toolbar({
         </button>
 
         <button
-          onClick={onToggleHydrogens}
+          onClick={onCycleHydrogenVisibility}
           disabled={isLoading}
-          className={showHydrogens ? 'toggle-active' : ''}
+          className={hydrogenVisibility !== 'shown' ? 'toggle-active' : ''}
+          title="Cycle hydrogen visibility: shown, hidden, hide C-H hydrogens"
         >
-          <span>{showHydrogens ? 'Hide H' : 'Show H'}</span>
+          <span>{hydrogenButtonLabel(hydrogenVisibility)}</span>
           <kbd>H</kbd>
         </button>
       </div>

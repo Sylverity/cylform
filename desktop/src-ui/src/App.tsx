@@ -57,10 +57,12 @@ export interface SelectedDihedralMeasurement {
 }
 
 export type SelectionMode = 'view' | 'measure' | 'atom' | 'bond' | 'atom-bond' | 'label';
+export type HydrogenVisibility = 'shown' | 'hidden' | 'hide-c-h';
 
 export interface SelectionSummary {
   atomCount: number;
   bondCount: number;
+  atomIndices: number[];
 }
 
 export type ElementColorOverrides = Record<string, string>;
@@ -131,7 +133,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState<string>('Preparing molecular workspace');
   const [error, setError] = useState<string | null>(null);
-  const [showHydrogens, setShowHydrogens] = useState(true);
+  const [hydrogenVisibility, setHydrogenVisibility] = useState<HydrogenVisibility>('shown');
+  const [hiddenAtomIndices, setHiddenAtomIndices] = useState<number[]>([]);
   const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
   const [selectedAngle, setSelectedAngle] = useState<SelectedAngleMeasurement | null>(null);
   const [selectedDihedral, setSelectedDihedral] = useState<SelectedDihedralMeasurement | null>(null);
@@ -139,6 +142,7 @@ function App() {
   const [selectionSummary, setSelectionSummary] = useState<SelectionSummary>({
     atomCount: 0,
     bondCount: 0,
+    atomIndices: [],
   });
   const [persistentLabels, setPersistentLabels] = useState<PersistentLabel[]>([]);
   const nextLabelId = useRef(1);
@@ -162,10 +166,12 @@ function App() {
     setSelectedBond(null);
     setSelectedAngle(null);
     setSelectedDihedral(null);
-    setSelectionSummary({ atomCount: 0, bondCount: 0 });
+    setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [] });
     setPersistentLabels([]);
     setElementColorOverrides({});
     setAtomSizeScale(1);
+    setHydrogenVisibility('shown');
+    setHiddenAtomIndices([]);
   }, []);
 
   const handleError = useCallback((err: string) => {
@@ -222,6 +228,31 @@ function App() {
   const handleClearSelection = useCallback(() => {
     window.dispatchEvent(new CustomEvent('clear-selection'));
   }, []);
+
+  const cycleHydrogenVisibility = useCallback(() => {
+    setHydrogenVisibility((current) => {
+      if (current === 'shown') return 'hidden';
+      if (current === 'hidden') return 'hide-c-h';
+      return 'shown';
+    });
+  }, []);
+
+  const handleHideSelectedAtoms = useCallback(() => {
+    setHiddenAtomIndices((current) => {
+      const next = new Set(current);
+      for (const atomIndex of selectionSummary.atomIndices) {
+        next.add(atomIndex);
+      }
+      return Array.from(next).sort((a, b) => a - b);
+    });
+    handleClearSelection();
+  }, [handleClearSelection, selectionSummary.atomIndices]);
+
+  const handleShowAllAtoms = useCallback(() => {
+    setHiddenAtomIndices([]);
+    setHydrogenVisibility('shown');
+    handleClearSelection();
+  }, [handleClearSelection]);
 
   const handleCreatePersistentLabel = useCallback((label: Omit<PersistentLabel, 'id' | 'visible'>) => {
     setPersistentLabels((current) => [
@@ -285,6 +316,7 @@ function App() {
     || selectionSummary.atomCount > 0
     || selectionSummary.bondCount > 0,
   );
+  const hiddenAtomCount = hiddenAtomIndices.length;
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -328,7 +360,7 @@ function App() {
           break;
         case 'h':
           event.preventDefault();
-          setShowHydrogens((current) => !current);
+          cycleHydrogenVisibility();
           break;
         case 'v':
           event.preventDefault();
@@ -373,6 +405,7 @@ function App() {
     handleOpenFile,
     handleResetView,
     isLoading,
+    cycleHydrogenVisibility,
   ]);
 
   useEffect(() => {
@@ -410,8 +443,8 @@ function App() {
         onResetView={handleResetView}
         onExportPng={handleExportPng}
         isLoading={isLoading}
-        showHydrogens={showHydrogens}
-        onToggleHydrogens={() => setShowHydrogens((current) => !current)}
+        hydrogenVisibility={hydrogenVisibility}
+        onCycleHydrogenVisibility={cycleHydrogenVisibility}
         selectionMode={selectionMode}
         onSelectionModeChange={(mode) => {
           setSelectionMode(mode);
@@ -440,7 +473,8 @@ function App() {
         >
           <MoleculeCanvas
             moleculeData={moleculeData}
-            showHydrogens={showHydrogens}
+            hydrogenVisibility={hydrogenVisibility}
+            hiddenAtomIndices={hiddenAtomIndices}
             elementColorOverrides={elementColorOverrides}
             atomSizeScale={atomSizeScale}
             viewOptions={viewOptions}
@@ -464,7 +498,8 @@ function App() {
 
         <InfoPanel
           moleculeData={moleculeData}
-          showHydrogens={showHydrogens}
+          hydrogenVisibility={hydrogenVisibility}
+          hiddenAtomIndices={hiddenAtomIndices}
           selectedBond={selectedBond}
           selectedAngle={selectedAngle}
           selectedDihedral={selectedDihedral}
@@ -485,11 +520,15 @@ function App() {
           }}
           onResetAllElementColors={() => setElementColorOverrides({})}
           onAtomSizeScaleChange={setAtomSizeScale}
+          onHydrogenVisibilityChange={setHydrogenVisibility}
+          onHideSelectedAtoms={handleHideSelectedAtoms}
+          onShowAllAtoms={handleShowAllAtoms}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}
           onDeletePersistentLabel={handleDeletePersistentLabel}
           onClearPersistentLabels={() => setPersistentLabels([])}
           error={error}
+          hiddenAtomCount={hiddenAtomCount}
         />
       </div>
     </div>

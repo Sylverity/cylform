@@ -1,5 +1,6 @@
 import type {
   ElementColorOverrides,
+  HydrogenVisibility,
   MoleculeData,
   PersistentLabel,
   SelectionMode,
@@ -47,6 +48,36 @@ function selectionModeLabel(mode: SelectionMode): string {
   }
 }
 
+function hydrogenVisibilityLabel(mode: HydrogenVisibility): string {
+  if (mode === 'shown') return 'Shown';
+  if (mode === 'hidden') return 'Hidden';
+  return 'Hide C-H';
+}
+
+function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
+  const atom = moleculeData.atoms[atomIndex];
+  if (!atom || atom.element !== 'H') return false;
+
+  return moleculeData.bonds.some((bond) => {
+    if (bond.atom1 === atomIndex) return moleculeData.atoms[bond.atom2]?.element === 'C';
+    if (bond.atom2 === atomIndex) return moleculeData.atoms[bond.atom1]?.element === 'C';
+    return false;
+  });
+}
+
+function isAtomVisible(
+  atomIndex: number,
+  moleculeData: MoleculeData,
+  hydrogenVisibility: HydrogenVisibility,
+  hiddenAtomSet: Set<number>,
+): boolean {
+  const atom = moleculeData.atoms[atomIndex];
+  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
+  if (hydrogenVisibility === 'hidden' && atom.element === 'H') return false;
+  if (hydrogenVisibility === 'hide-c-h' && isCarbonHydrogen(atomIndex, moleculeData)) return false;
+  return true;
+}
+
 function metadataSummary(moleculeData: MoleculeData) {
   const pdbAtoms = moleculeData.atoms.filter((atom) => atom.metadata);
   const chains = new Set<string>();
@@ -79,7 +110,8 @@ function metadataSummary(moleculeData: MoleculeData) {
 
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
-  showHydrogens: boolean;
+  hydrogenVisibility: HydrogenVisibility;
+  hiddenAtomIndices: number[];
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
@@ -92,16 +124,21 @@ interface InfoPanelProps {
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
   onAtomSizeScaleChange: (scale: number) => void;
+  onHydrogenVisibilityChange: (mode: HydrogenVisibility) => void;
+  onHideSelectedAtoms: () => void;
+  onShowAllAtoms: () => void;
   onAddMeasurementLabel: () => void;
   onTogglePersistentLabel: (id: string) => void;
   onDeletePersistentLabel: (id: string) => void;
   onClearPersistentLabels: () => void;
   error: string | null;
+  hiddenAtomCount: number;
 }
 
 export function InfoPanel({
   moleculeData,
-  showHydrogens,
+  hydrogenVisibility,
+  hiddenAtomIndices,
   selectedBond,
   selectedAngle,
   selectedDihedral,
@@ -114,22 +151,29 @@ export function InfoPanel({
   onResetElementColor,
   onResetAllElementColors,
   onAtomSizeScaleChange,
+  onHydrogenVisibilityChange,
+  onHideSelectedAtoms,
+  onShowAllAtoms,
   onAddMeasurementLabel,
   onTogglePersistentLabel,
   onDeletePersistentLabel,
   onClearPersistentLabels,
   error,
+  hiddenAtomCount,
 }: InfoPanelProps) {
+  const hiddenAtomSet = new Set(hiddenAtomIndices);
   const visibleAtoms = moleculeData
-    ? moleculeData.atoms.filter((atom) => showHydrogens || atom.element !== 'H')
+    ? moleculeData.atoms.filter((_, atomIndex) => (
+        isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet)
+      ))
     : [];
   const visibleElements = Array.from(new Set(visibleAtoms.map((atom) => atom.element))).sort();
   const visibleBonds = moleculeData
     ? moleculeData.bonds.filter((bond) => {
-        if (showHydrogens) return true;
-        const atom1 = moleculeData.atoms[bond.atom1];
-        const atom2 = moleculeData.atoms[bond.atom2];
-        return atom1?.element !== 'H' && atom2?.element !== 'H';
+        return (
+          isAtomVisible(bond.atom1, moleculeData, hydrogenVisibility, hiddenAtomSet) &&
+          isAtomVisible(bond.atom2, moleculeData, hydrogenVisibility, hiddenAtomSet)
+        );
       })
     : [];
   const hasSelection = Boolean(
@@ -145,6 +189,11 @@ export function InfoPanel({
     selectedBond ||
     (selectedAngle?.stage === 3 && selectedAngle.anchor) ||
     (selectedDihedral?.stage === 4 && selectedDihedral.anchor),
+  );
+  const visibilityFilterActive = hydrogenVisibility !== 'shown' || hiddenAtomCount > 0;
+  const canHideSelectedAtoms = (
+    (selectionMode === 'atom' || selectionMode === 'atom-bond') &&
+    selectionSummary.atomCount > 0
   );
 
   if (!moleculeData) {
@@ -193,7 +242,7 @@ export function InfoPanel({
           <h4>Style</h4>
           <div className="info-row">
             <span className="info-label">Hydrogens</span>
-            <span className="info-value">{showHydrogens ? 'Shown' : 'Hidden'}</span>
+            <span className="info-value">{hydrogenVisibilityLabel(hydrogenVisibility)}</span>
           </div>
           <div className="info-row">
             <span className="info-label">Colours</span>
@@ -250,22 +299,30 @@ export function InfoPanel({
           <span className="info-label">Atoms</span>
           <span className="info-value">
             {visibleAtoms.length.toLocaleString()}
-            {!showHydrogens && ` / ${moleculeData.atoms.length.toLocaleString()}`}
+            {visibilityFilterActive && ` / ${moleculeData.atoms.length.toLocaleString()}`}
           </span>
         </div>
         <div className="info-row">
           <span className="info-label">Bonds</span>
           <span className="info-value">
             {visibleBonds.length.toLocaleString()}
-            {!showHydrogens && ` / ${moleculeData.bonds.length.toLocaleString()}`}
+            {visibilityFilterActive && ` / ${moleculeData.bonds.length.toLocaleString()}`}
           </span>
         </div>
         <div className="info-row">
           <span className="info-label">Hydrogens</span>
           <span className="info-value">
-            {showHydrogens ? 'Shown' : 'Hidden'}
+            {hydrogenVisibilityLabel(hydrogenVisibility)}
           </span>
         </div>
+        {visibilityFilterActive && (
+          <div className="info-row">
+            <span className="info-label">Visibility</span>
+            <span className="info-value">
+              {hiddenAtomCount > 0 ? `${hiddenAtomCount} hidden atoms` : 'Hydrogen filter'}
+            </span>
+          </div>
+        )}
         <div className="info-row">
           <span className="info-label">Engine</span>
           <span className="info-value" style={{ color: '#22c55e' }}>WebGL · Three.js</span>
@@ -405,6 +462,15 @@ export function InfoPanel({
             Clear Selection
           </button>
         )}
+        {canHideSelectedAtoms && (
+          <button
+            type="button"
+            className="panel-action"
+            onClick={onHideSelectedAtoms}
+          >
+            Hide Selected Atoms
+          </button>
+        )}
         {selectionMode === 'measure' && canAddMeasurementLabel && (
           <button
             type="button"
@@ -469,8 +535,39 @@ export function InfoPanel({
         <h4>Style</h4>
         <div className="info-row">
           <span className="info-label">Hydrogens</span>
-          <span className="info-value">{showHydrogens ? 'Shown' : 'Hidden'}</span>
+          <span className="info-value">{hydrogenVisibilityLabel(hydrogenVisibility)}</span>
         </div>
+        <div className="visibility-mode-grid" aria-label="Hydrogen visibility">
+          {([
+            ['shown', 'Show H'],
+            ['hidden', 'Hide H'],
+            ['hide-c-h', 'Hide C-H H'],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              className={hydrogenVisibility === mode ? 'visibility-mode active' : 'visibility-mode'}
+              onClick={() => onHydrogenVisibilityChange(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="info-row">
+          <span className="info-label">Hidden atoms</span>
+          <span className="info-value">
+            {hiddenAtomCount > 0 ? hiddenAtomCount.toLocaleString() : 'None'}
+          </span>
+        </div>
+        {visibilityFilterActive && (
+          <button
+            type="button"
+            className="panel-action"
+            onClick={onShowAllAtoms}
+          >
+            Show All Atoms
+          </button>
+        )}
         <div className="style-control">
           <div className="style-control-header">
             <span className="info-label">Atom size</span>

@@ -30,6 +30,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import type {
   ElementColorOverrides,
+  HydrogenVisibility,
   PersistentLabel,
   MoleculeData,
   SelectionMode,
@@ -102,7 +103,8 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 
 interface Props {
   moleculeData: MoleculeData | null;
-  showHydrogens: boolean;
+  hydrogenVisibility: HydrogenVisibility;
+  hiddenAtomIndices: number[];
   elementColorOverrides: ElementColorOverrides;
   atomSizeScale: number;
   viewOptions: ViewOptions;
@@ -286,9 +288,51 @@ function updateAngleSelection(
   return [...selection, clickedAtom];
 }
 
+function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
+  const atom = moleculeData.atoms[atomIndex];
+  if (!atom || atom.element !== 'H') return false;
+
+  return moleculeData.bonds.some((bond) => {
+    if (bond.atom1 === atomIndex) return moleculeData.atoms[bond.atom2]?.element === 'C';
+    if (bond.atom2 === atomIndex) return moleculeData.atoms[bond.atom1]?.element === 'C';
+    return false;
+  });
+}
+
+function isAtomVisible(
+  atomIndex: number,
+  moleculeData: MoleculeData,
+  hydrogenVisibility: HydrogenVisibility,
+  hiddenAtomSet: Set<number>,
+): boolean {
+  const atom = moleculeData.atoms[atomIndex];
+  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
+  if (hydrogenVisibility === 'hidden' && atom.element === 'H') return false;
+  if (hydrogenVisibility === 'hide-c-h' && isCarbonHydrogen(atomIndex, moleculeData)) return false;
+  return true;
+}
+
+function labelSourceVisible(
+  label: PersistentLabel,
+  moleculeData: MoleculeData | null,
+  hydrogenVisibility: HydrogenVisibility,
+  hiddenAtomSet: Set<number>,
+): boolean {
+  if (!moleculeData) return false;
+  const atomIndices = label.source?.atomIndices
+    ?? (typeof label.source?.atomIndex === 'number' ? [label.source.atomIndex] : undefined)
+    ?? label.source?.bond;
+
+  if (!atomIndices || atomIndices.length === 0) return true;
+  return atomIndices.every((atomIndex) => (
+    isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet)
+  ));
+}
+
 export function MoleculeCanvas({
   moleculeData,
-  showHydrogens,
+  hydrogenVisibility,
+  hiddenAtomIndices,
   elementColorOverrides,
   atomSizeScale,
   viewOptions,
@@ -316,6 +360,9 @@ export function MoleculeCanvas({
   const selectionModeRef = useRef<SelectionMode>(selectionMode);
   const viewOptionsRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelsRef = useRef<PersistentLabel[]>(persistentLabels);
+  const hiddenAtomIndicesRef = useRef<number[]>(hiddenAtomIndices);
+  const hydrogenVisibilityRef = useRef<HydrogenVisibility>(hydrogenVisibility);
+  const moleculeDataRef = useRef<MoleculeData | null>(moleculeData);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
 
@@ -330,6 +377,18 @@ export function MoleculeCanvas({
   useEffect(() => {
     persistentLabelsRef.current = persistentLabels;
   }, [persistentLabels]);
+
+  useEffect(() => {
+    hiddenAtomIndicesRef.current = hiddenAtomIndices;
+  }, [hiddenAtomIndices]);
+
+  useEffect(() => {
+    hydrogenVisibilityRef.current = hydrogenVisibility;
+  }, [hydrogenVisibility]);
+
+  useEffect(() => {
+    moleculeDataRef.current = moleculeData;
+  }, [moleculeData]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -482,10 +541,17 @@ export function MoleculeCanvas({
         dihedralLabel.style.display = 'none';
       }
 
+      const currentMoleculeData = moleculeDataRef.current;
+      const currentHiddenAtomSet = new Set(hiddenAtomIndicesRef.current);
+      const currentHydrogenVisibility = hydrogenVisibilityRef.current;
+
       for (const label of persistentLabelsRef.current) {
         const labelElement = persistentLabelRefs.current.get(label.id);
         if (!labelElement) continue;
-        if (!label.visible) {
+        if (
+          !label.visible ||
+          !labelSourceVisible(label, currentMoleculeData, currentHydrogenVisibility, currentHiddenAtomSet)
+        ) {
           labelElement.style.display = 'none';
           continue;
         }
@@ -567,7 +633,7 @@ export function MoleculeCanvas({
       onBondSelected(null);
       onAngleSelected(null);
       onDihedralSelected(null);
-      onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
+      onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [] });
     };
 
     const clearMeasurementSelection = () => {
@@ -596,6 +662,9 @@ export function MoleculeCanvas({
       onSelectionSummaryChange({
         atomCount: current.modeSelectedAtomMeshes.length,
         bondCount: current.modeSelectedBondMeshes.length,
+        atomIndices: current.modeSelectedAtomMeshes
+          .map((mesh) => Number(mesh.userData.atomIndex ?? -1))
+          .filter((atomIndex) => atomIndex >= 0),
       });
     };
 
@@ -1014,7 +1083,7 @@ export function MoleculeCanvas({
     onBondSelected(null);
     onAngleSelected(null);
     onDihedralSelected(null);
-    onSelectionSummaryChange({ atomCount: 0, bondCount: 0 });
+    onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [] });
 
     if (!moleculeData || moleculeData.atoms.length === 0) {
       ctx.lastMoleculeBox = null;
@@ -1024,13 +1093,19 @@ export function MoleculeCanvas({
     }
 
     const UP = new Vector3(0, 1, 0);
+    const hiddenAtomSet = new Set(hiddenAtomIndices);
 
     // --- Bonds first (atoms rendered on top) ---
     for (const bond of moleculeData.bonds) {
       const a1 = moleculeData.atoms[bond.atom1];
       const a2 = moleculeData.atoms[bond.atom2];
       if (!a1 || !a2) continue;
-      if (!showHydrogens && (a1.element === 'H' || a2.element === 'H')) continue;
+      if (
+        !isAtomVisible(bond.atom1, moleculeData, hydrogenVisibility, hiddenAtomSet) ||
+        !isAtomVisible(bond.atom2, moleculeData, hydrogenVisibility, hiddenAtomSet)
+      ) {
+        continue;
+      }
 
       const start   = new Vector3(a1.x, a1.y, a1.z);
       const end     = new Vector3(a2.x, a2.y, a2.z);
@@ -1067,8 +1142,8 @@ export function MoleculeCanvas({
     }
 
     // --- Atoms on top ---
-    for (const atom of moleculeData.atoms) {
-      if (!showHydrogens && atom.element === 'H') continue;
+    for (const [atomIndex, atom] of moleculeData.atoms.entries()) {
+      if (!isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet)) continue;
 
       if (!atomMats.has(atom.element)) {
         atomMats.set(atom.element, new MeshPhongMaterial({
@@ -1083,7 +1158,7 @@ export function MoleculeCanvas({
       mesh.position.set(atom.x, atom.y, atom.z);
       mesh.scale.setScalar(r);
       mesh.userData.element = atom.element;
-      mesh.userData.atomIndex = moleculeData.atoms.indexOf(atom);
+      mesh.userData.atomIndex = atomIndex;
       mesh.userData.baseRadius = r;
       mesh.userData.defaultMaterial = mat;
       molGroup.add(mesh);
@@ -1125,7 +1200,8 @@ export function MoleculeCanvas({
 
   }, [
     moleculeData,
-    showHydrogens,
+    hydrogenVisibility,
+    hiddenAtomIndices,
     onBondSelected,
     onAngleSelected,
     onDihedralSelected,
@@ -1185,7 +1261,7 @@ export function MoleculeCanvas({
     for (const [element, material] of ctx.atomMats.entries()) {
       material.color.set(elementColorOverrides[element] ?? atomColorHex(element));
     }
-  }, [elementColorOverrides, moleculeData, showHydrogens]);
+  }, [elementColorOverrides, moleculeData, hydrogenVisibility, hiddenAtomIndices]);
 
   // Update atom scale without rebuilding meshes or touching the camera.
   useEffect(() => {
@@ -1198,7 +1274,7 @@ export function MoleculeCanvas({
         : atomDisplayRadius(String(atomMesh.userData.element ?? ''));
       atomMesh.scale.setScalar(baseRadius * atomSizeScale);
     }
-  }, [atomSizeScale, moleculeData, showHydrogens]);
+  }, [atomSizeScale, moleculeData, hydrogenVisibility, hiddenAtomIndices]);
 
   const measureHelpText = selectedDihedral?.stage === 1
     ? 'Select atom 2'

@@ -844,6 +844,29 @@
   margin-top: 12px;
 }
 
+.visibility-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.visibility-mode {
+  min-width: 0;
+  padding: 6px 7px;
+  border-color: rgba(207, 215, 223, 0.95);
+  background: rgba(249, 251, 252, 0.95);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.visibility-mode.active {
+  border-color: rgba(47, 157, 244, 0.4);
+  background: rgba(47, 157, 244, 0.12);
+  color: #176bb3;
+}
+
 .style-control-header {
   display: flex;
   align-items: center;
