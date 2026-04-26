@@ -3,12 +3,25 @@
 ## [Unreleased]
 
 ### Planned
-- Hydrogen visibility toggle
-- Element colour customisation
-- Distance / angle / dihedral labels
-- PNG export
-- Multi-frame XYZ trajectory playback
-- Gaussian output file support (opt steps, frequencies)
+- Promote `1.0.0-rc.1` to `1.0.0` after Windows 11 and Ubuntu/Debian smoke testing.
+
+---
+
+## [1.0.0-rc.1] — 2026-04-26
+
+Release candidate for the v1 publication-workflow milestone.
+
+### Added
+- Windows and Ubuntu/Debian release packaging through GitHub Releases.
+- XYZ/PDB loading with stricter file safety limits and metadata disclosure.
+- View overlay with floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets.
+- Selection modes for view, measure, atom, bond, atom+bond, and label workflows.
+- Distance, angle, dihedral, atom labels, editable saved label text, and label-aware PNG export.
+- Session atom visibility controls, including hide selected atoms, show all atoms, hide H, and hide C-H H.
+- Per-file presentation state in app data for labels, styles, hidden atoms, bond styles, view options, and saved poses.
+- Recent files plus previous/next navigation through supported files in the current folder.
+- Visual selected atom styling and simple bond restyling for full, TS, dative, interaction, and thin bonds.
+- Native menu scaffold, single-instance behavior, and About dialog.
 
 ---
 

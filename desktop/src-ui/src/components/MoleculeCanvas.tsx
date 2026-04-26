@@ -33,11 +33,14 @@ import type {
   HydrogenVisibility,
   PersistentLabel,
   MoleculeData,
+  AtomStyleOverride,
+  BondStyleOverride,
   SelectionMode,
   SelectionSummary,
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
+  SavedPose,
   ViewOptions,
 } from '../App';
 
@@ -106,6 +109,8 @@ interface Props {
   hydrogenVisibility: HydrogenVisibility;
   hiddenAtomIndices: number[];
   elementColorOverrides: ElementColorOverrides;
+  atomStyleOverrides: Record<string, AtomStyleOverride>;
+  bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
   viewOptions: ViewOptions;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
@@ -269,6 +274,31 @@ function applyCameraPreset(ctx: SceneCtx, preset: 'front' | 'top' | 'right' | 'i
   if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
 }
 
+function bondKey(atom1: number, atom2: number): string {
+  return atom1 < atom2 ? `${atom1}-${atom2}` : `${atom2}-${atom1}`;
+}
+
+function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshPhongMaterial): MeshPhongMaterial {
+  if (!style) return fallback;
+  const material = fallback.clone();
+  if (style.type === 'ts') {
+    material.color.set(0x9bb4d0);
+    material.transparent = true;
+    material.opacity = 0.48;
+  } else if (style.type === 'dative') {
+    material.color.set(0x8f9aa3);
+    material.transparent = true;
+    material.opacity = 0.62;
+  } else if (style.type === 'interaction') {
+    material.color.set(0x1f2933);
+    material.transparent = true;
+    material.opacity = 0.38;
+  } else if (style.type === 'thin') {
+    material.color.set(0x3bd16f);
+  }
+  return material;
+}
+
 function updateAngleSelection(
   selection: Mesh[],
   clickedAtom: Mesh,
@@ -334,6 +364,8 @@ export function MoleculeCanvas({
   hydrogenVisibility,
   hiddenAtomIndices,
   elementColorOverrides,
+  atomStyleOverrides,
+  bondStyleOverrides,
   atomSizeScale,
   viewOptions,
   onViewOptionsChange,
@@ -363,6 +395,7 @@ export function MoleculeCanvas({
   const hiddenAtomIndicesRef = useRef<number[]>(hiddenAtomIndices);
   const hydrogenVisibilityRef = useRef<HydrogenVisibility>(hydrogenVisibility);
   const moleculeDataRef = useRef<MoleculeData | null>(moleculeData);
+  const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
 
@@ -372,6 +405,7 @@ export function MoleculeCanvas({
 
   useEffect(() => {
     viewOptionsRef.current = viewOptions;
+    viewOptionsForPoseRef.current = viewOptions;
   }, [viewOptions]);
 
   useEffect(() => {
@@ -600,6 +634,43 @@ export function MoleculeCanvas({
     const onReset = () => ctxRef.current?.controls.reset();
     window.addEventListener('reset-camera', onReset);
 
+    const onCaptureCameraPose = (event: Event) => {
+      const current = ctxRef.current;
+      if (!current) return;
+      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
+      const payload = {
+        updatePoseId: detail?.updatePoseId,
+        cameraPosition: {
+          x: current.camera.position.x,
+          y: current.camera.position.y,
+          z: current.camera.position.z,
+        },
+        target: {
+          x: current.controls.target.x,
+          y: current.controls.target.y,
+          z: current.controls.target.z,
+        },
+        projection: viewOptionsForPoseRef.current.projection,
+        viewOptions: viewOptionsForPoseRef.current,
+      };
+      window.dispatchEvent(new CustomEvent('camera-pose-captured', { detail: payload }));
+    };
+    window.addEventListener('capture-camera-pose', onCaptureCameraPose);
+
+    const onApplyCameraPose = (event: Event) => {
+      const current = ctxRef.current;
+      const pose = (event as CustomEvent<SavedPose>).detail;
+      if (!current || !pose) return;
+      current.camera.position.set(pose.cameraPosition.x, pose.cameraPosition.y, pose.cameraPosition.z);
+      current.controls.target.set(pose.target.x, pose.target.y, pose.target.z);
+      current.camera.lookAt(current.controls.target);
+      current.controls.update();
+      current.controls.saveState();
+      current.lastCameraDistance = current.camera.position.distanceTo(current.controls.target);
+      if (current.camera instanceof OrthographicCamera) syncOrthographicCamera(current);
+    };
+    window.addEventListener('apply-camera-pose', onApplyCameraPose);
+
     let pointerDown = { x: 0, y: 0 };
     const onPointerDown = (event: PointerEvent) => {
       pointerDown = { x: event.clientX, y: event.clientY };
@@ -609,7 +680,7 @@ export function MoleculeCanvas({
       const current = ctxRef.current;
       if (!current) return;
       if (current.selectedBondMesh) {
-        current.selectedBondMesh.material = current.bondMat;
+        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
       }
       current.selectedBondMesh = null;
       current.selectedBondData = null;
@@ -620,7 +691,7 @@ export function MoleculeCanvas({
         atomMesh.material = atomMesh.userData.defaultMaterial as Material;
       }
       for (const bondMesh of current.modeSelectedBondMeshes) {
-        bondMesh.material = current.bondMat;
+        bondMesh.material = bondMesh.userData.defaultMaterial as Material;
       }
       current.selectedAtomMeshes = [];
       current.modeSelectedAtomMeshes = [];
@@ -633,14 +704,14 @@ export function MoleculeCanvas({
       onBondSelected(null);
       onAngleSelected(null);
       onDihedralSelected(null);
-      onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [] });
+      onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
     };
 
     const clearMeasurementSelection = () => {
       const current = ctxRef.current;
       if (!current) return;
       if (current.selectedBondMesh) {
-        current.selectedBondMesh.material = current.bondMat;
+        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
       }
       current.selectedBondMesh = null;
       current.selectedBondData = null;
@@ -665,6 +736,10 @@ export function MoleculeCanvas({
         atomIndices: current.modeSelectedAtomMeshes
           .map((mesh) => Number(mesh.userData.atomIndex ?? -1))
           .filter((atomIndex) => atomIndex >= 0),
+        bondKeys: current.modeSelectedBondMeshes
+          .map((mesh) => mesh.userData.bond as BondSelectionData | undefined)
+          .filter((bond): bond is BondSelectionData => Boolean(bond))
+          .map((bond) => bondKey(bond.atom1Index, bond.atom2Index)),
       });
     };
 
@@ -687,7 +762,7 @@ export function MoleculeCanvas({
       if (!current) return;
       const index = current.modeSelectedBondMeshes.indexOf(bondMesh);
       if (index >= 0) {
-        bondMesh.material = current.bondMat;
+        bondMesh.material = bondMesh.userData.defaultMaterial as Material;
         current.modeSelectedBondMeshes.splice(index, 1);
       } else {
         bondMesh.material = current.selectedBondMat;
@@ -763,7 +838,7 @@ export function MoleculeCanvas({
 
       if (atomHit && atomHit.object instanceof Mesh) {
         if (current.selectedBondMesh) {
-          current.selectedBondMesh.material = current.bondMat;
+          current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
         }
         current.selectedBondMesh = null;
         current.selectedBondData = null;
@@ -952,7 +1027,7 @@ export function MoleculeCanvas({
       onDihedralSelected(null);
 
       if (current.selectedBondMesh && current.selectedBondMesh !== hit.object) {
-        current.selectedBondMesh.material = current.bondMat;
+        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
       }
 
       current.selectedBondMesh = hit.object;
@@ -980,6 +1055,7 @@ export function MoleculeCanvas({
     // PNG export
     const onExport = async () => {
       const ctx = ctxRef.current;
+      const host = containerRef.current;
       if (!ctx) return;
       if (!moleculeData) {
         onError('Load a molecule before exporting a PNG.');
@@ -1000,7 +1076,55 @@ export function MoleculeCanvas({
         if (!targetPath) return;
 
         ctx.renderer.render(ctx.scene, ctx.camera);
-        const pngBytes = dataUrlToBytes(ctx.renderer.domElement.toDataURL('image/png'));
+
+        const sourceCanvas = ctx.renderer.domElement;
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = sourceCanvas.width;
+        exportCanvas.height = sourceCanvas.height;
+        const exportCtx = exportCanvas.getContext('2d');
+        if (!exportCtx) {
+          throw new Error('Could not prepare PNG export canvas.');
+        }
+
+        exportCtx.drawImage(sourceCanvas, 0, 0);
+        if (host) {
+          const scaleX = exportCanvas.width / sourceCanvas.clientWidth;
+          const scaleY = exportCanvas.height / sourceCanvas.clientHeight;
+          const hostRect = host.getBoundingClientRect();
+          const labels = host.querySelectorAll<HTMLElement>(
+            '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
+          );
+
+          for (const label of labels) {
+            const text = label.textContent?.trim();
+            if (!text || label.style.display === 'none') continue;
+            const rect = label.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) continue;
+            const styles = window.getComputedStyle(label);
+            const x = (rect.left - hostRect.left) * scaleX;
+            const y = (rect.top - hostRect.top) * scaleY;
+            const width = rect.width * scaleX;
+            const height = rect.height * scaleY;
+            const radius = Math.min(12 * scaleX, height / 2);
+
+            exportCtx.save();
+            exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
+            exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
+            exportCtx.lineWidth = Math.max(1, scaleX);
+            exportCtx.beginPath();
+            exportCtx.roundRect(x, y, width, height, radius);
+            exportCtx.fill();
+            exportCtx.stroke();
+            exportCtx.fillStyle = styles.color || '#1f2933';
+            exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
+            exportCtx.textAlign = 'center';
+            exportCtx.textBaseline = 'middle';
+            exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
+            exportCtx.restore();
+          }
+        }
+
+        const pngBytes = dataUrlToBytes(exportCanvas.toDataURL('image/png'));
         await writeFile(targetPath, pngBytes);
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
@@ -1014,6 +1138,8 @@ export function MoleculeCanvas({
     return () => {
       ro.disconnect();
       window.removeEventListener('reset-camera', onReset);
+      window.removeEventListener('capture-camera-pose', onCaptureCameraPose);
+      window.removeEventListener('apply-camera-pose', onApplyCameraPose);
       window.removeEventListener('export-png', onExport);
       window.removeEventListener('clear-selection', onClearSelection);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
@@ -1083,7 +1209,7 @@ export function MoleculeCanvas({
     onBondSelected(null);
     onAngleSelected(null);
     onDihedralSelected(null);
-    onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [] });
+    onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
 
     if (!moleculeData || moleculeData.atoms.length === 0) {
       ctx.lastMoleculeBox = null;
@@ -1114,9 +1240,13 @@ export function MoleculeCanvas({
       if (len < 0.01) continue;
 
       const dirNorm = dir.clone().normalize();
-      const mesh    = new Mesh(cylGeom, bondMat);
+      const style = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)];
+      const mat = bondStyleMaterial(style, bondMat);
+      const mesh    = new Mesh(cylGeom, mat);
       mesh.position.addVectors(start, end).multiplyScalar(0.5);
-      const displayRadius = Math.max(0.055, bond.radius * 0.82);
+      const displayRadius = style?.type === 'thin'
+        ? Math.max(0.026, bond.radius * 0.38)
+        : Math.max(0.055, bond.radius * 0.82);
       mesh.scale.set(displayRadius, len, displayRadius);
       mesh.userData.bond = {
         atom1Element: a1.element,
@@ -1126,6 +1256,7 @@ export function MoleculeCanvas({
         atom1Index: bond.atom1,
         atom2Index: bond.atom2,
       } satisfies BondSelectionData;
+      mesh.userData.defaultMaterial = mat;
 
       if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
         // Bond nearly parallel to Y — rotate 180° around X to point the right way
@@ -1152,8 +1283,16 @@ export function MoleculeCanvas({
           specular:  new Color(0.18, 0.18, 0.18),
         }));
       }
-      const mat  = atomMats.get(atom.element)!;
-      const r    = atomDisplayRadius(atom.element);
+      const atomStyle = atomStyleOverrides[String(atomIndex)];
+      const baseMat  = atomMats.get(atom.element)!;
+      const mat = atomStyle?.color
+        ? new MeshPhongMaterial({
+            color: atomStyle.color,
+            shininess: 42,
+            specular: new Color(0.18, 0.18, 0.18),
+          })
+        : baseMat;
+      const r    = atomDisplayRadius(atom.element) * (atomStyle?.sizeScale ?? 1);
       const mesh = new Mesh(sphereGeom, mat);
       mesh.position.set(atom.x, atom.y, atom.z);
       mesh.scale.setScalar(r);
@@ -1202,6 +1341,8 @@ export function MoleculeCanvas({
     moleculeData,
     hydrogenVisibility,
     hiddenAtomIndices,
+    atomStyleOverrides,
+    bondStyleOverrides,
     onBondSelected,
     onAngleSelected,
     onDihedralSelected,

@@ -63,10 +63,12 @@ export interface SelectionSummary {
   atomCount: number;
   bondCount: number;
   atomIndices: number[];
+  bondKeys: string[];
 }
 
 export type ElementColorOverrides = Record<string, string>;
 export type LabelType = 'atom' | 'distance' | 'angle' | 'dihedral';
+export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
 
 export interface PersistentLabel {
   id: string;
@@ -122,14 +124,52 @@ export interface MoleculeMetadata {
 }
 
 export interface MoleculeData {
+  path: string;
   name: string;
   atoms: AtomData[];
   bonds: BondData[];
   metadata: MoleculeMetadata;
 }
 
+export interface SavedPose {
+  id: string;
+  name: string;
+  cameraPosition: LabelAnchor;
+  target: LabelAnchor;
+  projection: ProjectionMode;
+  viewOptions: ViewOptions;
+}
+
+export interface AtomStyleOverride {
+  color?: string;
+  sizeScale?: number;
+}
+
+export interface BondStyleOverride {
+  type: BondStyleType;
+}
+
+export interface PresentationState {
+  version: 1;
+  labels: PersistentLabel[];
+  hiddenAtomIndices: number[];
+  hydrogenVisibility: HydrogenVisibility;
+  elementColorOverrides: ElementColorOverrides;
+  atomSizeScale: number;
+  atomStyleOverrides: Record<string, AtomStyleOverride>;
+  bondStyleOverrides: Record<string, BondStyleOverride>;
+  viewOptions: ViewOptions;
+  savedPoses: SavedPose[];
+}
+
+export interface RecentFileEntry {
+  path: string;
+  name: string;
+}
+
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
+  const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState<string>('Preparing molecular workspace');
   const [error, setError] = useState<string | null>(null);
@@ -143,11 +183,21 @@ function App() {
     atomCount: 0,
     bondCount: 0,
     atomIndices: [],
+    bondKeys: [],
   });
   const [persistentLabels, setPersistentLabels] = useState<PersistentLabel[]>([]);
   const nextLabelId = useRef(1);
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
+  const [atomStyleOverrides, setAtomStyleOverrides] = useState<Record<string, AtomStyleOverride>>({});
+  const [bondStyleOverrides, setBondStyleOverrides] = useState<Record<string, BondStyleOverride>>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
+  const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
+  const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
+  const nextPoseId = useRef(1);
+  const saveStateTimer = useRef<number | null>(null);
+  const isApplyingPresentationState = useRef(false);
+  const hasLoadedPresentationState = useRef(false);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
     showFloor: true,
     showGrid: true,
@@ -160,19 +210,80 @@ function App() {
     autoRotateSpeed: 0.35,
   });
 
+  const defaultPresentationState = useCallback(() => ({
+    labels: [] as PersistentLabel[],
+    hiddenAtomIndices: [] as number[],
+    hydrogenVisibility: 'shown' as HydrogenVisibility,
+    elementColorOverrides: {} as ElementColorOverrides,
+    atomSizeScale: 1,
+    atomStyleOverrides: {} as Record<string, AtomStyleOverride>,
+    bondStyleOverrides: {} as Record<string, BondStyleOverride>,
+    savedPoses: [] as SavedPose[],
+  }), []);
+
+  const refreshRecentFiles = useCallback(async () => {
+    try {
+      setRecentFiles(await invoke<RecentFileEntry[]>('get_recent_files'));
+    } catch (err) {
+      console.warn('Could not load recent files', err);
+    }
+  }, []);
+
+  const refreshNearbyFiles = useCallback(async (path: string) => {
+    try {
+      setNearbyFiles(await invoke<string[]>('list_supported_files_near', { path }));
+    } catch {
+      setNearbyFiles([]);
+    }
+  }, []);
+
+  const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
+    isApplyingPresentationState.current = true;
+    const defaults = defaultPresentationState();
+    setPersistentLabels(state?.labels ?? defaults.labels);
+    setHiddenAtomIndices(state?.hiddenAtomIndices ?? defaults.hiddenAtomIndices);
+    setHydrogenVisibility(state?.hydrogenVisibility ?? defaults.hydrogenVisibility);
+    setElementColorOverrides(state?.elementColorOverrides ?? defaults.elementColorOverrides);
+    setAtomSizeScale(state?.atomSizeScale ?? defaults.atomSizeScale);
+    setAtomStyleOverrides(state?.atomStyleOverrides ?? defaults.atomStyleOverrides);
+    setBondStyleOverrides(state?.bondStyleOverrides ?? defaults.bondStyleOverrides);
+    setSavedPoses(state?.savedPoses ?? defaults.savedPoses);
+    setViewOptions(state?.viewOptions ?? {
+      showFloor: true,
+      showGrid: true,
+      backdropTone: 'clean',
+      projection: 'perspective',
+      lightingMood: 'publication',
+      fogEnabled: true,
+      fogIntensity: 0.45,
+      autoRotate: false,
+      autoRotateSpeed: 0.35,
+    });
+    nextLabelId.current = Math.max(
+      1,
+      ...(state?.labels ?? []).map((label) => Number(label.id.replace(/^label-/, '')) + 1 || 1),
+    );
+    nextPoseId.current = Math.max(
+      1,
+      ...(state?.savedPoses ?? []).map((pose) => Number(pose.id.replace(/^pose-/, '')) + 1 || 1),
+    );
+    window.setTimeout(() => {
+      isApplyingPresentationState.current = false;
+      hasLoadedPresentationState.current = activatePersistence;
+    }, 0);
+  }, [defaultPresentationState]);
+
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
+    setCurrentPath(data.path);
     setError(null);
     setSelectedBond(null);
     setSelectedAngle(null);
     setSelectedDihedral(null);
-    setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [] });
-    setPersistentLabels([]);
-    setElementColorOverrides({});
-    setAtomSizeScale(1);
-    setHydrogenVisibility('shown');
-    setHiddenAtomIndices([]);
-  }, []);
+    setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
+    hasLoadedPresentationState.current = false;
+    applyPresentationState(null, false);
+  }, [applyPresentationState]);
 
   const handleError = useCallback((err: string) => {
     setError(err);
@@ -185,12 +296,22 @@ function App() {
     try {
       const data = await invoke<MoleculeData>('load_molecule', { path });
       handleFileLoaded(data);
+      await invoke('record_recent_file', { path });
+      await refreshRecentFiles();
+      await refreshNearbyFiles(path);
+      try {
+        const state = await invoke<PresentationState | null>('load_presentation_state', { path });
+        applyPresentationState(state, true);
+      } catch (err) {
+        handleError(err instanceof Error ? err.message : String(err));
+        applyPresentationState(null, true);
+      }
     } catch (err) {
       handleError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
-  }, [handleError, handleFileLoaded]);
+  }, [applyPresentationState, handleError, handleFileLoaded, refreshNearbyFiles, refreshRecentFiles]);
 
   const handleOpenFile = useCallback(async () => {
     try {
@@ -247,6 +368,56 @@ function App() {
     });
     handleClearSelection();
   }, [handleClearSelection, selectionSummary.atomIndices]);
+
+  const handleStyleSelectedAtoms = useCallback((color: string) => {
+    setAtomStyleOverrides((current) => {
+      const next = { ...current };
+      for (const atomIndex of selectionSummary.atomIndices) {
+        next[String(atomIndex)] = { ...(next[String(atomIndex)] ?? {}), color };
+      }
+      return next;
+    });
+  }, [selectionSummary.atomIndices]);
+
+  const handleSizeSelectedAtoms = useCallback(() => {
+    setAtomStyleOverrides((current) => {
+      const next = { ...current };
+      for (const atomIndex of selectionSummary.atomIndices) {
+        next[String(atomIndex)] = { ...(next[String(atomIndex)] ?? {}), sizeScale: atomSizeScale };
+      }
+      return next;
+    });
+  }, [atomSizeScale, selectionSummary.atomIndices]);
+
+  const handleResetSelectedAtomStyles = useCallback(() => {
+    setAtomStyleOverrides((current) => {
+      const next = { ...current };
+      for (const atomIndex of selectionSummary.atomIndices) {
+        delete next[String(atomIndex)];
+      }
+      return next;
+    });
+  }, [selectionSummary.atomIndices]);
+
+  const handleRestyleSelectedBonds = useCallback((type: BondStyleType) => {
+    setBondStyleOverrides((current) => {
+      const next = { ...current };
+      for (const bondKey of selectionSummary.bondKeys) {
+        next[bondKey] = { type };
+      }
+      return next;
+    });
+  }, [selectionSummary.bondKeys]);
+
+  const handleResetSelectedBondStyles = useCallback(() => {
+    setBondStyleOverrides((current) => {
+      const next = { ...current };
+      for (const bondKey of selectionSummary.bondKeys) {
+        delete next[bondKey];
+      }
+      return next;
+    });
+  }, [selectionSummary.bondKeys]);
 
   const handleShowAllAtoms = useCallback(() => {
     setHiddenAtomIndices([]);
@@ -309,6 +480,78 @@ function App() {
     setPersistentLabels((current) => current.filter((label) => label.id !== id));
   }, []);
 
+  const handleRenamePersistentLabel = useCallback((id: string, text: string) => {
+    setPersistentLabels((current) => current.map((label) => (
+      label.id === id ? { ...label, text } : label
+    )));
+  }, []);
+
+  const handleSavePose = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('capture-camera-pose'));
+  }, []);
+
+  const handlePoseCaptured = useCallback((event: Event) => {
+    const detail = (event as CustomEvent<Omit<SavedPose, 'id' | 'name'>>).detail;
+    if (!detail) return;
+    setSavedPoses((current) => [
+      ...current,
+      {
+        ...detail,
+        id: `pose-${nextPoseId.current++}`,
+        name: `Pose ${current.length + 1}`,
+      },
+    ]);
+  }, []);
+
+  const handleApplyPose = useCallback((pose: SavedPose) => {
+    setViewOptions(pose.viewOptions);
+    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: pose }));
+  }, []);
+
+  const handleUpdatePose = useCallback((pose: SavedPose) => {
+    window.dispatchEvent(new CustomEvent('capture-camera-pose', { detail: { updatePoseId: pose.id } }));
+  }, []);
+
+  const handlePoseUpdated = useCallback((event: Event) => {
+    const detail = (event as CustomEvent<{ updatePoseId?: string } & Omit<SavedPose, 'id' | 'name'>>).detail;
+    if (!detail?.updatePoseId) return;
+    setSavedPoses((current) => current.map((pose) => (
+      pose.id === detail.updatePoseId
+        ? { ...pose, ...detail, id: pose.id, name: pose.name }
+        : pose
+    )));
+  }, []);
+
+  const handleRenamePose = useCallback((id: string, name: string) => {
+    setSavedPoses((current) => current.map((pose) => (
+      pose.id === id ? { ...pose, name } : pose
+    )));
+  }, []);
+
+  const handleDeletePose = useCallback((id: string) => {
+    setSavedPoses((current) => current.filter((pose) => pose.id !== id));
+  }, []);
+
+  const handleClearSavedState = useCallback(async () => {
+    if (!currentPath) return;
+    try {
+      await invoke('clear_presentation_state', { path: currentPath });
+      applyPresentationState(null);
+      handleClearSelection();
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    }
+  }, [applyPresentationState, currentPath, handleClearSelection, handleError]);
+
+  const loadAdjacentFile = useCallback(async (direction: -1 | 1) => {
+    if (!currentPath || nearbyFiles.length === 0) return;
+    const currentIndex = nearbyFiles.findIndex((path) => path === currentPath);
+    if (currentIndex < 0) return;
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= nearbyFiles.length) return;
+    await loadMoleculePath(nearbyFiles[nextIndex], 'Opening nearby molecule');
+  }, [currentPath, loadMoleculePath, nearbyFiles]);
+
   const hasSelection = Boolean(
     selectedBond
     || selectedAngle
@@ -317,6 +560,16 @@ function App() {
     || selectionSummary.bondCount > 0,
   );
   const hiddenAtomCount = hiddenAtomIndices.length;
+  const hasSavedPresentationState = Boolean(
+    persistentLabels.length ||
+    hiddenAtomIndices.length ||
+    hydrogenVisibility !== 'shown' ||
+    Object.keys(elementColorOverrides).length ||
+    atomSizeScale !== 1 ||
+    Object.keys(atomStyleOverrides).length ||
+    Object.keys(bondStyleOverrides).length ||
+    savedPoses.length
+  );
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -409,6 +662,64 @@ function App() {
   ]);
 
   useEffect(() => {
+    const onPoseCaptured = (event: Event) => {
+      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
+      if (detail?.updatePoseId) {
+        handlePoseUpdated(event);
+      } else {
+        handlePoseCaptured(event);
+      }
+    };
+    window.addEventListener('camera-pose-captured', onPoseCaptured);
+    return () => window.removeEventListener('camera-pose-captured', onPoseCaptured);
+  }, [handlePoseCaptured, handlePoseUpdated]);
+
+  useEffect(() => {
+    void refreshRecentFiles();
+  }, [refreshRecentFiles]);
+
+  useEffect(() => {
+    if (!currentPath || !hasLoadedPresentationState.current || isApplyingPresentationState.current) return;
+    if (saveStateTimer.current) {
+      window.clearTimeout(saveStateTimer.current);
+    }
+    const state: PresentationState = {
+      version: 1,
+      labels: persistentLabels,
+      hiddenAtomIndices,
+      hydrogenVisibility,
+      elementColorOverrides,
+      atomSizeScale,
+      atomStyleOverrides,
+      bondStyleOverrides,
+      viewOptions,
+      savedPoses,
+    };
+    saveStateTimer.current = window.setTimeout(() => {
+      void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
+        handleError(err instanceof Error ? err.message : String(err));
+      });
+    }, 350);
+    return () => {
+      if (saveStateTimer.current) {
+        window.clearTimeout(saveStateTimer.current);
+      }
+    };
+  }, [
+    atomSizeScale,
+    atomStyleOverrides,
+    bondStyleOverrides,
+    currentPath,
+    elementColorOverrides,
+    handleError,
+    hiddenAtomIndices,
+    hydrogenVisibility,
+    persistentLabels,
+    savedPoses,
+    viewOptions,
+  ]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadStartupFile = async () => {
@@ -442,6 +753,10 @@ function App() {
         onOpenFile={handleOpenFile}
         onResetView={handleResetView}
         onExportPng={handleExportPng}
+        onPreviousFile={() => void loadAdjacentFile(-1)}
+        onNextFile={() => void loadAdjacentFile(1)}
+        canPreviousFile={Boolean(currentPath && nearbyFiles.indexOf(currentPath) > 0)}
+        canNextFile={Boolean(currentPath && nearbyFiles.indexOf(currentPath) >= 0 && nearbyFiles.indexOf(currentPath) < nearbyFiles.length - 1)}
         isLoading={isLoading}
         hydrogenVisibility={hydrogenVisibility}
         onCycleHydrogenVisibility={cycleHydrogenVisibility}
@@ -476,6 +791,8 @@ function App() {
             hydrogenVisibility={hydrogenVisibility}
             hiddenAtomIndices={hiddenAtomIndices}
             elementColorOverrides={elementColorOverrides}
+            atomStyleOverrides={atomStyleOverrides}
+            bondStyleOverrides={bondStyleOverrides}
             atomSizeScale={atomSizeScale}
             viewOptions={viewOptions}
             onViewOptionsChange={setViewOptions}
@@ -507,7 +824,12 @@ function App() {
           selectionMode={selectionMode}
           selectionSummary={selectionSummary}
           elementColorOverrides={elementColorOverrides}
+          atomStyleOverrides={atomStyleOverrides}
+          bondStyleOverrides={bondStyleOverrides}
           atomSizeScale={atomSizeScale}
+          savedPoses={savedPoses}
+          recentFiles={recentFiles}
+          currentPath={currentPath}
           onElementColorChange={(element, color) => {
             setElementColorOverrides((current) => ({ ...current, [element]: color }));
           }}
@@ -523,12 +845,26 @@ function App() {
           onHydrogenVisibilityChange={setHydrogenVisibility}
           onHideSelectedAtoms={handleHideSelectedAtoms}
           onShowAllAtoms={handleShowAllAtoms}
+          onStyleSelectedAtoms={handleStyleSelectedAtoms}
+          onSizeSelectedAtoms={handleSizeSelectedAtoms}
+          onResetSelectedAtomStyles={handleResetSelectedAtomStyles}
+          onRestyleSelectedBonds={handleRestyleSelectedBonds}
+          onResetSelectedBondStyles={handleResetSelectedBondStyles}
+          onOpenRecentFile={(path) => void loadMoleculePath(path, 'Opening recent molecule')}
+          onSavePose={handleSavePose}
+          onApplyPose={handleApplyPose}
+          onUpdatePose={handleUpdatePose}
+          onRenamePose={handleRenamePose}
+          onDeletePose={handleDeletePose}
+          onClearSavedState={handleClearSavedState}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}
+          onRenamePersistentLabel={handleRenamePersistentLabel}
           onDeletePersistentLabel={handleDeletePersistentLabel}
           onClearPersistentLabels={() => setPersistentLabels([])}
           error={error}
           hiddenAtomCount={hiddenAtomCount}
+          hasSavedPresentationState={hasSavedPresentationState}
         />
       </div>
     </div>

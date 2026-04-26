@@ -13,11 +13,12 @@ use cylview_core::{
     CoreError,
 };
 use parking_lot::Mutex;
-use serde::Serialize;
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItemBuilder, SubmenuBuilder};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 const MENU_FILE_QUIT: &str = "file_quit";
 const MENU_EDIT_COMING_SOON: &str = "edit_coming_soon";
@@ -109,10 +110,17 @@ struct SerialMoleculeMetadata {
 
 #[derive(Serialize)]
 struct MoleculeData {
+    path: String,
     name: String,
     atoms: Vec<SerialAtom>,
     bonds: Vec<SerialBond>,
     metadata: SerialMoleculeMetadata,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+struct RecentFileEntry {
+    path: String,
+    name: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +180,7 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
     );
 
     let data = MoleculeData {
+        path: path.clone(),
         name: structure.name.clone(),
         atoms,
         bonds,
@@ -189,6 +198,154 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
     *state.structure.lock() = Some(structure);
 
     Ok(data)
+}
+
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not locate app data directory: {error}"))?;
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create app data directory: {error}"))?;
+    Ok(dir)
+}
+
+fn presentation_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app_data_dir(app)?.join("SavedInfo");
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create presentation-state directory: {error}"))?;
+    Ok(dir)
+}
+
+fn path_key(path: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in path.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn presentation_state_path(app: &AppHandle, path: &str) -> Result<PathBuf, String> {
+    Ok(presentation_dir(app)?.join(format!("{}.json", path_key(path))))
+}
+
+#[tauri::command]
+fn load_presentation_state(
+    app: AppHandle,
+    path: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let state_path = presentation_state_path(&app, &path)?;
+    if !state_path.exists() {
+        return Ok(None);
+    }
+
+    let contents = fs::read_to_string(&state_path)
+        .map_err(|error| format!("Could not read saved presentation state: {error}"))?;
+    serde_json::from_str(&contents)
+        .map(Some)
+        .map_err(|error| format!("Saved presentation state is invalid JSON: {error}"))
+}
+
+#[tauri::command]
+fn save_presentation_state(
+    app: AppHandle,
+    path: String,
+    state: serde_json::Value,
+) -> Result<(), String> {
+    let state_path = presentation_state_path(&app, &path)?;
+    let contents = serde_json::to_string_pretty(&state)
+        .map_err(|error| format!("Could not encode presentation state: {error}"))?;
+    fs::write(&state_path, contents)
+        .map_err(|error| format!("Could not save presentation state: {error}"))
+}
+
+#[tauri::command]
+fn clear_presentation_state(app: AppHandle, path: String) -> Result<(), String> {
+    let state_path = presentation_state_path(&app, &path)?;
+    if state_path.exists() {
+        fs::remove_file(&state_path)
+            .map_err(|error| format!("Could not remove presentation state: {error}"))?;
+    }
+    Ok(())
+}
+
+fn recent_files_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("recent-files.json"))
+}
+
+fn read_recent_files(app: &AppHandle) -> Result<Vec<RecentFileEntry>, String> {
+    let path = recent_files_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read recent files: {error}"))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Recent files are invalid JSON: {error}"))
+}
+
+fn write_recent_files(app: &AppHandle, entries: &[RecentFileEntry]) -> Result<(), String> {
+    let path = recent_files_path(app)?;
+    let contents = serde_json::to_string_pretty(entries)
+        .map_err(|error| format!("Could not encode recent files: {error}"))?;
+    fs::write(path, contents).map_err(|error| format!("Could not save recent files: {error}"))
+}
+
+#[tauri::command]
+fn get_recent_files(app: AppHandle) -> Result<Vec<RecentFileEntry>, String> {
+    let entries = read_recent_files(&app)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| Path::new(&entry.path).is_file())
+        .take(12)
+        .collect())
+}
+
+#[tauri::command]
+fn record_recent_file(app: AppHandle, path: String) -> Result<(), String> {
+    let file_name = Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&path)
+        .to_string();
+    let mut entries = read_recent_files(&app)?;
+    entries.retain(|entry| entry.path != path);
+    entries.insert(
+        0,
+        RecentFileEntry {
+            path,
+            name: file_name,
+        },
+    );
+    entries.truncate(12);
+    write_recent_files(&app, &entries)
+}
+
+#[tauri::command]
+fn list_supported_files_near(path: String) -> Result<Vec<String>, String> {
+    let current_path = Path::new(&path);
+    let dir = current_path
+        .parent()
+        .ok_or_else(|| "Could not locate containing directory.".to_string())?;
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|error| format!("Could not read directory: {error}"))? {
+        let entry = entry.map_err(|error| format!("Could not read directory entry: {error}"))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_supported = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| matches!(extension.to_ascii_lowercase().as_str(), "xyz" | "pdb"))
+            .unwrap_or(false);
+        if is_supported {
+            files.push(path.to_string_lossy().to_string());
+        }
+    }
+    files.sort_by_key(|file| file.to_ascii_lowercase());
+    Ok(files)
 }
 
 fn format_load_error(error: CoreError) -> String {
@@ -294,7 +451,16 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
-        .invoke_handler(tauri::generate_handler![load_molecule, get_startup_file])
+        .invoke_handler(tauri::generate_handler![
+            load_molecule,
+            get_startup_file,
+            load_presentation_state,
+            save_presentation_state,
+            clear_presentation_state,
+            get_recent_files,
+            record_recent_file,
+            list_supported_files_near
+        ])
         .setup(|app| {
             #[cfg(not(debug_assertions))]
             let url = tauri::WebviewUrl::App("index.html".into());

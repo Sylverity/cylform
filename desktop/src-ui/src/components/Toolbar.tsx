@@ -13,6 +13,10 @@ interface ToolbarProps {
   onOpenFile: () => void;
   onResetView: () => void;
   onExportPng: () => void;
+  onPreviousFile: () => void;
+  onNextFile: () => void;
+  canPreviousFile: boolean;
+  canNextFile: boolean;
   isLoading: boolean;
   hydrogenVisibility: HydrogenVisibility;
   onCycleHydrogenVisibility: () => void;
@@ -32,6 +36,10 @@ export function Toolbar({
   onOpenFile,
   onResetView,
   onExportPng,
+  onPreviousFile,
+  onNextFile,
+  canPreviousFile,
+  canNextFile,
   isLoading,
   hydrogenVisibility,
   onCycleHydrogenVisibility,
@@ -80,6 +88,22 @@ export function Toolbar({
         >
           <span>Export PNG</span>
           <kbd>Ctrl E</kbd>
+        </button>
+
+        <button
+          onClick={onPreviousFile}
+          disabled={isLoading || !canPreviousFile}
+          title="Open previous supported file in this folder"
+        >
+          <span>Previous</span>
+        </button>
+
+        <button
+          onClick={onNextFile}
+          disabled={isLoading || !canNextFile}
+          title="Open next supported file in this folder"
+        >
+          <span>Next</span>
         </button>
 
         <button

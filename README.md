@@ -47,6 +47,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
 - Session-persistent atom and measurement labels with show/hide/delete controls
 - Session atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
+- Centralized per-file presentation state, saved poses, recent files, selected styling, and visual bond restyling
 - Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
@@ -67,8 +68,10 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **Atom visibility controls** — hide selected atoms, show all atoms, hide all hydrogens, or hide only C-H hydrogens for cleaner figures
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
 - **Session labels** — add persistent atom, distance, angle, and dihedral labels for the current molecule session
-- **Session visibility** — atom hiding and hydrogen filters persist while the molecule is loaded, then reset on the next load
+- **Saved presentation state** — labels, visibility, styles, poses, and view choices are stored in app data per file
+- **Saved poses and recent files** — recall publication camera views and move between supported files in a folder
 - **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
+- **Selected styling** — apply local atom colours/sizes and visual bond styles for selected regions
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
 - **Desktop menu scaffold** — standard File / Edit / View / Window / Help menus, with Quit and About wired
@@ -135,7 +138,7 @@ Run the installer, then launch **CYLview-NG** from the Start menu. Early open-so
 Download the newest Debian package from GitHub Releases:
 
 ```bash
-sudo apt install ./CYLview-NG_0.1.0_amd64.deb
+sudo apt install ./CYLview-NG_1.0.0-rc.1_amd64.deb
 ```
 
 Then launch **CYLview-NG** from your application menu, or run:
@@ -232,6 +235,7 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
 | Reset view | **Reset View** button, or press **R** |
+| Previous / next file | Use **Previous** / **Next** after opening a file in a folder |
 | Change camera preset | Use **View** overlay → **Front**, **Top**, **Right**, or **Iso** |
 | Toggle floor/grid/backdrop | Use the left-side **View** overlay |
 | Toggle perspective/orthographic | Use **View** overlay → **Projection** |
@@ -248,6 +252,8 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Add atom label | Switch to **Label** mode, then click an atom |
 | Add measurement label | Measure a distance/angle/dihedral, then click **Add Label** in the side panel |
 | Manage labels | Use **Labels** in the side panel to show, hide, delete, or clear session labels |
+| Save a pose | Use **Poses** → **Save pose** in the side panel |
+| Reopen recent file | Use **Files** in the side panel |
 | Export PNG | Click **Export PNG**, or press **Ctrl+E** |
 | Quit | Use **File → Quit CYLview-NG** |
 | About | Use **Help → About CYLview-NG** |
@@ -313,16 +319,17 @@ CYLviewClone/
 - [x] Dihedral label on four selected atoms
 - [x] Transient selection mode foundation for view, measure, atom, bond, and atom+bond workflows
 - [x] Session-persistent labels for atoms, distances, angles, and dihedrals
+- [x] Editable label text for saved labels
+- [x] Selected atom styling and visual bond restyling
+- [x] Saved poses for reusable publication viewpoints
+- [x] Recent files plus previous/next navigation within the current structure directory
+- [x] Centralized per-file presentation state for labels, styles, hidden atoms, custom bonds, and poses
 - [x] PNG export with native save dialog
+- [x] PNG export includes visible labels
 
 ### V1 Release Target
-- [ ] Saved labels for atoms, distances, angles, dihedrals, and custom text through centralized presentation state
-- [ ] Basic per-atom and per-bond styling, including selected-region style application
-- [ ] Saved atom visibility state through centralized presentation state
-- [ ] Add, remove, and restyle simple bond types such as full, TS, dative, interaction, and thin
-- [ ] Saved poses for reusable publication viewpoints
-- [ ] Recent files plus previous/next navigation within the current structure directory
-- [ ] Centralized per-file presentation state for labels, styles, hidden atoms, custom bonds, and poses
+- [ ] Windows 11 and Ubuntu/Debian smoke test from `1.0.0-rc.1` GitHub Release artifacts
+- [ ] Promote `1.0.0-rc.1` to `1.0.0` after release-candidate smoke testing
 
 ### Post-v1 Parity
 - [ ] Multi-frame XYZ trajectory playback

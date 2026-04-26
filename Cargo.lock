@@ -818,7 +818,7 @@ dependencies = [
 
 [[package]]
 name = "cylview-core"
-version = "0.1.4"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -835,7 +835,7 @@ dependencies = [
 
 [[package]]
 name = "cylview-desktop"
-version = "0.1.4"
+version = "1.0.0-rc.1"
 dependencies = [
  "cylview-core",
  "env_logger",

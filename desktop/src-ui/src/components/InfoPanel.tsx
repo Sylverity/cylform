@@ -3,6 +3,11 @@ import type {
   HydrogenVisibility,
   MoleculeData,
   PersistentLabel,
+  AtomStyleOverride,
+  BondStyleOverride,
+  BondStyleType,
+  RecentFileEntry,
+  SavedPose,
   SelectionMode,
   SelectionSummary,
   SelectedAngleMeasurement,
@@ -119,7 +124,12 @@ interface InfoPanelProps {
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   elementColorOverrides: ElementColorOverrides;
+  atomStyleOverrides: Record<string, AtomStyleOverride>;
+  bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
+  savedPoses: SavedPose[];
+  recentFiles: RecentFileEntry[];
+  currentPath: string | null;
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
@@ -127,12 +137,26 @@ interface InfoPanelProps {
   onHydrogenVisibilityChange: (mode: HydrogenVisibility) => void;
   onHideSelectedAtoms: () => void;
   onShowAllAtoms: () => void;
+  onStyleSelectedAtoms: (color: string) => void;
+  onSizeSelectedAtoms: () => void;
+  onResetSelectedAtomStyles: () => void;
+  onRestyleSelectedBonds: (type: BondStyleType) => void;
+  onResetSelectedBondStyles: () => void;
+  onOpenRecentFile: (path: string) => void;
+  onSavePose: () => void;
+  onApplyPose: (pose: SavedPose) => void;
+  onUpdatePose: (pose: SavedPose) => void;
+  onRenamePose: (id: string, name: string) => void;
+  onDeletePose: (id: string) => void;
+  onClearSavedState: () => void;
   onAddMeasurementLabel: () => void;
   onTogglePersistentLabel: (id: string) => void;
+  onRenamePersistentLabel: (id: string, text: string) => void;
   onDeletePersistentLabel: (id: string) => void;
   onClearPersistentLabels: () => void;
   error: string | null;
   hiddenAtomCount: number;
+  hasSavedPresentationState: boolean;
 }
 
 export function InfoPanel({
@@ -146,7 +170,12 @@ export function InfoPanel({
   selectionMode,
   selectionSummary,
   elementColorOverrides,
+  atomStyleOverrides,
+  bondStyleOverrides,
   atomSizeScale,
+  savedPoses,
+  recentFiles,
+  currentPath,
   onElementColorChange,
   onResetElementColor,
   onResetAllElementColors,
@@ -154,12 +183,26 @@ export function InfoPanel({
   onHydrogenVisibilityChange,
   onHideSelectedAtoms,
   onShowAllAtoms,
+  onStyleSelectedAtoms,
+  onSizeSelectedAtoms,
+  onResetSelectedAtomStyles,
+  onRestyleSelectedBonds,
+  onResetSelectedBondStyles,
+  onOpenRecentFile,
+  onSavePose,
+  onApplyPose,
+  onUpdatePose,
+  onRenamePose,
+  onDeletePose,
+  onClearSavedState,
   onAddMeasurementLabel,
   onTogglePersistentLabel,
+  onRenamePersistentLabel,
   onDeletePersistentLabel,
   onClearPersistentLabels,
   error,
   hiddenAtomCount,
+  hasSavedPresentationState,
 }: InfoPanelProps) {
   const hiddenAtomSet = new Set(hiddenAtomIndices);
   const visibleAtoms = moleculeData
@@ -184,6 +227,8 @@ export function InfoPanel({
     selectionSummary.bondCount > 0,
   );
   const hasColorOverrides = Object.keys(elementColorOverrides).length > 0;
+  const hasAtomStyleOverrides = Object.keys(atomStyleOverrides).length > 0;
+  const hasBondStyleOverrides = Object.keys(bondStyleOverrides).length > 0;
   const sourceMetadata = moleculeData ? metadataSummary(moleculeData) : null;
   const canAddMeasurementLabel = Boolean(
     selectedBond ||
@@ -194,6 +239,11 @@ export function InfoPanel({
   const canHideSelectedAtoms = (
     (selectionMode === 'atom' || selectionMode === 'atom-bond') &&
     selectionSummary.atomCount > 0
+  );
+  const canStyleSelectedAtoms = canHideSelectedAtoms;
+  const canStyleSelectedBonds = (
+    (selectionMode === 'bond' || selectionMode === 'atom-bond') &&
+    selectionSummary.bondCount > 0
   );
 
   if (!moleculeData) {
@@ -505,9 +555,12 @@ export function InfoPanel({
               <div key={label.id} className="label-row">
                 <div className="label-row-text">
                   <span className="label-type">{label.type}</span>
-                  <span className={label.visible ? 'label-text' : 'label-text muted'}>
-                    {label.text}
-                  </span>
+                  <input
+                    className={label.visible ? 'label-edit-input' : 'label-edit-input muted'}
+                    value={label.text}
+                    onChange={(event) => onRenamePersistentLabel(label.id, event.target.value)}
+                    aria-label={`${label.type} label text`}
+                  />
                 </div>
                 <div className="label-actions">
                   <button
@@ -528,6 +581,76 @@ export function InfoPanel({
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="info-section">
+        <div className="style-control-header">
+          <h4>Poses</h4>
+          <button
+            type="button"
+            className="color-reset-all"
+            onClick={onSavePose}
+          >
+            Save pose
+          </button>
+        </div>
+        {savedPoses.length === 0 ? (
+          <p className="info-note">Save reusable camera views for publication figures.</p>
+        ) : (
+          <div className="label-list">
+            {savedPoses.map((pose) => (
+              <div key={pose.id} className="pose-row">
+                <input
+                  className="pose-name-input"
+                  value={pose.name}
+                  onChange={(event) => onRenamePose(pose.id, event.target.value)}
+                  aria-label="Pose name"
+                />
+                <div className="label-actions">
+                  <button type="button" className="color-reset" onClick={() => onApplyPose(pose)}>
+                    Load
+                  </button>
+                  <button type="button" className="color-reset" onClick={() => onUpdatePose(pose)}>
+                    Update
+                  </button>
+                  <button type="button" className="color-reset" onClick={() => onDeletePose(pose.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="info-section">
+        <h4>Files</h4>
+        {recentFiles.length === 0 ? (
+          <p className="info-note">Recent XYZ/PDB files will appear here after opening them.</p>
+        ) : (
+          <div className="recent-file-list">
+            {recentFiles.slice(0, 5).map((file) => (
+              <button
+                key={file.path}
+                type="button"
+                className={file.path === currentPath ? 'recent-file active' : 'recent-file'}
+                onClick={() => onOpenRecentFile(file.path)}
+                title={file.path}
+              >
+                {file.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {hasSavedPresentationState && (
+          <button
+            type="button"
+            className="panel-action"
+            onClick={onClearSavedState}
+          >
+            Reset Saved Presentation
+          </button>
         )}
       </div>
 
@@ -632,6 +755,59 @@ export function InfoPanel({
               })}
             </div>
           </>
+        )}
+        {(canStyleSelectedAtoms || canStyleSelectedBonds || hasAtomStyleOverrides || hasBondStyleOverrides) && (
+          <div className="selection-style-box">
+            <div className="style-control-header">
+              <span className="info-label">Selected styling</span>
+              <span className="info-value">
+                {selectionSummary.atomCount} atoms · {selectionSummary.bondCount} bonds
+              </span>
+            </div>
+            {canStyleSelectedAtoms && (
+              <div className="selection-style-row">
+                <input
+                  className="color-input"
+                  type="color"
+                  defaultValue="#ffbf73"
+                  onChange={(event) => onStyleSelectedAtoms(event.target.value)}
+                  aria-label="Selected atom colour"
+                />
+                <button type="button" className="color-reset" onClick={onResetSelectedAtomStyles}>
+                  Reset atom style
+                </button>
+                <button type="button" className="color-reset" onClick={onSizeSelectedAtoms}>
+                  Apply size
+                </button>
+              </div>
+            )}
+            {canStyleSelectedBonds && (
+              <div className="bond-style-grid">
+                {([
+                  ['full', 'Full'],
+                  ['ts', 'TS'],
+                  ['dative', 'Dative'],
+                  ['interaction', 'Inter'],
+                  ['thin', 'Thin'],
+                ] as const).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="visibility-mode"
+                    onClick={() => onRestyleSelectedBonds(type)}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button type="button" className="visibility-mode" onClick={onResetSelectedBondStyles}>
+                  Reset
+                </button>
+              </div>
+            )}
+            {!canStyleSelectedAtoms && !canStyleSelectedBonds && (
+              <p className="info-note">Select atoms or bonds to apply local visual styles.</p>
+            )}
+          </div>
         )}
       </div>
     </div>

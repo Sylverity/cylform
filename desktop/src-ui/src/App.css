@@ -782,9 +782,69 @@
   text-decoration: line-through;
 }
 
+.label-edit-input {
+  min-width: 0;
+  width: 100%;
+  padding: 5px 7px;
+  border: 1px solid rgba(207, 215, 223, 0.72);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.label-edit-input.muted {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
 .label-actions {
   display: inline-flex;
   gap: 5px;
+}
+
+.pose-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(217, 223, 229, 0.72);
+}
+
+.pose-name-input {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(207, 215, 223, 0.95);
+  border-radius: 8px;
+  background: rgba(249, 251, 252, 0.95);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.recent-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-file {
+  justify-content: flex-start;
+  overflow: hidden;
+  border-color: rgba(207, 215, 223, 0.95);
+  background: rgba(249, 251, 252, 0.95);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-file.active {
+  border-color: rgba(47, 157, 244, 0.4);
+  background: rgba(47, 157, 244, 0.12);
+  color: #176bb3;
 }
 
 .color-list {
@@ -842,6 +902,28 @@
 
 .style-control {
   margin-top: 12px;
+}
+
+.selection-style-box {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid rgba(217, 223, 229, 0.85);
+  border-radius: 12px;
+  background: rgba(249, 251, 252, 0.74);
+}
+
+.selection-style-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.bond-style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
 }
 
 .visibility-mode-grid {

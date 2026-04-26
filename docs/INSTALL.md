@@ -29,11 +29,11 @@ Use **Settings** → **Apps** → **Installed apps**, find **CYLview-NG**, and c
 ## Ubuntu / Debian Linux
 
 1. Open the newest CYLview-NG release.
-2. Download `CYLview-NG_0.1.0_amd64.deb` or the newest matching `.deb`.
+2. Download `CYLview-NG_1.0.0-rc.1_amd64.deb` or the newest matching `.deb`.
 3. Install it from a terminal:
 
 ```bash
-sudo apt install ./CYLview-NG_0.1.0_amd64.deb
+sudo apt install ./CYLview-NG_1.0.0-rc.1_amd64.deb
 ```
 
 4. Launch **CYLview-NG** from your application menu, or run:
@@ -70,8 +70,9 @@ sudo apt remove cylview-ng
 2. Choose an `.xyz` or `.pdb` molecular structure.
 3. Rotate with left-drag, pan with right-drag, and zoom with the scroll wheel.
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
-5. Use **Style** to adjust element colours and global atom size for the current view.
-6. Click **Export PNG** to save the current view as an image.
+5. Use **Style** to adjust element colours, atom visibility, selected atom styling, and visual bond styles.
+6. Use **Poses** to save reusable camera views and **Files** to reopen recent files.
+7. Click **Export PNG** to save the current view, including visible labels, as an image.
 
 The desktop app also includes a standard menu bar. Use **File** → **Quit CYLview-NG** to close the app and **Help** → **About CYLview-NG** for version/about details. The **Edit**, **View**, and **Window** menus are scaffolded for future commands.
 
