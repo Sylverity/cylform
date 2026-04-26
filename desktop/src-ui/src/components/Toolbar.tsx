@@ -39,7 +39,7 @@ export function Toolbar({
     <div className="toolbar">
       <div className="toolbar-title">CYLview-NG</div>
 
-      <div className="toolbar-section">
+      <div className="toolbar-section mode-toolbar-section">
         <div className="mode-selector" aria-label="Selection mode">
           {SELECTION_MODES.map(({ mode, label, shortcut, disabled }) => (
             <button
@@ -57,7 +57,7 @@ export function Toolbar({
         </div>
       </div>
 
-      <div className="toolbar-section">
+      <div className="toolbar-section action-toolbar-section">
         <button onClick={onOpenFile} disabled={isLoading} className="primary">
           <span>{isLoading ? 'Loading...' : 'Open File'}</span>
           <kbd>Ctrl O</kbd>
@@ -94,7 +94,7 @@ export function Toolbar({
         </button>
       </div>
 
-      <div className="toolbar-section">
+      <div className="toolbar-section status-toolbar-section">
         {isLoading && (
           <div className="loading-indicator">
             <div className="spinner" />

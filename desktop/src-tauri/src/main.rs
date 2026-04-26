@@ -52,6 +52,8 @@ struct SerialAtom {
     element: String,
     /// van der Waals radius (Å) — frontend scales this for display
     radius: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<SerialAtomMetadata>,
 }
 
 #[derive(Serialize)]
@@ -63,10 +65,54 @@ struct SerialBond {
 }
 
 #[derive(Serialize)]
+struct SerialAtomMetadata {
+    #[serde(rename = "recordType", skip_serializing_if = "Option::is_none")]
+    record_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    serial: Option<i32>,
+    #[serde(rename = "atomName", skip_serializing_if = "Option::is_none")]
+    atom_name: Option<String>,
+    #[serde(rename = "altLoc", skip_serializing_if = "Option::is_none")]
+    alt_loc: Option<String>,
+    #[serde(rename = "residueName", skip_serializing_if = "Option::is_none")]
+    residue_name: Option<String>,
+    #[serde(rename = "chainId", skip_serializing_if = "Option::is_none")]
+    chain_id: Option<String>,
+    #[serde(rename = "residueSequence", skip_serializing_if = "Option::is_none")]
+    residue_sequence: Option<i32>,
+    #[serde(rename = "insertionCode", skip_serializing_if = "Option::is_none")]
+    insertion_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    occupancy: Option<f32>,
+    #[serde(rename = "bFactor", skip_serializing_if = "Option::is_none")]
+    b_factor: Option<f32>,
+    #[serde(rename = "formalCharge", skip_serializing_if = "Option::is_none")]
+    formal_charge: Option<String>,
+}
+
+#[derive(Serialize)]
+struct SerialMoleculeMetadata {
+    #[serde(rename = "sourceFormat", skip_serializing_if = "Option::is_none")]
+    source_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(rename = "frameCount", skip_serializing_if = "Option::is_none")]
+    frame_count: Option<usize>,
+    #[serde(rename = "loadedFrameIndex", skip_serializing_if = "Option::is_none")]
+    loaded_frame_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    energy: Option<f64>,
+    #[serde(rename = "energyUnit", skip_serializing_if = "Option::is_none")]
+    energy_unit: Option<String>,
+    warnings: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct MoleculeData {
     name: String,
     atoms: Vec<SerialAtom>,
     bonds: Vec<SerialBond>,
+    metadata: SerialMoleculeMetadata,
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +138,19 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
             z: a.position.z - center.z,
             element: a.element.clone(),
             radius: a.radius,
+            metadata: a.metadata.as_ref().map(|metadata| SerialAtomMetadata {
+                record_type: metadata.record_type.clone(),
+                serial: metadata.serial,
+                atom_name: metadata.atom_name.clone(),
+                alt_loc: metadata.alt_loc.clone(),
+                residue_name: metadata.residue_name.clone(),
+                chain_id: metadata.chain_id.clone(),
+                residue_sequence: metadata.residue_sequence,
+                insertion_code: metadata.insertion_code.clone(),
+                occupancy: metadata.occupancy,
+                b_factor: metadata.b_factor,
+                formal_charge: metadata.formal_charge.clone(),
+            }),
         })
         .collect();
 
@@ -116,6 +175,15 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
         name: structure.name.clone(),
         atoms,
         bonds,
+        metadata: SerialMoleculeMetadata {
+            source_format: structure.metadata.source_format.clone(),
+            title: structure.metadata.title.clone(),
+            frame_count: structure.metadata.frame_count,
+            loaded_frame_index: structure.metadata.loaded_frame_index,
+            energy: structure.metadata.energy,
+            energy_unit: structure.metadata.energy_unit.clone(),
+            warnings: structure.metadata.warnings.clone(),
+        },
     };
 
     *state.structure.lock() = Some(structure);
@@ -194,13 +262,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
 
     Menu::with_items(
         manager,
-        &[
-            &file_menu,
-            &edit_menu,
-            &view_menu,
-            &window_menu,
-            &help_menu,
-        ],
+        &[&file_menu, &edit_menu, &view_menu, &window_menu, &help_menu],
     )
 }
 

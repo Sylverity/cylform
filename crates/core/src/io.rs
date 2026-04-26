@@ -6,11 +6,28 @@
 //!
 //! Future: Full chemfiles integration for 40+ formats
 
-use crate::molecule::{Atom, Structure};
+use crate::molecule::{Atom, AtomMetadata, Bond, BondOrder, Structure};
 use crate::{CoreError, Result};
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
+
+fn text_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn parse_optional_i32(value: &str) -> Option<i32> {
+    value.trim().parse::<i32>().ok()
+}
+
+fn parse_optional_f32(value: &str) -> Option<f32> {
+    value.trim().parse::<f32>().ok()
+}
 
 /// Maximum input file size accepted by the single-structure loaders.
 pub const MAX_FILE_SIZE_BYTES: u64 = 25 * 1024 * 1024;
@@ -165,17 +182,114 @@ fn validate_atom_count(count: usize) -> Result<()> {
     Ok(())
 }
 
+fn parse_energy_from_title(title: &str) -> Option<f64> {
+    let normalized = title
+        .replace(['=', ':', ','], " ")
+        .split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+
+    for (index, token) in normalized.iter().enumerate() {
+        let key = token.trim().to_ascii_lowercase();
+        if matches!(key.as_str(), "e" | "energy" | "ener") {
+            if let Some(value) = normalized.get(index + 1) {
+                if let Ok(parsed) = value.parse::<f64>() {
+                    return Some(parsed);
+                }
+            }
+        }
+
+        if let Some(value) = key.strip_prefix("energy=") {
+            if let Ok(parsed) = value.parse::<f64>() {
+                return Some(parsed);
+            }
+        }
+    }
+
+    None
+}
+
+fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize) -> usize {
+    let mut index = first_atom_count + 2;
+    let mut count = 1;
+
+    while index < lines.len() {
+        while index < lines.len() && lines[index].trim().is_empty() {
+            index += 1;
+        }
+
+        if index >= lines.len() {
+            break;
+        }
+
+        let Ok(atom_count) = lines[index].trim().parse::<usize>() else {
+            break;
+        };
+
+        if atom_count > MAX_ATOMS || index + 1 + atom_count >= lines.len() + 1 {
+            break;
+        }
+
+        count += 1;
+        index += atom_count + 2;
+    }
+
+    count
+}
+
+fn pdb_col(line: &str, start: usize, end: usize) -> &str {
+    line.get(start..end).unwrap_or("").trim()
+}
+
+fn pdb_record_text(line: &str) -> &str {
+    line.get(10..).unwrap_or("").trim()
+}
+
+fn infer_pdb_element(atom_name: &str) -> String {
+    let letters: String = atom_name
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic())
+        .collect();
+    if letters.is_empty() {
+        return "C".to_string();
+    }
+
+    let mut chars = letters.chars();
+    let first = chars.next().map(|c| c.to_ascii_uppercase()).unwrap_or('C');
+    let second = chars.next().map(|c| c.to_ascii_lowercase());
+
+    match second {
+        Some(second) if matches!(format!("{first}{second}").as_str(), "Cl" | "Br") => {
+            format!("{first}{second}")
+        }
+        _ => first.to_string(),
+    }
+}
+
+fn pdb_display_name(
+    header: Option<String>,
+    title: Option<String>,
+    compound: Option<String>,
+) -> String {
+    title
+        .or(header)
+        .or(compound)
+        .unwrap_or_else(|| "PDB Structure".to_string())
+}
+
 /// Read XYZ format
 fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
     let file = File::open(path).map_err(|e| CoreError::Io(IoError::NotFound(e.to_string())))?;
     let reader = BufReader::new(file);
-    let mut lines = reader.lines();
+    let lines: Vec<String> = reader
+        .lines()
+        .collect::<io::Result<Vec<_>>>()
+        .map_err(|e| CoreError::Io(IoError::Io(e)))?;
 
     // First line: number of atoms
     let num_atoms: usize = lines
-        .next()
+        .first()
         .ok_or_else(|| CoreError::Io(IoError::Parse("Empty file".to_string())))?
-        .map_err(|e| CoreError::Io(IoError::Io(e)))?
         .trim()
         .parse()
         .map_err(|_| {
@@ -188,22 +302,30 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
 
     // Second line: comment/title
     let title = lines
-        .next()
-        .and_then(|r| r.ok())
+        .get(1)
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
 
-    let mut structure = Structure::new(title);
+    let frame_count = detect_xyz_frame_count(&lines, num_atoms);
+    let energy = parse_energy_from_title(&title);
+    let mut structure = Structure::new(title.clone());
+    structure.metadata.source_format = Some("XYZ".to_string());
+    structure.metadata.title = Some(title.clone());
+    structure.metadata.frame_count = Some(frame_count);
+    structure.metadata.loaded_frame_index = Some(1);
+    structure.metadata.energy = energy;
+    if energy.is_some() {
+        structure.metadata.energy_unit = Some("unknown".to_string());
+    }
 
     // Remaining lines: atoms
     for i in 0..num_atoms {
         let line_number = i + 3;
-        let line = lines.next().ok_or_else(|| {
+        let line = lines.get(i + 2).ok_or_else(|| {
             CoreError::Io(IoError::Parse(format!(
                 "XYZ ended early: expected {num_atoms} atom rows, found {i}"
             )))
         })?;
-        let line = line.map_err(|e| CoreError::Io(IoError::Io(e)))?;
         let parts: Vec<&str> = line.trim().split_whitespace().collect();
         if parts.len() < 4 {
             return Err(CoreError::Io(IoError::Parse(format!(
@@ -221,9 +343,27 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
         let x = parse_f32(parts[1], line_number, "x")?;
         let y = parse_f32(parts[2], line_number, "y")?;
         let z = parse_f32(parts[3], line_number, "z")?;
+        if parts.len() > 4
+            && !structure
+                .metadata
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("extra XYZ atom columns"))
+        {
+            structure.metadata.warnings.push(
+                "Detected extra XYZ atom columns; CYLview-NG preserves coordinates only for now."
+                    .to_string(),
+            );
+        }
 
         let atom = Atom::new(i as u32, &element, glam::Vec3::new(x, y, z));
         structure.add_atom(atom);
+    }
+
+    if frame_count > 1 {
+        structure.metadata.warnings.push(format!(
+            "Detected {frame_count} XYZ frames; currently displaying frame 1."
+        ));
     }
 
     // Auto-perceive bonds
@@ -238,13 +378,68 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
     let reader = BufReader::new(file);
 
     let mut structure = Structure::new("PDB Structure");
+    structure.metadata.source_format = Some("PDB".to_string());
+    structure.metadata.loaded_frame_index = Some(1);
     let mut atom_index = 0u32;
+    let mut serial_to_index = std::collections::HashMap::<i32, u32>::new();
+    let mut conect_pairs = Vec::<(i32, i32)>::new();
+    let mut header: Option<String> = None;
+    let mut title_parts = Vec::<String>::new();
+    let mut compound_parts = Vec::<String>::new();
+    let mut model_count = 0usize;
+    let mut inside_first_model = false;
+    let mut finished_first_model = false;
+    let mut saw_model = false;
 
     for (line_index, line) in reader.lines().enumerate() {
         let line_number = line_index + 1;
         let line = line.map_err(|e| CoreError::Io(IoError::Io(e)))?;
+        let record = line.get(0..6).unwrap_or("").trim();
 
-        if line.starts_with("ATOM") || line.starts_with("HETATM") {
+        match record {
+            "HEADER" => {
+                if header.is_none() {
+                    header = text_value(pdb_record_text(&line));
+                }
+            }
+            "TITLE" => {
+                if let Some(value) = text_value(pdb_record_text(&line)) {
+                    title_parts.push(value);
+                }
+            }
+            "COMPND" => {
+                if let Some(value) = text_value(pdb_record_text(&line)) {
+                    compound_parts.push(value);
+                }
+            }
+            "MODEL" => {
+                saw_model = true;
+                model_count += 1;
+                inside_first_model = model_count == 1;
+            }
+            "ENDMDL" => {
+                if inside_first_model {
+                    finished_first_model = true;
+                    inside_first_model = false;
+                }
+            }
+            "CONECT" => {
+                let parts = line.split_whitespace().collect::<Vec<_>>();
+                if let Some(source) = parts.get(1).and_then(|value| value.parse::<i32>().ok()) {
+                    for target in parts
+                        .iter()
+                        .skip(2)
+                        .filter_map(|value| value.parse::<i32>().ok())
+                    {
+                        conect_pairs.push((source, target));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        let should_read_atom = !saw_model || (inside_first_model && !finished_first_model);
+        if should_read_atom && (line.starts_with("ATOM") || line.starts_with("HETATM")) {
             // PDB format:
             // ATOM/HETATM serial name resName chainID resSeq x y z
             // Columns are fixed-width
@@ -254,11 +449,8 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
                 ))));
             }
 
-            let element = if line.len() >= 78 {
-                line[76..78].trim().to_string()
-            } else {
-                String::new()
-            };
+            let atom_name = pdb_col(&line, 12, 16).to_string();
+            let element = pdb_col(&line, 76, 78).to_string();
             let element = if element.is_empty() {
                 // Try to get element from atom name (columns 12-16)
                 if line.len() < 16 {
@@ -267,22 +459,34 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
                     ))));
                 }
 
-                line[12..16]
-                    .trim()
-                    .chars()
-                    .next()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "C".to_string())
+                infer_pdb_element(&atom_name)
             } else {
                 element
             };
 
-            let x = parse_f32(line[30..38].trim(), line_number, "x")?;
-            let y = parse_f32(line[38..46].trim(), line_number, "y")?;
-            let z = parse_f32(line[46..54].trim(), line_number, "z")?;
+            let x = parse_f32(pdb_col(&line, 30, 38), line_number, "x")?;
+            let y = parse_f32(pdb_col(&line, 38, 46), line_number, "y")?;
+            let z = parse_f32(pdb_col(&line, 46, 54), line_number, "z")?;
 
-            let atom = Atom::new(atom_index, &element, glam::Vec3::new(x, y, z));
+            let serial = parse_optional_i32(pdb_col(&line, 6, 11));
+            let mut atom = Atom::new(atom_index, &element, glam::Vec3::new(x, y, z));
+            atom.metadata = Some(AtomMetadata {
+                record_type: Some(record.to_string()),
+                serial,
+                atom_name: text_value(&atom_name),
+                alt_loc: text_value(pdb_col(&line, 16, 17)),
+                residue_name: text_value(pdb_col(&line, 17, 20)),
+                chain_id: text_value(pdb_col(&line, 21, 22)),
+                residue_sequence: parse_optional_i32(pdb_col(&line, 22, 26)),
+                insertion_code: text_value(pdb_col(&line, 26, 27)),
+                occupancy: parse_optional_f32(pdb_col(&line, 54, 60)),
+                b_factor: parse_optional_f32(pdb_col(&line, 60, 66)),
+                formal_charge: text_value(pdb_col(&line, 78, 80)),
+            });
             structure.add_atom(atom);
+            if let Some(serial) = serial {
+                serial_to_index.insert(serial, atom_index);
+            }
             atom_index += 1;
 
             validate_atom_count(structure.atom_count())?;
@@ -295,8 +499,49 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
         )));
     }
 
-    // Auto-perceive bonds
-    structure.perceive_bonds();
+    let title = if title_parts.is_empty() {
+        None
+    } else {
+        Some(title_parts.join(" "))
+    };
+    let compound = if compound_parts.is_empty() {
+        None
+    } else {
+        Some(compound_parts.join(" "))
+    };
+    structure.name = pdb_display_name(header.clone(), title.clone(), compound.clone());
+    structure.metadata.title = Some(structure.name.clone());
+    structure.metadata.frame_count = Some(if saw_model { model_count.max(1) } else { 1 });
+    if saw_model && model_count > 1 {
+        structure.metadata.warnings.push(format!(
+            "Detected {model_count} PDB models; currently displaying model 1."
+        ));
+    }
+
+    let mut added_conect = std::collections::HashSet::<(u32, u32)>::new();
+    for (source_serial, target_serial) in conect_pairs {
+        let (Some(&source), Some(&target)) = (
+            serial_to_index.get(&source_serial),
+            serial_to_index.get(&target_serial),
+        ) else {
+            continue;
+        };
+        if source == target {
+            continue;
+        }
+        let pair = if source < target {
+            (source, target)
+        } else {
+            (target, source)
+        };
+        if added_conect.insert(pair) {
+            structure.add_bond(Bond::new(pair.0, pair.1, BondOrder::Single));
+        }
+    }
+
+    if structure.bonds.is_empty() {
+        structure.perceive_bonds();
+    }
 
     Ok(structure)
 }
@@ -384,6 +629,51 @@ H -0.757000 0.586000 0.000000
         assert_eq!(structure.atom_count(), 3);
         assert_eq!(structure.atoms[0].element, "O");
         assert!(structure.bond_count() > 0);
+        assert_eq!(structure.metadata.source_format.as_deref(), Some("XYZ"));
+        assert_eq!(structure.metadata.title.as_deref(), Some("Water molecule"));
+    }
+
+    #[test]
+    fn test_xyz_energy_metadata() {
+        let xyz_content = "1\nenergy=-123.456 hartree\nC 0.0 0.0 0.0\n";
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(xyz_content.as_bytes()).unwrap();
+
+        let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
+
+        assert_eq!(structure.name, "energy=-123.456 hartree");
+        assert_eq!(structure.metadata.energy, Some(-123.456));
+    }
+
+    #[test]
+    fn test_xyz_detects_multiframe_and_extra_columns() {
+        let xyz_content = r#"2
+step 1 E -1.0
+C 0.0 0.0 0.0 charge=0.1
+H 0.7 0.0 0.0 velocity 1
+2
+step 2 E -0.9
+C 0.0 0.0 0.0
+H 0.8 0.0 0.0
+"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(xyz_content.as_bytes()).unwrap();
+
+        let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
+
+        assert_eq!(structure.atom_count(), 2);
+        assert_eq!(structure.metadata.frame_count, Some(2));
+        assert_eq!(structure.metadata.loaded_frame_index, Some(1));
+        assert!(structure
+            .metadata
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("extra XYZ atom columns")));
+        assert!(structure
+            .metadata
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("2 XYZ frames")));
     }
 
     #[test]
@@ -474,6 +764,75 @@ H -0.757000 0.586000 0.000000
 
         let err = read_structure(temp_file.path(), FileFormat::Pdb).unwrap_err();
         assert!(err.to_string().contains("Invalid x coordinate on line 1"));
+    }
+
+    #[test]
+    fn test_pdb_captures_atom_metadata_and_title() {
+        let pdb_content = "\
+HEADER    TEST HEADER\n\
+TITLE     EXAMPLE PDB TITLE\n\
+ATOM      7  CA AMET B  42      12.345  23.456  34.567  0.50 19.75           C1+\n\
+END\n";
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(pdb_content.as_bytes()).unwrap();
+
+        let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
+        let metadata = structure.atoms[0].metadata.as_ref().unwrap();
+
+        assert_eq!(structure.name, "EXAMPLE PDB TITLE");
+        assert_eq!(structure.metadata.source_format.as_deref(), Some("PDB"));
+        assert_eq!(metadata.record_type.as_deref(), Some("ATOM"));
+        assert_eq!(metadata.serial, Some(7));
+        assert_eq!(metadata.atom_name.as_deref(), Some("CA"));
+        assert_eq!(metadata.alt_loc.as_deref(), Some("A"));
+        assert_eq!(metadata.residue_name.as_deref(), Some("MET"));
+        assert_eq!(metadata.chain_id.as_deref(), Some("B"));
+        assert_eq!(metadata.residue_sequence, Some(42));
+        assert_eq!(metadata.occupancy, Some(0.5));
+        assert_eq!(metadata.b_factor, Some(19.75));
+        assert_eq!(metadata.formal_charge.as_deref(), Some("1+"));
+    }
+
+    #[test]
+    fn test_pdb_uses_conect_records_for_bonds() {
+        let pdb_content = "\
+HETATM    1  C1  LIG A   1       0.000   0.000   0.000  1.00  0.00           C\n\
+HETATM    2  O1  LIG A   1       5.000   0.000   0.000  1.00  0.00           O\n\
+CONECT    1    2\n\
+CONECT    2    1\n\
+END\n";
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(pdb_content.as_bytes()).unwrap();
+
+        let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
+
+        assert_eq!(structure.bond_count(), 1);
+        assert_eq!(structure.bonds[0].atom1, 0);
+        assert_eq!(structure.bonds[0].atom2, 1);
+    }
+
+    #[test]
+    fn test_pdb_detects_multimodel_and_loads_first_model() {
+        let pdb_content = "\
+MODEL        1\n\
+ATOM      1  C   LIG A   1       0.000   0.000   0.000  1.00  0.00           C\n\
+ENDMDL\n\
+MODEL        2\n\
+ATOM      2  O   LIG A   1       1.000   0.000   0.000  1.00  0.00           O\n\
+ENDMDL\n";
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(pdb_content.as_bytes()).unwrap();
+
+        let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
+
+        assert_eq!(structure.atom_count(), 1);
+        assert_eq!(structure.atoms[0].element, "C");
+        assert_eq!(structure.metadata.frame_count, Some(2));
+        assert!(structure
+            .metadata
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("2 PDB models")));
     }
 
     #[test]

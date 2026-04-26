@@ -17,6 +17,7 @@ export interface AtomData {
   z: number;
   element: string;
   radius: number;
+  metadata?: AtomMetadata;
 }
 
 export interface BondData {
@@ -68,10 +69,35 @@ export interface ViewOptions {
   autoRotateSpeed: number;
 }
 
+export interface AtomMetadata {
+  recordType?: string;
+  serial?: number;
+  atomName?: string;
+  altLoc?: string;
+  residueName?: string;
+  chainId?: string;
+  residueSequence?: number;
+  insertionCode?: string;
+  occupancy?: number;
+  bFactor?: number;
+  formalCharge?: string;
+}
+
+export interface MoleculeMetadata {
+  sourceFormat?: string;
+  title?: string;
+  frameCount?: number;
+  loadedFrameIndex?: number;
+  energy?: number;
+  energyUnit?: string;
+  warnings: string[];
+}
+
 export interface MoleculeData {
   name: string;
   atoms: AtomData[];
   bonds: BondData[];
+  metadata: MoleculeMetadata;
 }
 
 function App() {

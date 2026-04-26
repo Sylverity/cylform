@@ -25,6 +25,8 @@ pub struct Atom {
     pub selected: bool,
     /// Visibility
     pub visible: bool,
+    /// Optional source-file metadata for this atom
+    pub metadata: Option<AtomMetadata>,
 }
 
 impl Atom {
@@ -38,6 +40,7 @@ impl Atom {
             color: None,
             selected: false,
             visible: true,
+            metadata: None,
         }
     }
 
@@ -90,6 +93,33 @@ impl Atom {
         };
         [rgb[0], rgb[1], rgb[2], 1.0]
     }
+}
+
+/// Optional source-file metadata for an atom.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AtomMetadata {
+    /// Source record kind, for example ATOM or HETATM in PDB files
+    pub record_type: Option<String>,
+    /// Source atom serial number
+    pub serial: Option<i32>,
+    /// Source atom name
+    pub atom_name: Option<String>,
+    /// Alternate location indicator
+    pub alt_loc: Option<String>,
+    /// Residue name
+    pub residue_name: Option<String>,
+    /// Chain identifier
+    pub chain_id: Option<String>,
+    /// Residue sequence number
+    pub residue_sequence: Option<i32>,
+    /// Insertion code
+    pub insertion_code: Option<String>,
+    /// PDB occupancy
+    pub occupancy: Option<f32>,
+    /// PDB temperature factor / B-factor
+    pub b_factor: Option<f32>,
+    /// Formal charge
+    pub formal_charge: Option<String>,
 }
 
 /// Bond order/type
@@ -159,6 +189,8 @@ pub struct Structure {
     pub bonds: Vec<Bond>,
     /// Transform matrix (for positioning)
     pub transform: Mat4,
+    /// Optional source-file metadata
+    pub metadata: StructureMetadata,
 }
 
 impl Structure {
@@ -169,6 +201,7 @@ impl Structure {
             atoms: Vec::new(),
             bonds: Vec::new(),
             transform: Mat4::IDENTITY,
+            metadata: StructureMetadata::default(),
         }
     }
 
@@ -242,6 +275,25 @@ impl Structure {
     pub fn bond_count(&self) -> usize {
         self.bonds.len()
     }
+}
+
+/// Optional metadata preserved from the source molecular file.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct StructureMetadata {
+    /// Source format label such as XYZ or PDB
+    pub source_format: Option<String>,
+    /// Title/comment/header text from the source file
+    pub title: Option<String>,
+    /// Detected total frame/model count when the source can contain multiple structures
+    pub frame_count: Option<usize>,
+    /// One-based frame/model index loaded by the current single-structure viewer
+    pub loaded_frame_index: Option<usize>,
+    /// Parsed scalar energy from common title/comment formats
+    pub energy: Option<f64>,
+    /// Energy unit when known
+    pub energy_unit: Option<String>,
+    /// Non-fatal parser notes about ignored or deferred metadata
+    pub warnings: Vec<String>,
 }
 
 #[cfg(test)]

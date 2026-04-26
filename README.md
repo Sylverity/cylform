@@ -42,6 +42,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 - OrbitControls: rotate / pan / zoom / reset
 - In-canvas View overlay for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
 - Covalent-radius bond perception (no phantom bonds)
+- XYZ/PDB metadata awareness for titles, energies, PDB atom/residue fields, multi-frame/model detection, and PDB CONECT bonds
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
 - Native desktop menu scaffold for File / Edit / View / Window / Help
@@ -59,6 +60,7 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 - **CYLview visual style** — glossy cyan cylinders, tiny CPK atom spheres, white background, 4-point lighting
 - **View controls overlay** — floor/grid reference plane, backdrop tones, projection mode, lighting moods, fog, auto-rotate, and camera presets
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
+- **Source metadata disclosure** — preserves common XYZ/PDB titles, energies, PDB atom/residue fields, frame/model counts, parser notes, and explicit PDB `CONECT` bonds
 - **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
 - **Hydrogen visibility toggle** — hide/show H atoms for cleaner structure inspection
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
@@ -72,7 +74,7 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 
 ## File Safety
 
-CYLview-NG treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms and coordinates in Rust, perceive bonds locally, and send geometry data to the renderer.
+CYLview-NG treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
 
 For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 5,000 atoms are rejected with a clear error. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
 
@@ -291,6 +293,7 @@ CYLviewClone/
 - [x] Orbit / pan / zoom camera with damping
 - [x] Session view controls for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
 - [x] Native OS file dialog
+- [x] XYZ/PDB source metadata disclosure, including PDB atom/residue fields and CONECT bonds
 - [x] Auto-fit camera to loaded molecule
 - [x] Hydrogen visibility toggle (hide/show H)
 - [x] Element colour customisation

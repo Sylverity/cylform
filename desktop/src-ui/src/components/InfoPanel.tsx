@@ -46,6 +46,36 @@ function selectionModeLabel(mode: SelectionMode): string {
   }
 }
 
+function metadataSummary(moleculeData: MoleculeData) {
+  const pdbAtoms = moleculeData.atoms.filter((atom) => atom.metadata);
+  const chains = new Set<string>();
+  const residues = new Set<string>();
+  let heteroAtomCount = 0;
+
+  for (const atom of pdbAtoms) {
+    const metadata = atom.metadata;
+    if (!metadata) continue;
+
+    if (metadata.chainId) chains.add(metadata.chainId);
+    if (metadata.residueName || metadata.residueSequence !== undefined || metadata.chainId) {
+      residues.add([
+        metadata.chainId ?? '',
+        metadata.residueName ?? '',
+        metadata.residueSequence ?? '',
+        metadata.insertionCode ?? '',
+      ].join(':'));
+    }
+    if (metadata.recordType === 'HETATM') heteroAtomCount += 1;
+  }
+
+  return {
+    chainCount: chains.size,
+    residueCount: residues.size,
+    heteroAtomCount,
+    hasAtomMetadata: pdbAtoms.length > 0,
+  };
+}
+
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
   showHydrogens: boolean;
@@ -99,6 +129,7 @@ export function InfoPanel({
     selectionSummary.bondCount > 0,
   );
   const hasColorOverrides = Object.keys(elementColorOverrides).length > 0;
+  const sourceMetadata = moleculeData ? metadataSummary(moleculeData) : null;
 
   if (!moleculeData) {
     return (
@@ -223,6 +254,74 @@ export function InfoPanel({
           <span className="info-label">Engine</span>
           <span className="info-value" style={{ color: '#22c55e' }}>WebGL · Three.js</span>
         </div>
+      </div>
+
+      <div className="info-section">
+        <h4>Metadata</h4>
+        <div className="info-row">
+          <span className="info-label">Format</span>
+          <span className="info-value">{moleculeData.metadata.sourceFormat ?? 'Unknown'}</span>
+        </div>
+        {moleculeData.metadata.title && moleculeData.metadata.title !== moleculeData.name && (
+          <div className="info-row">
+            <span className="info-label">Title</span>
+            <span className="info-value" title={moleculeData.metadata.title}>
+              {moleculeData.metadata.title.length > 22
+                ? moleculeData.metadata.title.slice(0, 22) + '…'
+                : moleculeData.metadata.title}
+            </span>
+          </div>
+        )}
+        {moleculeData.metadata.frameCount && moleculeData.metadata.frameCount > 1 && (
+          <div className="info-row">
+            <span className="info-label">
+              {moleculeData.metadata.sourceFormat === 'PDB' ? 'Models' : 'Frames'}
+            </span>
+            <span className="info-value">
+              {moleculeData.metadata.loadedFrameIndex ?? 1} / {moleculeData.metadata.frameCount}
+            </span>
+          </div>
+        )}
+        {typeof moleculeData.metadata.energy === 'number' && (
+          <div className="info-row">
+            <span className="info-label">Energy</span>
+            <span className="info-value">
+              {moleculeData.metadata.energy.toPrecision(8)}
+              {moleculeData.metadata.energyUnit && moleculeData.metadata.energyUnit !== 'unknown'
+                ? ` ${moleculeData.metadata.energyUnit}`
+                : ''}
+            </span>
+          </div>
+        )}
+        {sourceMetadata?.hasAtomMetadata && (
+          <>
+            <div className="info-row">
+              <span className="info-label">Chains</span>
+              <span className="info-value">
+                {sourceMetadata.chainCount || 'None'}
+              </span>
+            </div>
+            <div className="info-row">
+              <span className="info-label">Residues</span>
+              <span className="info-value">
+                {sourceMetadata.residueCount || 'None'}
+              </span>
+            </div>
+            {sourceMetadata.heteroAtomCount > 0 && (
+              <div className="info-row">
+                <span className="info-label">HETATM</span>
+                <span className="info-value">{sourceMetadata.heteroAtomCount}</span>
+              </div>
+            )}
+          </>
+        )}
+        {moleculeData.metadata.warnings.length > 0 && (
+          <div className="metadata-warnings">
+            {moleculeData.metadata.warnings.slice(0, 2).map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="info-section">
