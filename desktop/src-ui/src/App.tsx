@@ -4,6 +4,9 @@ import { open } from '@tauri-apps/plugin-dialog';
 import './App.css'
 import { Toolbar } from './components/Toolbar'
 import { InfoPanel } from './components/InfoPanel'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { ToastContainer, type ToastMessage } from './components/Toast'
+import { LoadingSpinner } from './components/LoadingSpinner'
 
 const MoleculeCanvas = lazy(() =>
   import('./components/MoleculeCanvas').then((module) => ({
@@ -194,6 +197,8 @@ function App() {
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
   const isApplyingPresentationState = useRef(false);
@@ -287,6 +292,15 @@ function App() {
 
   const handleError = useCallback((err: string) => {
     setError(err);
+  }, []);
+
+  const addToast = useCallback((text: string, type: ToastMessage['type'] = 'info') => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, text, type }]);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const loadMoleculePath = useCallback(async (path: string, label?: string) => {
@@ -645,6 +659,10 @@ function App() {
           setSelectionMode('label');
           handleClearSelection();
           break;
+        case '?':
+          event.preventDefault();
+          setShortcutsOpen(true);
+          break;
         default:
           break;
       }
@@ -770,22 +788,7 @@ function App() {
       />
 
       <div className="main-content">
-        <Suspense
-          fallback={(
-            <div className="canvas-shell-loading" role="status" aria-live="polite">
-              <div className="loading-card">
-                <div className="loading-orbit" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <p className="loading-kicker">Cylform</p>
-                <h3>Preparing molecular workspace</h3>
-                <p>Loading the 3-D renderer and desktop workspace.</p>
-              </div>
-            </div>
-          )}
-        >
+        <Suspense fallback={<LoadingSpinner />}>
           <MoleculeCanvas
             moleculeData={moleculeData}
             hydrogenVisibility={hydrogenVisibility}
@@ -810,6 +813,7 @@ function App() {
             loadingLabel={loadingLabel}
             onOpenFile={handleOpenFile}
             onError={handleError}
+            onToast={addToast}
           />
         </Suspense>
 
@@ -867,6 +871,8 @@ function App() {
           hasSavedPresentationState={hasSavedPresentationState}
         />
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

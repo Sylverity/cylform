@@ -28,6 +28,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
+import { LoadingSpinner } from './LoadingSpinner';
 import type {
   ElementColorOverrides,
   HydrogenVisibility,
@@ -43,6 +44,7 @@ import type {
   SavedPose,
   ViewOptions,
 } from '../App';
+import type { ToastMessage } from './Toast';
 
 // ---------------------------------------------------------------------------
 // Visual style — matches CYLview reference image
@@ -128,6 +130,7 @@ interface Props {
   loadingLabel: string;
   onOpenFile: () => void;
   onError: (msg: string) => void;
+  onToast: (text: string, type?: ToastMessage['type']) => void;
 }
 
 interface BondSelectionData {
@@ -383,6 +386,7 @@ export function MoleculeCanvas({
   loadingLabel,
   onOpenFile,
   onError,
+  onToast,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<SceneCtx | null>(null);
@@ -1126,6 +1130,7 @@ export function MoleculeCanvas({
 
         const pngBytes = dataUrlToBytes(exportCanvas.toDataURL('image/png'));
         await writeFile(targetPath, pngBytes);
+        onToast(`Exported PNG to ${targetPath.split(/[\\/]/).pop() ?? 'file'}`, 'success');
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
@@ -1621,18 +1626,7 @@ export function MoleculeCanvas({
         </div>
       )}
       {isLoading && (
-        <div className="loading-overlay" role="status" aria-live="polite">
-          <div className="loading-card">
-            <div className="loading-orbit" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <p className="loading-kicker">Cylform</p>
-            <h3>{loadingLabel}</h3>
-            <p>Parsing atoms, perceiving bonds, and preparing the 3-D workspace.</p>
-          </div>
-        </div>
+        <LoadingSpinner title={loadingLabel} subtitle="Parsing atoms, perceiving bonds, and preparing the 3-D workspace." />
       )}
     </div>
   );

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import type {
   ElementColorOverrides,
   HydrogenVisibility,
@@ -159,6 +160,29 @@ interface InfoPanelProps {
   hasSavedPresentationState: boolean;
 }
 
+
+function CollapsibleSection({
+  title,
+  children,
+  collapsed,
+  onToggle,
+}: {
+  title: string;
+  children: React.ReactNode;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="info-section">
+      <button type="button" className="section-toggle" onClick={onToggle} aria-expanded={!collapsed}>
+        <h4>{title}</h4>
+        <span className="section-chevron" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+      </button>
+      {!collapsed && children}
+    </div>
+  );
+}
+
 export function InfoPanel({
   moleculeData,
   hydrogenVisibility,
@@ -204,6 +228,23 @@ export function InfoPanel({
   hiddenAtomCount,
   hasSavedPresentationState,
 }: InfoPanelProps) {
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  const activeError = error && error !== dismissedError ? error : null;
+
+  useEffect(() => {
+    if (error) setDismissedError(null);
+  }, [error]);
+
+  function toggleSection(name: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
   const hiddenAtomSet = new Set(hiddenAtomIndices);
   const visibleAtoms = moleculeData
     ? moleculeData.atoms.filter((_, atomIndex) => (
@@ -328,15 +369,24 @@ export function InfoPanel({
 
   return (
     <div className="info-panel">
-      {error && (
+      {activeError && (
         <div className="error-message">
-          <strong>Error</strong>
-          <p>{error}</p>
+          <div className="error-header">
+            <strong>Error</strong>
+            <button
+              type="button"
+              className="error-dismiss"
+              onClick={() => setDismissedError(activeError)}
+              aria-label="Dismiss error"
+            >
+              ×
+            </button>
+          </div>
+          <p>{activeError}</p>
         </div>
       )}
 
-      <div className="info-section">
-        <h4>Molecule</h4>
+      <CollapsibleSection title="Molecule" collapsed={collapsedSections.has('Molecule')} onToggle={() => toggleSection('Molecule')}>
         <div className="info-row">
           <span className="info-label">Name</span>
           <span className="info-value" title={moleculeData.name}>
@@ -377,10 +427,9 @@ export function InfoPanel({
           <span className="info-label">Engine</span>
           <span className="info-value" style={{ color: '#22c55e' }}>WebGL · Three.js</span>
         </div>
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
-        <h4>Metadata</h4>
+      <CollapsibleSection title="Metadata" collapsed={collapsedSections.has('Metadata')} onToggle={() => toggleSection('Metadata')}>
         <div className="info-row">
           <span className="info-label">Format</span>
           <span className="info-value">{moleculeData.metadata.sourceFormat ?? 'Unknown'}</span>
@@ -445,10 +494,9 @@ export function InfoPanel({
             ))}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
-        <h4>Measure</h4>
+      <CollapsibleSection title="Measure" collapsed={collapsedSections.has('Measure')} onToggle={() => toggleSection('Measure')}>
         <div className="info-row">
           <span className="info-label">Mode</span>
           <span className="info-value">{selectionModeLabel(selectionMode)}</span>
@@ -530,9 +578,9 @@ export function InfoPanel({
             Add Label
           </button>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
+      <CollapsibleSection title="Labels" collapsed={collapsedSections.has('Labels')} onToggle={() => toggleSection('Labels')}>
         <div className="style-control-header">
           <h4>Labels</h4>
           {persistentLabels.length > 0 && (
@@ -582,9 +630,9 @@ export function InfoPanel({
             ))}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
+      <CollapsibleSection title="Poses" collapsed={collapsedSections.has('Poses')} onToggle={() => toggleSection('Poses')}>
         <div className="style-control-header">
           <h4>Poses</h4>
           <button
@@ -622,10 +670,9 @@ export function InfoPanel({
             ))}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
-        <h4>Files</h4>
+      <CollapsibleSection title="Files" collapsed={collapsedSections.has('Files')} onToggle={() => toggleSection('Files')}>
         {recentFiles.length === 0 ? (
           <p className="info-note">Recent XYZ/PDB files will appear here after opening them.</p>
         ) : (
@@ -652,10 +699,9 @@ export function InfoPanel({
             Reset Saved Presentation
           </button>
         )}
-      </div>
+      </CollapsibleSection>
 
-      <div className="info-section">
-        <h4>Style</h4>
+      <CollapsibleSection title="Style" collapsed={collapsedSections.has('Style')} onToggle={() => toggleSection('Style')}>
         <div className="info-row">
           <span className="info-label">Hydrogens</span>
           <span className="info-value">{hydrogenVisibilityLabel(hydrogenVisibility)}</span>
@@ -809,7 +855,7 @@ export function InfoPanel({
             )}
           </div>
         )}
-      </div>
+      </CollapsibleSection>
     </div>
   );
 }
