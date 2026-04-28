@@ -1,15 +1,15 @@
 [package]
-name = "cylview-desktop"
+name = "cylform-desktop"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Desktop application for CYLview-NG"
+description = "Desktop application for Cylform"
 
 [dependencies]
-cylview-core = { path = "../../crates/core" }
+cylform-core = { path = "../../crates/core" }
 tauri = { workspace = true }
 tauri-plugin-dialog = "2.0"
 tauri-plugin-fs = "2.0"
@@ -24,5 +24,5 @@ tauri-plugin-single-instance = "2.0"
 tauri-build = { workspace = true }
 
 [[bin]]
-name = "cylview-ng"
+name = "cylform"
 path = "src/main.rs"

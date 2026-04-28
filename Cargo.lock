@@ -817,7 +817,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cylview-core"
+name = "cylform-core"
 version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
@@ -834,10 +834,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "cylview-desktop"
+name = "cylform-desktop"
 version = "1.0.0-rc.1"
 dependencies = [
- "cylview-core",
+ "cylform-core",
  "env_logger",
  "log",
  "parking_lot",

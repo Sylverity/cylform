@@ -112,7 +112,7 @@ impl FileFormat {
 ///
 /// # Example
 /// ```no_run
-/// use cylview_core::io::{read_structure, FileFormat};
+/// use cylform_core::io::{read_structure, FileFormat};
 ///
 /// let structure = read_structure("molecule.xyz", FileFormat::Auto).unwrap();
 /// println!("Loaded {} atoms", structure.atom_count());
@@ -326,7 +326,7 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
                 "XYZ ended early: expected {num_atoms} atom rows, found {i}"
             )))
         })?;
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 4 {
             return Err(CoreError::Io(IoError::Parse(format!(
                 "Malformed XYZ atom row on line {line_number}: expected element and x y z coordinates"
@@ -351,7 +351,7 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
                 .any(|warning| warning.contains("extra XYZ atom columns"))
         {
             structure.metadata.warnings.push(
-                "Detected extra XYZ atom columns; CYLview-NG preserves coordinates only for now."
+                "Detected extra XYZ atom columns; Cylform preserves coordinates only for now."
                     .to_string(),
             );
         }

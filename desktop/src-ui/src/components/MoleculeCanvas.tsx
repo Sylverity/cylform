@@ -1628,7 +1628,7 @@ export function MoleculeCanvas({
               <span />
               <span />
             </div>
-            <p className="loading-kicker">CYLview-NG</p>
+            <p className="loading-kicker">Cylform</p>
             <h3>{loadingLabel}</h3>
             <p>Parsing atoms, perceiving bonds, and preparing the 3-D workspace.</p>
           </div>

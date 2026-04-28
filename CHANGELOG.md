@@ -30,7 +30,7 @@ Release candidate for the v1 publication-workflow milestone.
 First working build. Open an `.xyz` file, see the molecule in 3-D.
 
 ### Added
-- `cylview-core` Rust library — `Atom`, `Bond`, `Structure` data structures
+- `cylform-core` Rust library — `Atom`, `Bond`, `Structure` data structures
 - XYZ and PDB file I/O with automatic format detection
 - Bond perception using covalent radii
 - Tauri v2 desktop shell — standalone `.exe`, no installation required

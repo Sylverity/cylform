@@ -1,4 +1,4 @@
-# CYLview-NG
+# Cylform
 
 **Open-source molecular visualization inspired by Claude Y. Legault's CYLview**
 
@@ -12,7 +12,7 @@ A modern reimplementation of CYLview — the chemistry community's favourite too
 
 ## Project Guidance
 
-Build CYLview-NG iteratively and stay tightly aligned with the product vision.
+Build Cylform iteratively and stay tightly aligned with the product vision.
 
 This is not a generic molecular viewer. It is a modern open-source successor to CYLview, with emphasis on:
 - the distinctive cylindrical-bond aesthetic
@@ -32,7 +32,7 @@ Rules:
 
 ## Rendering Architecture
 
-Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends atom/bond JSON to the React frontend via a single `load_molecule` Tauri command. Three.js (WebGL) renders the scene inside the Tauri WebView. This is the correct architecture; do not attempt to drive wgpu from the Tauri window handle.
+Rust (`cylform-core`) handles all file I/O and chemistry. The desktop app sends atom/bond JSON to the React frontend via a single `load_molecule` Tauri command. Three.js (WebGL) renders the scene inside the Tauri WebView. This is the correct architecture; do not attempt to drive wgpu from the Tauri window handle.
 
 ## Current State
 
@@ -52,7 +52,7 @@ Rust (`cylview-core`) handles all file I/O and chemistry. The desktop app sends 
 
 ## Feature Parity Philosophy
 
-CYLview-NG v1 targets the original CYLview family's core publication workflow: fast structure loading, clean real-time viewing, measurements, labels, styling, saved presentation state, and high-quality image export. Large computational chemistry modules such as Gaussian trajectory playback, frequency animation, steric-contact analysis, and movie generation are important parity goals, but they belong after the viewer, annotation, and styling model is stable.
+Cylform v1 targets the original CYLview family's core publication workflow: fast structure loading, clean real-time viewing, measurements, labels, styling, saved presentation state, and high-quality image export. Large computational chemistry modules such as Gaussian trajectory playback, frequency animation, steric-contact analysis, and movie generation are important parity goals, but they belong after the viewer, annotation, and styling model is stable.
 
 ---
 
@@ -81,7 +81,7 @@ CYLview-NG v1 targets the original CYLview family's core publication workflow: f
 
 ## File Safety
 
-CYLview-NG treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
+Cylform treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
 
 For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 5,000 atoms are rejected with a clear error. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
 
@@ -112,7 +112,7 @@ For v1 stability, single-structure loading is intentionally bounded: files large
 | Layer | Technology |
 |---|---|
 | Desktop shell | Tauri v2 (Rust) |
-| File I/O & chemistry | `cylview-core` Rust library |
+| File I/O & chemistry | `cylform-core` Rust library |
 | 3-D rendering | Three.js (WebGL) |
 | UI framework | React 19 + TypeScript + Vite |
 | Build | Cargo + npm |
@@ -121,33 +121,33 @@ For v1 stability, single-structure loading is intentionally bounded: files large
 
 ## Download & Install
 
-For normal use, download CYLview-NG from the project’s [GitHub Releases](https://github.com/Summykai/CYLview-NG/releases). You do not need Rust, Node.js, Tauri, WSL, or developer tools to run release builds.
+For normal use, download Cylform from the project’s [GitHub Releases](https://github.com/Sylverity/Cylform/releases). You do not need Rust, Node.js, Tauri, WSL, or developer tools to run release builds.
 
 ### Windows 10/11
 
 Download the newest Windows installer from GitHub Releases:
 
-1. Recommended: `CYLview-NG-setup.exe`
-2. Alternative: `CYLview-NG.msi`
-3. Portable fallback: `cylview-ng.exe`
+1. Recommended: `Cylform-setup.exe`
+2. Alternative: `Cylform.msi`
+3. Portable fallback: `cylform.exe`
 
-Run the installer, then launch **CYLview-NG** from the Start menu. Early open-source builds may be unsigned, so Windows SmartScreen may ask for confirmation on first launch. Choose **More info** → **Run anyway** only if you downloaded the file from the official project release page.
+Run the installer, then launch **Cylform** from the Start menu. Early open-source builds may be unsigned, so Windows SmartScreen may ask for confirmation on first launch. Choose **More info** → **Run anyway** only if you downloaded the file from the official project release page.
 
 ### Ubuntu / Debian Linux
 
 Download the newest Debian package from GitHub Releases:
 
 ```bash
-sudo apt install ./CYLview-NG_1.0.0-rc.1_amd64.deb
+sudo apt install ./Cylform_1.0.0-rc.1_amd64.deb
 ```
 
-Then launch **CYLview-NG** from your application menu, or run:
+Then launch **Cylform** from your application menu, or run:
 
 ```bash
-cylview-ng
+cylform
 ```
 
-Advanced Linux fallbacks may also be published, such as an AppImage or standalone `cylview-ng` binary. If using one of those, mark it executable first with `chmod +x`.
+Advanced Linux fallbacks may also be published, such as an AppImage or standalone `cylform` binary. If using one of those, mark it executable first with `chmod +x`.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for step-by-step install, uninstall, and troubleshooting notes.
 
@@ -155,7 +155,7 @@ See [docs/INSTALL.md](docs/INSTALL.md) for step-by-step install, uninstall, and 
 
 ## Development Setup
 
-These steps are only for contributors building CYLview-NG from source. Users should install a release build instead.
+These steps are only for contributors building Cylform from source. Users should install a release build instead.
 
 ### Prerequisites
 
@@ -201,8 +201,8 @@ npm --prefix desktop/src-ui run build:desktop:fast
 
 This cross-platform convenience script builds the standalone desktop executable and refreshes a repo-root copy of the platform-specific binary:
 
-- Windows: `target/release/cylview-ng.exe` and `./cylview-ng.exe`
-- Linux: `target/release/cylview-ng` and `./cylview-ng`
+- Windows: `target/release/cylform.exe` and `./cylform.exe`
+- Linux: `target/release/cylform` and `./cylform`
 
 If you also want installer bundles, use the full Tauri packaging command separately:
 
@@ -214,12 +214,12 @@ Output:
 
 ```
 Windows:
-target/release/cylview-ng.exe                         ← standalone exe
-target/release/bundle/nsis/CYLview-NG_*-setup.exe    ← NSIS installer
-target/release/bundle/msi/CYLview-NG_*_x64_en-US.msi ← MSI installer
+target/release/cylform.exe                         ← standalone exe
+target/release/bundle/nsis/Cylform_*-setup.exe    ← NSIS installer
+target/release/bundle/msi/Cylform_*_x64_en-US.msi ← MSI installer
 
 Linux:
-target/release/cylview-ng                             ← standalone binary
+target/release/cylform                             ← standalone binary
 target/release/bundle/appimage/*.AppImage            ← AppImage bundle
 target/release/bundle/deb/*.deb                      ← Debian package
 ```
@@ -255,20 +255,20 @@ target/release/bundle/deb/*.deb                      ← Debian package
 | Save a pose | Use **Poses** → **Save pose** in the side panel |
 | Reopen recent file | Use **Files** in the side panel |
 | Export PNG | Click **Export PNG**, or press **Ctrl+E** |
-| Quit | Use **File → Quit CYLview-NG** |
-| About | Use **Help → About CYLview-NG** |
+| Quit | Use **File → Quit Cylform** |
+| About | Use **Help → About Cylform** |
 
 ---
 
 ## Project layout
 
 ```
-CYLviewClone/
+Cylform/
 ├── Cargo.toml                   # Workspace
 ├── Cargo.lock
 │
 ├── crates/
-│   └── core/                    # cylview-core — pure Rust library
+│   └── core/                    # cylform-core — pure Rust library
 │       └── src/
 │           ├── lib.rs
 │           ├── molecule.rs      # Atom, Bond, Structure; bond perception
@@ -348,7 +348,7 @@ CYLviewClone/
 
 Apache License 2.0. See [LICENSE](LICENSE).
 
-CYLview-NG is an independent open-source project with no affiliation to the original CYLview by Claude Y. Legault.
+Cylform is an independent open-source project with no affiliation to the original CYLview by Claude Y. Legault.
 
 ---
 

@@ -779,7 +779,7 @@ function App() {
                   <span />
                   <span />
                 </div>
-                <p className="loading-kicker">CYLview-NG</p>
+                <p className="loading-kicker">Cylform</p>
                 <h3>Preparing molecular workspace</h3>
                 <p>Loading the 3-D renderer and desktop workspace.</p>
               </div>

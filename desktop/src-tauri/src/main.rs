@@ -1,4 +1,4 @@
-//! CYLview-NG Desktop Application
+//! Cylform Desktop Application
 //!
 //! Tauri shell — file I/O in Rust, 3-D rendering via Three.js in the WebView.
 
@@ -7,7 +7,7 @@
     windows_subsystem = "windows"
 )]
 
-use cylview_core::{
+use cylform_core::{
     io::{read_structure, FileFormat, IoError},
     molecule::Structure,
     CoreError,
@@ -356,10 +356,10 @@ fn format_load_error(error: CoreError) -> String {
         CoreError::Io(IoError::UnsupportedFormat(message)) => message,
         CoreError::Io(IoError::Parse(message)) => message,
         CoreError::Io(IoError::FileTooLarge { size_mb, limit_mb }) => format!(
-            "File is too large ({size_mb:.1} MB). CYLview-NG currently supports files up to {limit_mb:.1} MB."
+            "File is too large ({size_mb:.1} MB). Cylform currently supports files up to {limit_mb:.1} MB."
         ),
         CoreError::Io(IoError::TooManyAtoms { count, limit }) => format!(
-            "Molecule is too large ({count} atoms). CYLview-NG currently supports up to {limit} atoms per structure."
+            "Molecule is too large ({count} atoms). Cylform currently supports up to {limit} atoms per structure."
         ),
         CoreError::Io(IoError::Io(message)) => {
             format!("Could not read file: {message}")
@@ -378,7 +378,7 @@ fn get_startup_file() -> Option<String> {
 }
 
 fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
-    let quit = MenuItemBuilder::with_id(MENU_FILE_QUIT, "Quit CYLview-NG")
+    let quit = MenuItemBuilder::with_id(MENU_FILE_QUIT, "Quit Cylform")
         .accelerator("Ctrl+Q")
         .build(manager)?;
     let edit_coming_soon = MenuItemBuilder::with_id(MENU_EDIT_COMING_SOON, "Coming soon")
@@ -392,15 +392,15 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
         .build(manager)?;
 
     let about = AboutMetadataBuilder::new()
-        .name(Some("CYLview-NG"))
+        .name(Some("Cylform"))
         .version(Some(env!("CARGO_PKG_VERSION")))
-        .authors(Some(vec!["CYLview-NG Contributors".to_string()]))
+        .authors(Some(vec!["Cylform Contributors".to_string()]))
         .comments(Some(
             "Publication-minded molecular viewing for XYZ and PDB structures.",
         ))
         .license(Some("Apache-2.0"))
-        .website(Some("https://github.com/Summykai/CYLview-NG"))
-        .website_label(Some("CYLview-NG on GitHub"))
+        .website(Some("https://github.com/Summykai/Cylform"))
+        .website_label(Some("Cylform on GitHub"))
         .build();
 
     let file_menu = SubmenuBuilder::new(manager, "File").item(&quit).build()?;
@@ -414,7 +414,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
         .item(&window_coming_soon)
         .build()?;
     let help_menu = SubmenuBuilder::new(manager, "Help")
-        .about_with_text("About CYLview-NG", Some(about))
+        .about_with_text("About Cylform", Some(about))
         .build()?;
 
     Menu::with_items(
@@ -430,7 +430,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
 fn main() {
     env_logger::init();
 
-    log::info!("CYLview-NG starting (core v{})", cylview_core::VERSION);
+    log::info!("Cylform starting (core v{})", cylform_core::VERSION);
 
     let app_state = Arc::new(AppState::new());
 
@@ -470,7 +470,7 @@ fn main() {
                 tauri::WebviewUrl::External(tauri::Url::parse("http://localhost:5173").unwrap());
 
             tauri::WebviewWindowBuilder::new(app, "main", url)
-                .title("CYLview-NG")
+                .title("Cylform")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(800.0, 600.0)
                 .center()

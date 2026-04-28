@@ -51,7 +51,7 @@ export function Toolbar({
 
   return (
     <div className="toolbar">
-      <div className="toolbar-title">CYLview-NG</div>
+      <div className="toolbar-title">Cylform</div>
 
       <div className="toolbar-section mode-toolbar-section">
         <div className="mode-selector" aria-label="Selection mode">

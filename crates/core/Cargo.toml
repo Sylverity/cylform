@@ -1,12 +1,12 @@
 [package]
-name = "cylview-core"
+name = "cylform-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Core molecular visualization library for CYLview-NG"
+description = "Core molecular visualization library for Cylform"
 
 [dependencies]
 # GPU & Math

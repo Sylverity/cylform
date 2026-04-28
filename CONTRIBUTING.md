@@ -1,6 +1,6 @@
-# Contributing to CYLview-NG
+# Contributing to Cylform
 
-This guide is for contributors building from source. If you only want to use CYLview-NG, download a Windows or Ubuntu/Debian release from GitHub Releases instead; release builds do not require Rust, Node.js, or Tauri tooling.
+This guide is for contributors building from source. If you only want to use Cylform, download a Windows or Ubuntu/Debian release from GitHub Releases instead; release builds do not require Rust, Node.js, or Tauri tooling.
 
 ## Prerequisites
 
@@ -44,8 +44,8 @@ The `build:desktop` script is a developer convenience for producing a local stan
 
 ```bash
 npm --prefix desktop/src-ui run build
-cargo test -p cylview-core
-cargo check -p cylview-core
+cargo test -p cylform-core
+cargo check -p cylform-core
 ```
 
 ## Project structure

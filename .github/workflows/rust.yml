@@ -76,6 +76,6 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: cylview-core-${{ matrix.os }}
+        name: cylform-core-${{ matrix.os }}
         path: target/release/*.dll
         if-no-files-found: ignore

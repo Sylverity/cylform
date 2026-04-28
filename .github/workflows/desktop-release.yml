@@ -42,14 +42,14 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist/release | Out-Null
-          Copy-Item target/release/cylview-ng.exe dist/release/cylview-ng.exe
-          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1) dist/release/CYLview-NG-setup.exe
-          Copy-Item (Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1) dist/release/CYLview-NG.msi
+          Copy-Item target/release/cylform.exe dist/release/cylform.exe
+          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1) dist/release/Cylform-setup.exe
+          Copy-Item (Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1) dist/release/Cylform.msi
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CYLview-NG-windows
+          name: Cylform-windows
           path: dist/release/*
           if-no-files-found: error
 
@@ -93,13 +93,13 @@ jobs:
       - name: Stage Linux artifacts
         run: |
           mkdir -p dist/release
-          cp target/release/cylview-ng dist/release/cylview-ng
+          cp target/release/cylform dist/release/cylform
           cp target/release/bundle/deb/*.deb dist/release/
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CYLview-NG-linux
+          name: Cylform-linux
           path: dist/release/*
           if-no-files-found: error
 
@@ -113,7 +113,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: CYLview-NG-*
+          pattern: Cylform-*
           merge-multiple: true
           path: release-artifacts
 

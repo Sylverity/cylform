@@ -1,4 +1,4 @@
-//! CYLview-NG Core Library
+//! Cylform Core Library
 //!
 //! A GPU-native molecular visualization engine built on wgpu.
 //!

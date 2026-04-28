@@ -1,4 +1,4 @@
-//! wgpu-based rendering engine for CYLview-NG
+//! wgpu-based rendering engine for Cylform
 //!
 //! Features:
 //! - GPU-instanced cylinder rendering for bonds (the CYLview signature look)

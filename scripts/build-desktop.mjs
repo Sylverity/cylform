@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const repoRoot = resolve(import.meta.dirname, '..');
 const uiDir = join(repoRoot, 'desktop', 'src-ui');
 const isWindows = process.platform === 'win32';
-const binaryName = isWindows ? 'cylview-ng.exe' : 'cylview-ng';
+const binaryName = isWindows ? 'cylform.exe' : 'cylform';
 const releaseBinary = join(repoRoot, 'target', 'release', binaryName);
 const rootBinary = join(repoRoot, binaryName);
 const skipFrontendInstall = process.argv.includes('--skip-frontend-install');
@@ -30,7 +30,7 @@ function removeIfExists(path) {
   }
 }
 
-console.log('==> Building CYLview-NG desktop app');
+console.log('==> Building Cylform desktop app');
 console.log(`Repo root: ${repoRoot}`);
 
 if (!skipFrontendInstall) {
@@ -45,7 +45,7 @@ removeIfExists(releaseBinary);
 removeIfExists(rootBinary);
 
 console.log('==> Building standalone desktop release');
-run('cargo', ['build', '--release', '-p', 'cylview-desktop', '--bin', 'cylview-ng'], repoRoot);
+run('cargo', ['build', '--release', '-p', 'cylform-desktop', '--bin', 'cylform'], repoRoot);
 
 if (!existsSync(releaseBinary)) {
   console.error(`Expected release binary was not found at '${releaseBinary}'.`);
