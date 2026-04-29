@@ -64,6 +64,21 @@ chmod +x cylform
 sudo apt remove cylform
 ```
 
+## macOS (Apple Silicon)
+
+1. Open the newest Cylform release.
+2. Download `Cylform_*_aarch64.dmg`.
+3. Open the DMG and drag **Cylform** into your **Applications** folder.
+4. Launch **Cylform** from Launchpad or Spotlight.
+
+### macOS first-launch note
+
+Early open-source builds are not code-signed. If Gatekeeper shows a warning on first launch, right-click the app and choose **Open**, or go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+### Uninstall on macOS
+
+Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
+
 ## Basic Use
 
 1. Click **Open File**.

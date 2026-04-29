@@ -103,9 +103,47 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
 
+  build-macos:
+    name: Build macOS bundle
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/src-ui/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: npm ci
+
+      - name: Build macOS bundles
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles dmg
+
+      - name: Stage macOS artifacts
+        run: |
+          mkdir -p dist/release
+          cp -R target/release/bundle/macos/Cylform.app dist/release/
+          cp target/release/bundle/dmg/*.dmg dist/release/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cylform-macos
+          path: dist/release/*
+          if-no-files-found: error
+
   publish-release:
     name: Publish GitHub Release
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 

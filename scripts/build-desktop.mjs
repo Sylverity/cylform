@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 const repoRoot = resolve(import.meta.dirname, '..');
 const uiDir = join(repoRoot, 'desktop', 'src-ui');
 const isWindows = process.platform === 'win32';
+const isMac = process.platform === 'darwin';
 const binaryName = isWindows ? 'cylform.exe' : 'cylform';
 const releaseBinary = join(repoRoot, 'target', 'release', binaryName);
 const rootBinary = join(repoRoot, binaryName);
@@ -53,6 +54,17 @@ if (!existsSync(releaseBinary)) {
 }
 
 cpSync(releaseBinary, rootBinary);
+
+if (isMac) {
+  const appBundle = join(repoRoot, 'target', 'release', 'bundle', 'macos', 'Cylform.app');
+  const rootApp = join(repoRoot, 'Cylform.app');
+  if (existsSync(appBundle)) {
+    removeIfExists(rootApp);
+    cpSync(appBundle, rootApp, { recursive: true });
+    console.log(`App bundle: ${appBundle}`);
+    console.log(`Repo-root copy: ${rootApp}`);
+  }
+}
 
 console.log('==> Refreshed root executable');
 console.log(`Standalone binary: ${releaseBinary}`);

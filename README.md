@@ -4,7 +4,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)]()
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
 A modern reimplementation of CYLview — the chemistry community's favourite tool for generating publication-quality 3-D molecular figures. Download the desktop app, open an `.xyz` or `.pdb` file, rotate, measure, style, and export.
 
@@ -150,6 +150,22 @@ cylform
 Advanced Linux fallbacks may also be published, such as an AppImage or standalone `cylform` binary. If using one of those, mark it executable first with `chmod +x`.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for step-by-step install, uninstall, and troubleshooting notes.
+
+### macOS (Apple Silicon)
+
+Download the newest macOS release from GitHub Releases:
+
+1. Download `Cylform_*_aarch64.dmg`.
+2. Open the DMG and drag **Cylform** into your **Applications** folder.
+3. Launch **Cylform** from Launchpad or Spotlight (`Cmd + Space`, then type "Cylform").
+
+#### First-launch Gatekeeper note
+
+Early open-source builds are not code-signed. On first launch, macOS Gatekeeper may show a warning. Right-click the app icon and choose **Open**, or go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+#### Uninstall on macOS
+
+Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 
 ---
 

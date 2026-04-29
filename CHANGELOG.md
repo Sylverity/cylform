@@ -3,7 +3,10 @@
 ## [Unreleased]
 
 ### Planned
-- Promote `1.0.0-rc.1` to `1.0.0` after Windows 11 and Ubuntu/Debian smoke testing.
+- Promote `1.0.0-rc.1` to `1.0.0` after Windows 11, Ubuntu/Debian, and macOS smoke testing.
+
+### Added
+- macOS Apple Silicon release packaging (`.app` bundle + `.dmg` installer).
 
 ---
 
