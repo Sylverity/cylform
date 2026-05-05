@@ -32,7 +32,7 @@ Rules:
 
 ## Rendering Architecture
 
-Rust (`cylform-core`) handles all file I/O and chemistry. The desktop app sends atom/bond JSON to the React frontend via a single `load_molecule` Tauri command. Three.js (WebGL) renders the scene inside the Tauri WebView. This is the correct architecture; do not attempt to drive wgpu from the Tauri window handle.
+Rust (`cylform-core`) handles all file I/O and chemistry. The desktop app sends atom/bond JSON to the React frontend via a single `load_molecule` Tauri command. Three.js (WebGL) renders the scene inside the Tauri WebView.
 
 ## Current State
 
@@ -115,7 +115,7 @@ For v1 stability, single-structure loading is intentionally bounded: files large
 | File I/O & chemistry | `cylform-core` Rust library |
 | 3-D rendering | Three.js (WebGL) |
 | UI framework | React 19 + TypeScript + Vite |
-| Build | Cargo + npm |
+| Build | Cargo + pnpm |
 
 ---
 
@@ -206,13 +206,13 @@ cargo tauri dev
 Run from the repo root:
 
 ```bash
-npm --prefix desktop/src-ui run build:desktop
+pnpm --dir desktop/src-ui run build:desktop
 ```
 
 For repeat local builds when `node_modules` is already present:
 
 ```bash
-npm --prefix desktop/src-ui run build:desktop:fast
+pnpm --dir desktop/src-ui run build:desktop:fast
 ```
 
 This cross-platform convenience script builds the standalone desktop executable and refreshes a repo-root copy of the platform-specific binary:
@@ -290,8 +290,7 @@ Cylform/
 │           ├── molecule.rs      # Atom, Bond, Structure; bond perception
 │           ├── io.rs            # XYZ + PDB readers/writers
 │           ├── camera.rs        # Orbital camera maths
-│           ├── picker.rs        # Selection framework
-│           └── render/          # wgpu rendering engine (future use)
+│           └── picker.rs        # Selection framework
 │
 ├── desktop/
 │   ├── src-tauri/               # Tauri Rust backend

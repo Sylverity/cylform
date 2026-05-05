@@ -26,13 +26,13 @@ sudo apt-get install -y \
 
 ```bash
 # Install frontend dependencies
-npm --prefix desktop/src-ui ci
+pnpm --dir desktop/src-ui install --frozen-lockfile
 
 # Dev mode (hot-reload)
 cargo tauri dev
 
 # Standalone local release binary
-npm --prefix desktop/src-ui run build:desktop
+pnpm --dir desktop/src-ui run build:desktop
 
 # Installer/package bundles for the current OS
 cargo tauri build
@@ -43,9 +43,9 @@ The `build:desktop` script is a developer convenience for producing a local stan
 ## Running tests
 
 ```bash
-npm --prefix desktop/src-ui run build
-cargo test -p cylform-core
-cargo check -p cylform-core
+pnpm --dir desktop/src-ui run build
+cargo test --workspace
+cargo check --workspace
 ```
 
 ## Project structure
@@ -56,7 +56,6 @@ crates/core/src/
   io.rs         — XYZ + PDB readers/writers
   camera.rs     — Orbital camera maths
   picker.rs     — Selection framework
-  render/       — wgpu rendering engine (future use)
 
 desktop/src-tauri/src/
   main.rs       — load_molecule command, Tauri app setup
@@ -71,7 +70,7 @@ desktop/src-ui/src/
 ## Conventions
 
 - Rust: `cargo fmt` + `cargo clippy` before committing
-- TypeScript: `npm --prefix desktop/src-ui run build` to check types and build the frontend
+- TypeScript: `pnpm --dir desktop/src-ui run build` to check types and build the frontend
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, `chore:`)
 

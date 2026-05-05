@@ -481,3 +481,61 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cylform_core::io::IoError;
+
+    #[test]
+    fn test_path_key_consistency() {
+        let key1 = path_key("/home/user/mol.xyz");
+        let key2 = path_key("/home/user/mol.xyz");
+        assert_eq!(key1, key2);
+        assert_eq!(key1.len(), 16);
+    }
+
+    #[test]
+    fn test_path_key_uniqueness() {
+        let key1 = path_key("/home/user/mol1.xyz");
+        let key2 = path_key("/home/user/mol2.xyz");
+        assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_format_load_error_not_found() {
+        let err = CoreError::Io(IoError::NotFound("test.xyz".into()));
+        let msg = format_load_error(err);
+        assert!(msg.contains("not found"));
+    }
+
+    #[test]
+    fn test_format_load_error_unsupported_format() {
+        let err = CoreError::Io(IoError::UnsupportedFormat("SDF".into()));
+        let msg = format_load_error(err);
+        assert!(msg.contains("SDF"));
+    }
+
+    #[test]
+    fn test_format_load_error_file_too_large() {
+        let err = CoreError::Io(IoError::FileTooLarge {
+            size_mb: 150.0,
+            limit_mb: 100.0,
+        });
+        let msg = format_load_error(err);
+        assert!(msg.contains("too large"));
+        assert!(msg.contains("150.0"));
+    }
+
+    #[test]
+    fn test_app_state_stores_structure() {
+        let state = AppState::new();
+        assert!(state.structure.lock().is_none());
+
+        let structure = Structure::new("test");
+        *state.structure.lock() = Some(structure);
+
+        assert!(state.structure.lock().is_some());
+        assert_eq!(state.structure.lock().as_ref().unwrap().name, "test");
+    }
+}

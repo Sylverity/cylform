@@ -36,11 +36,11 @@ console.log(`Repo root: ${repoRoot}`);
 
 if (!skipFrontendInstall) {
   console.log('==> Installing frontend dependencies');
-  run('npm', ['install'], uiDir);
+  run('pnpm', ['install'], uiDir);
 }
 
 console.log('==> Building frontend bundle');
-run('npm', ['run', 'build'], uiDir);
+run('pnpm', ['run', 'build'], uiDir);
 
 removeIfExists(releaseBinary);
 removeIfExists(rootBinary);

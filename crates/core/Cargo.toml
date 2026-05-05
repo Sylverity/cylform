@@ -9,11 +9,8 @@ rust-version.workspace = true
 description = "Core molecular visualization library for Cylform"
 
 [dependencies]
-# GPU & Math
-wgpu = { workspace = true }
-bytemuck = { workspace = true }
+# Math
 glam = { workspace = true }
-raw-window-handle = { workspace = true }
 
 # Logging & errors
 log = { workspace = true }

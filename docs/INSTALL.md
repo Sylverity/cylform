@@ -29,11 +29,11 @@ Use **Settings** → **Apps** → **Installed apps**, find **Cylform**, and choo
 ## Ubuntu / Debian Linux
 
 1. Open the newest Cylform release.
-2. Download `Cylform_1.0.0-rc.1_amd64.deb` or the newest matching `.deb`.
+2. Download the newest `Cylform_*_amd64.deb` release asset.
 3. Install it from a terminal:
 
 ```bash
-sudo apt install ./Cylform_1.0.0-rc.1_amd64.deb
+sudo apt install ./Cylform_*_amd64.deb
 ```
 
 4. Launch **Cylform** from your application menu, or run:

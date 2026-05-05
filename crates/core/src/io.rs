@@ -226,7 +226,7 @@ fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize) -> usize {
             break;
         };
 
-        if atom_count > MAX_ATOMS || index + 1 + atom_count >= lines.len() + 1 {
+        if atom_count > MAX_ATOMS || index + 1 + atom_count > lines.len() {
             break;
         }
 
@@ -397,10 +397,8 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
         let record = line.get(0..6).unwrap_or("").trim();
 
         match record {
-            "HEADER" => {
-                if header.is_none() {
-                    header = text_value(pdb_record_text(&line));
-                }
+            "HEADER" if header.is_none() => {
+                header = text_value(pdb_record_text(&line));
             }
             "TITLE" => {
                 if let Some(value) = text_value(pdb_record_text(&line)) {
@@ -417,11 +415,9 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
                 model_count += 1;
                 inside_first_model = model_count == 1;
             }
-            "ENDMDL" => {
-                if inside_first_model {
-                    finished_first_model = true;
-                    inside_first_model = false;
-                }
+            "ENDMDL" if inside_first_model => {
+                finished_first_model = true;
+                inside_first_model = false;
             }
             "CONECT" => {
                 let parts = line.split_whitespace().collect::<Vec<_>>();

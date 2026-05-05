@@ -11,16 +11,13 @@ repository = "https://github.com/Sylverity/Cylform"
 rust-version = "1.70"
 
 [workspace.dependencies]
-# Math & GPU (used by cylform-core)
-wgpu = "0.19"
-bytemuck = { version = "1.14", features = ["derive"] }
-glam = { version = "0.25", features = ["bytemuck", "serde"] }
-raw-window-handle = "0.6"
+# Math
+glam = { version = "0.32", features = ["serde"] }
 
 # Logging & errors
 log = "0.4"
 env_logger = "0.11"
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 
 # Serialization

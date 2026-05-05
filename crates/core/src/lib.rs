@@ -1,12 +1,11 @@
 //! Cylform Core Library
 //!
-//! A GPU-native molecular visualization engine built on wgpu.
+//! Core library for Cylform molecular visualization.
 //!
 //! ## Architecture
 //!
 //! - **molecule**: Data structures for atoms, bonds, and molecular topology
 //! - **io**: File I/O using chemfiles (40+ formats)
-//! - **render**: wgpu-based rendering engine with cylinder instancing
 //! - **camera**: Orbital camera controls
 //! - **picker**: Object picking and selection
 
@@ -16,17 +15,12 @@ pub mod camera;
 pub mod io;
 pub mod molecule;
 pub mod picker;
-pub mod render;
 
 use thiserror::Error;
 
 /// Core library error type
 #[derive(Error, Debug)]
 pub enum CoreError {
-    /// Renderer initialization failed
-    #[error("Renderer initialization failed: {0}")]
-    RendererInit(String),
-
     /// File I/O error
     #[error("File I/O error: {0}")]
     Io(#[from] io::IoError),
