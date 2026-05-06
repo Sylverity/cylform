@@ -33,7 +33,7 @@ fn parse_optional_f32(value: &str) -> Option<f32> {
 pub const MAX_FILE_SIZE_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Maximum atom count accepted by the current real-time viewer path.
-pub const MAX_ATOMS: usize = 5_000;
+pub const MAX_ATOMS: usize = 10_000;
 
 /// Error type for I/O operations
 #[derive(Debug, thiserror::Error)]

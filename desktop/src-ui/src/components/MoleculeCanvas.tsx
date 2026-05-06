@@ -102,6 +102,14 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
+function perfLoggingEnabled(): boolean {
+  try {
+    return window.localStorage.getItem('cylformPerf') === '1';
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -1178,6 +1186,7 @@ export function MoleculeCanvas({
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
+    const perfStart = performance.now();
 
     const {
       molGroup, perspectiveCamera, camera, controls, sphereGeom, cylGeom, atomMats, bondMat,
@@ -1225,6 +1234,8 @@ export function MoleculeCanvas({
 
     const UP = new Vector3(0, 1, 0);
     const hiddenAtomSet = new Set(hiddenAtomIndices);
+    let visibleBondCount = 0;
+    let visibleAtomCount = 0;
 
     // --- Bonds first (atoms rendered on top) ---
     for (const bond of moleculeData.bonds) {
@@ -1275,6 +1286,7 @@ export function MoleculeCanvas({
 
       molGroup.add(mesh);
       ctx.bondMeshes.push(mesh);
+      visibleBondCount += 1;
     }
 
     // --- Atoms on top ---
@@ -1307,6 +1319,7 @@ export function MoleculeCanvas({
       mesh.userData.defaultMaterial = mat;
       molGroup.add(mesh);
       ctx.atomMeshes.push(mesh);
+      visibleAtomCount += 1;
     }
 
     // --- Fit camera ---
@@ -1341,6 +1354,18 @@ export function MoleculeCanvas({
     }
 
     previousMoleculeDataRef.current = moleculeData;
+    if (perfLoggingEnabled()) {
+      console.info(
+        '[Cylform perf] rebuild_scene',
+        {
+          ms: Math.round(performance.now() - perfStart),
+          atoms: visibleAtomCount,
+          bonds: visibleBondCount,
+          totalAtoms: moleculeData.atoms.length,
+          totalBonds: moleculeData.bonds.length,
+        },
+      );
+    }
 
   }, [
     moleculeData,

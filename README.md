@@ -83,7 +83,7 @@ Cylform v1 targets the original CYLview family's core publication workflow: fast
 
 Cylform treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
 
-For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 5,000 atoms are rejected with a clear error. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
+For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 10,000 atoms are rejected with a clear error. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
 
 ---
 

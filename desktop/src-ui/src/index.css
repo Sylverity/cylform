@@ -1,12 +1,14 @@
 :root {
-  --bg-primary: #f3f4f6;
-  --bg-secondary: #fbfbfc;
-  --text-primary: #20262d;
-  --text-secondary: #6a737d;
-  --accent: #2f9df4;
-  --border: #d9dfe5;
+  --bg-primary: oklch(96.1% 0.006 248);
+  --bg-secondary: oklch(98.8% 0.004 248);
+  --text-primary: oklch(24.5% 0.018 248);
+  --text-secondary: oklch(51.5% 0.02 248);
+  --accent: oklch(66.2% 0.17 244);
+  --accent-strong: oklch(58.5% 0.18 244);
+  --border: oklch(88.5% 0.011 248);
+  --focus-ring: oklch(73% 0.15 244 / 0.42);
   --toolbar-height: 50px;
-  --panel-width: 264px;
+  --panel-width: 276px;
 }
 
 * {
@@ -57,7 +59,7 @@ button {
   padding: 8px 14px;
   border-radius: 999px;
   font-size: 13px;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 button:hover {
@@ -67,12 +69,24 @@ button:hover {
 
 button.primary {
   background: var(--accent);
-  color: white;
+  color: oklch(99% 0.003 248);
 }
 
 button.primary:hover {
-  background: #208ee8;
-  border-color: #208ee8;
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 /* Input styles */

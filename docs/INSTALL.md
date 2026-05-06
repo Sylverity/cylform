@@ -95,7 +95,7 @@ The desktop app also includes a standard menu bar. Use **File** → **Quit Cylfo
 
 Cylform treats molecule files as data only. It does not run scripts, shell commands, macros, or computational chemistry job directives embedded in `.xyz`, `.pdb`, or other selected files.
 
-The current app supports XYZ and PDB files for normal opening. It may display inert metadata such as XYZ titles/energies, detected frame counts, PDB residue fields, and parser notes, but it still opens only the first structure frame/model in this release. To keep the desktop app responsive, files larger than 25 MB and structures larger than 5,000 atoms are rejected with a clear error.
+The current app supports XYZ and PDB files for normal opening. It may display inert metadata such as XYZ titles/energies, detected frame counts, PDB residue fields, and parser notes, but it still opens only the first structure frame/model in this release. To keep the desktop app responsive, files larger than 25 MB and structures larger than 10,000 atoms are rejected with a clear error.
 
 ## Troubleshooting
 

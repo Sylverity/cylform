@@ -170,6 +170,14 @@ export interface RecentFileEntry {
   name: string;
 }
 
+function perfLoggingEnabled(): boolean {
+  try {
+    return window.localStorage.getItem('cylformPerf') === '1';
+  } catch {
+    return false;
+  }
+}
+
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
@@ -306,9 +314,22 @@ function App() {
   const loadMoleculePath = useCallback(async (path: string, label?: string) => {
     setIsLoading(true);
     setLoadingLabel(label ?? 'Loading molecule');
+    const perfStart = performance.now();
 
     try {
       const data = await invoke<MoleculeData>('load_molecule', { path });
+      const loadMs = performance.now() - perfStart;
+      if (perfLoggingEnabled()) {
+        console.info(
+          '[Cylform perf] load_molecule',
+          {
+            ms: Math.round(loadMs),
+            atoms: data.atoms.length,
+            bonds: data.bonds.length,
+            file: data.name,
+          },
+        );
+      }
       handleFileLoaded(data);
       await invoke('record_recent_file', { path });
       await refreshRecentFiles();

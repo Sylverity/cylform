@@ -51,7 +51,10 @@ export function Toolbar({
 
   return (
     <div className="toolbar">
-      <div className="toolbar-title">Cylform</div>
+      <div className="toolbar-title">
+        <span className="toolbar-title-mark" aria-hidden="true" />
+        <span>Cylform</span>
+      </div>
 
       <div className="toolbar-section mode-toolbar-section">
         <div className="mode-selector" aria-label="Selection mode">
