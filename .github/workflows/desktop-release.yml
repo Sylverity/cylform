@@ -12,9 +12,77 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  verify-release:
+    name: Verify release inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: desktop/src-ui/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Check release version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => console.log(JSON.parse(data).packages.find(pkg => pkg.name === 'cylform-desktop').version));")"
+          tauri_version="$(node -e "console.log(require('./desktop/src-tauri/tauri.conf.json').version)")"
+          ui_version="$(node -e "console.log(require('./desktop/src-ui/package.json').version)")"
+
+          if [[ "$cargo_version" != "$tauri_version" || "$cargo_version" != "$ui_version" ]]; then
+            echo "Version mismatch: cargo=$cargo_version tauri=$tauri_version ui=$ui_version" >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "$tag_version" != "$cargo_version" ]]; then
+              echo "Tag v$tag_version does not match package version $cargo_version" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Build frontend
+        working-directory: desktop/src-ui
+        run: pnpm run build
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
   build-windows:
     name: Build Windows installers
+    needs: verify-release
     runs-on: windows-latest
 
     steps:
@@ -60,6 +128,7 @@ jobs:
 
   build-linux:
     name: Build Ubuntu/Debian package
+    needs: verify-release
     runs-on: ubuntu-latest
 
     steps:
@@ -114,8 +183,17 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    name: Build macOS bundle
-    runs-on: macos-latest
+    name: Build macOS bundle (${{ matrix.arch }})
+    needs: verify-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: aarch64
 
     steps:
       - uses: actions/checkout@v4
@@ -146,13 +224,13 @@ jobs:
       - name: Stage macOS artifacts
         run: |
           mkdir -p dist/release
-          cp -R target/release/bundle/macos/Cylform.app dist/release/
+          ditto -c -k --keepParent target/release/bundle/macos/Cylform.app dist/release/Cylform-macos-${{ matrix.arch }}.app.zip
           cp target/release/bundle/dmg/*.dmg dist/release/
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Cylform-macos
+          name: Cylform-macos-${{ matrix.arch }}
           path: dist/release/*
           if-no-files-found: error
 
@@ -175,3 +253,4 @@ jobs:
         with:
           files: release-artifacts/*
           generate_release_notes: true
+          draft: true
