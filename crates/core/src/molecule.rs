@@ -7,6 +7,7 @@
 
 use glam::{Mat4, Vec3};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// An atom in a molecular structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,7 +63,7 @@ impl Atom {
     }
 
     /// Get covalent radius for bond perception (Angstroms)
-    fn covalent_radius(element: &str) -> f32 {
+    pub(crate) fn covalent_radius(element: &str) -> f32 {
         match element {
             "H" => 0.31,
             "C" => 0.76,
@@ -244,25 +245,91 @@ impl Structure {
         (min, max)
     }
 
-    /// Auto-perceive bonds using covalent radii thresholds
+    /// Auto-perceive bonds using covalent radii thresholds.
     pub fn perceive_bonds(&mut self) {
         self.bonds.clear();
+        let indices = (0..self.atoms.len()).collect::<Vec<_>>();
+        self.perceive_bonds_for_indices(&indices);
+    }
 
-        for i in 0..self.atoms.len() {
-            for j in (i + 1)..self.atoms.len() {
-                let atom_i = &self.atoms[i];
-                let atom_j = &self.atoms[j];
+    /// Whether source metadata can identify molecule-like residue groups.
+    pub fn has_metadata_groups(&self) -> bool {
+        let mut groups = HashMap::<String, usize>::new();
+        for (index, atom) in self.atoms.iter().enumerate() {
+            if let Some(key) = atom_metadata_group_key(atom) {
+                groups.entry(key).or_insert(index);
+            }
+        }
+        groups.len() > 1
+    }
 
-                let distance = atom_i.position.distance(atom_j.position);
-                let max_bond_dist = (Atom::covalent_radius(&atom_i.element)
-                    + Atom::covalent_radius(&atom_j.element))
-                    * 1.3;
+    /// Auto-perceive bonds independently inside source metadata groups.
+    pub fn perceive_bonds_within_metadata_groups(&mut self) {
+        self.bonds.clear();
 
-                if distance > 0.4 && distance < max_bond_dist {
-                    self.bonds
-                        .push(Bond::new(i as u32, j as u32, BondOrder::Single));
+        let mut groups = HashMap::<String, Vec<usize>>::new();
+        let mut ungrouped = Vec::<usize>::new();
+        for (index, atom) in self.atoms.iter().enumerate() {
+            if let Some(key) = atom_metadata_group_key(atom) {
+                groups.entry(key).or_default().push(index);
+            } else {
+                ungrouped.push(index);
+            }
+        }
+
+        for indices in groups.values() {
+            self.perceive_bonds_for_indices(indices);
+        }
+        if !ungrouped.is_empty() {
+            self.perceive_bonds_for_indices(&ungrouped);
+        }
+    }
+
+    fn perceive_bonds_for_indices(&mut self, indices: &[usize]) {
+        if indices.len() < 2 {
+            return;
+        }
+
+        const CELL_SIZE: f32 = 3.6;
+        let mut cells = HashMap::<(i32, i32, i32), Vec<usize>>::new();
+
+        for &atom_index in indices {
+            let position = self.atoms[atom_index].position;
+            let cell = (
+                (position.x / CELL_SIZE).floor() as i32,
+                (position.y / CELL_SIZE).floor() as i32,
+                (position.z / CELL_SIZE).floor() as i32,
+            );
+
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let neighbor_cell = (cell.0 + dx, cell.1 + dy, cell.2 + dz);
+                        let Some(candidates) = cells.get(&neighbor_cell) else {
+                            continue;
+                        };
+
+                        for &candidate_index in candidates {
+                            let atom_i = &self.atoms[candidate_index];
+                            let atom_j = &self.atoms[atom_index];
+                            let distance = atom_i.position.distance(atom_j.position);
+                            let max_bond_dist = (Atom::covalent_radius(&atom_i.element)
+                                + Atom::covalent_radius(&atom_j.element))
+                                * 1.3;
+
+                            if distance > 0.4 && distance < max_bond_dist {
+                                self.bonds.push(Bond::new(
+                                    candidate_index as u32,
+                                    atom_index as u32,
+                                    BondOrder::Single,
+                                ));
+                            }
+                        }
+                    }
                 }
             }
+
+            cells.entry(cell).or_default().push(atom_index);
         }
     }
 
@@ -275,6 +342,28 @@ impl Structure {
     pub fn bond_count(&self) -> usize {
         self.bonds.len()
     }
+}
+
+fn atom_metadata_group_key(atom: &Atom) -> Option<String> {
+    let metadata = atom.metadata.as_ref()?;
+    if metadata.residue_name.is_none()
+        && metadata.residue_sequence.is_none()
+        && metadata.chain_id.is_none()
+        && metadata.insertion_code.is_none()
+    {
+        return None;
+    }
+
+    Some(format!(
+        "{}:{}:{}:{}",
+        metadata.chain_id.as_deref().unwrap_or(""),
+        metadata.residue_name.as_deref().unwrap_or(""),
+        metadata
+            .residue_sequence
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        metadata.insertion_code.as_deref().unwrap_or("")
+    ))
 }
 
 /// Optional metadata preserved from the source molecular file.

@@ -126,11 +126,23 @@ export interface MoleculeMetadata {
   warnings: string[];
 }
 
+export interface MoleculeGroup {
+  id: string;
+  label: string;
+  residueName?: string;
+  chainId?: string;
+  residueSequence?: number;
+  insertionCode?: string;
+  atomIndices: number[];
+  centroid: LabelAnchor;
+}
+
 export interface MoleculeData {
   path: string;
   name: string;
   atoms: AtomData[];
   bonds: BondData[];
+  groups: MoleculeGroup[];
   metadata: MoleculeMetadata;
 }
 
@@ -168,6 +180,51 @@ export interface PresentationState {
 export interface RecentFileEntry {
   path: string;
   name: string;
+}
+
+export interface BenchmarkConfig {
+  enabled: boolean;
+  outputPath?: string;
+  sampleMs: number;
+  targetFps: number;
+  maxAtoms: number;
+}
+
+interface BenchmarkLoadMetrics {
+  path: string;
+  loadMs: number;
+  atoms: number;
+  bonds: number;
+  name: string;
+  startedAt: string;
+}
+
+export interface BenchmarkRenderMetrics {
+  rebuildSceneMs: number;
+  visibleAtoms: number;
+  visibleBonds: number;
+  totalAtoms: number;
+  totalBonds: number;
+  renderCalls: number;
+  triangles: number;
+  geometries: number;
+  textures: number;
+  sceneObjects: number;
+  pickAtomMs: number | null;
+  pickBondMs: number | null;
+  pickTotalMs: number;
+  pickHitType: 'atom' | 'bond' | 'none';
+  pickAtomCandidates: number;
+  pickBondCandidates: number;
+  frameSampleMs: number;
+  sampledFrames: number;
+  averageFrameMs: number | null;
+  p95FrameMs: number | null;
+  minFps: number | null;
+  averageFps: number | null;
+  responsive: boolean;
+  webglRenderer: string | null;
+  webglVendor: string | null;
 }
 
 function perfLoggingEnabled(): boolean {
@@ -209,6 +266,9 @@ function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
+  const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
+  const benchmarkLoadMetrics = useRef<BenchmarkLoadMetrics | null>(null);
+  const benchmarkFinished = useRef(false);
   const isApplyingPresentationState = useRef(false);
   const hasLoadedPresentationState = useRef(false);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
@@ -319,6 +379,16 @@ function App() {
     try {
       const data = await invoke<MoleculeData>('load_molecule', { path });
       const loadMs = performance.now() - perfStart;
+      if (benchmarkConfig.current?.enabled) {
+        benchmarkLoadMetrics.current = {
+          path,
+          loadMs,
+          atoms: data.atoms.length,
+          bonds: data.bonds.length,
+          name: data.name,
+          startedAt: new Date().toISOString(),
+        };
+      }
       if (perfLoggingEnabled()) {
         console.info(
           '[Cylform perf] load_molecule',
@@ -331,6 +401,9 @@ function App() {
         );
       }
       handleFileLoaded(data);
+      if (benchmarkConfig.current?.enabled) {
+        return;
+      }
       await invoke('record_recent_file', { path });
       await refreshRecentFiles();
       await refreshNearbyFiles(path);
@@ -342,6 +415,21 @@ function App() {
         applyPresentationState(null, true);
       }
     } catch (err) {
+      if (benchmarkConfig.current?.enabled && !benchmarkFinished.current) {
+        benchmarkFinished.current = true;
+        const message = err instanceof Error ? err.message : String(err);
+        void invoke('write_benchmark_result', {
+          outputPath: benchmarkConfig.current.outputPath,
+          result: {
+            status: 'error',
+            error: message,
+            path,
+            loadMs: Math.round(performance.now() - perfStart),
+            timestamp: new Date().toISOString(),
+            config: benchmarkConfig.current,
+          },
+        });
+      }
       handleError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
@@ -373,6 +461,58 @@ function App() {
     }
   }, [handleError, loadMoleculePath]);
 
+  const handleBenchmarkRender = useCallback((renderMetrics: BenchmarkRenderMetrics) => {
+    const config = benchmarkConfig.current;
+    const loadMetrics = benchmarkLoadMetrics.current;
+    if (!config?.enabled || !loadMetrics || benchmarkFinished.current) return;
+
+    benchmarkFinished.current = true;
+    const result = {
+      status: renderMetrics.responsive ? 'ok' : 'slow',
+      timestamp: new Date().toISOString(),
+      path: loadMetrics.path,
+      name: loadMetrics.name,
+      atoms: loadMetrics.atoms,
+      bonds: loadMetrics.bonds,
+      loadMs: Math.round(loadMetrics.loadMs),
+      rebuildSceneMs: Math.round(renderMetrics.rebuildSceneMs),
+      frameSampleMs: renderMetrics.frameSampleMs,
+      sampledFrames: renderMetrics.sampledFrames,
+      averageFrameMs: renderMetrics.averageFrameMs,
+      p95FrameMs: renderMetrics.p95FrameMs,
+      averageFps: renderMetrics.averageFps,
+      minFps: renderMetrics.minFps,
+      responsive: renderMetrics.responsive,
+      webglRenderer: renderMetrics.webglRenderer,
+      webglVendor: renderMetrics.webglVendor,
+      visibleAtoms: renderMetrics.visibleAtoms,
+      visibleBonds: renderMetrics.visibleBonds,
+      totalAtoms: renderMetrics.totalAtoms,
+      totalBonds: renderMetrics.totalBonds,
+      renderCalls: renderMetrics.renderCalls,
+      triangles: renderMetrics.triangles,
+      geometries: renderMetrics.geometries,
+      textures: renderMetrics.textures,
+      sceneObjects: renderMetrics.sceneObjects,
+      pickAtomMs: renderMetrics.pickAtomMs,
+      pickBondMs: renderMetrics.pickBondMs,
+      pickTotalMs: renderMetrics.pickTotalMs,
+      pickHitType: renderMetrics.pickHitType,
+      pickAtomCandidates: renderMetrics.pickAtomCandidates,
+      pickBondCandidates: renderMetrics.pickBondCandidates,
+      targetFps: config.targetFps,
+      maxAtoms: config.maxAtoms,
+      startedAt: loadMetrics.startedAt,
+    };
+
+    void invoke('write_benchmark_result', {
+      outputPath: config.outputPath,
+      result,
+    }).catch((err) => {
+      handleError(err instanceof Error ? err.message : String(err));
+    });
+  }, [handleError]);
+
   const handleResetView = useCallback(() => {
     window.dispatchEvent(new CustomEvent('reset-camera'));
   }, []);
@@ -403,6 +543,42 @@ function App() {
     });
     handleClearSelection();
   }, [handleClearSelection, selectionSummary.atomIndices]);
+
+  const handleHideGroups = useCallback((groupIds: string[]) => {
+    const selectedGroups = moleculeData?.groups.filter((candidate) => groupIds.includes(candidate.id)) ?? [];
+    if (selectedGroups.length === 0) return;
+
+    setHiddenAtomIndices((current) => {
+      const next = new Set(current);
+      for (const group of selectedGroups) {
+        for (const atomIndex of group.atomIndices) {
+          next.add(atomIndex);
+        }
+      }
+      return Array.from(next).sort((a, b) => a - b);
+    });
+    handleClearSelection();
+  }, [handleClearSelection, moleculeData]);
+
+  const handleHighlightGroups = useCallback((groupIds: string[]) => {
+    const selectedGroups = moleculeData?.groups.filter((candidate) => groupIds.includes(candidate.id)) ?? [];
+    if (selectedGroups.length === 0) return;
+
+    setAtomStyleOverrides((current) => {
+      const next = { ...current };
+      for (const group of selectedGroups) {
+        for (const atomIndex of group.atomIndices) {
+          next[String(atomIndex)] = {
+            ...(next[String(atomIndex)] ?? {}),
+            color: '#10b981',
+            sizeScale: 1.08,
+          };
+        }
+      }
+      return next;
+    });
+    handleClearSelection();
+  }, [handleClearSelection, moleculeData]);
 
   const handleStyleSelectedAtoms = useCallback((color: string) => {
     setAtomStyleOverrides((current) => {
@@ -763,6 +939,7 @@ function App() {
 
     const loadStartupFile = async () => {
       try {
+        benchmarkConfig.current = await invoke<BenchmarkConfig>('get_benchmark_config');
         const startupPath = await invoke<string | null>('get_startup_file');
         if (!startupPath) return;
 
@@ -835,6 +1012,8 @@ function App() {
             onOpenFile={handleOpenFile}
             onError={handleError}
             onToast={addToast}
+            benchmarkConfig={benchmarkConfig.current ?? undefined}
+            onBenchmarkRender={handleBenchmarkRender}
           />
         </Suspense>
 
@@ -869,6 +1048,8 @@ function App() {
           onAtomSizeScaleChange={setAtomSizeScale}
           onHydrogenVisibilityChange={setHydrogenVisibility}
           onHideSelectedAtoms={handleHideSelectedAtoms}
+          onHideGroups={handleHideGroups}
+          onHighlightGroups={handleHighlightGroups}
           onShowAllAtoms={handleShowAllAtoms}
           onStyleSelectedAtoms={handleStyleSelectedAtoms}
           onSizeSelectedAtoms={handleSizeSelectedAtoms}

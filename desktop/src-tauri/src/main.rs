@@ -8,7 +8,7 @@
 )]
 
 use cylform_core::{
-    io::{read_structure, FileFormat, IoError},
+    io::{read_structure_with_options, FileFormat, IoError, ReadOptions, MAX_ATOMS},
     molecule::Structure,
     CoreError,
 };
@@ -109,12 +109,50 @@ struct SerialMoleculeMetadata {
 }
 
 #[derive(Serialize)]
+struct SerialMoleculeGroup {
+    id: String,
+    label: String,
+    #[serde(rename = "residueName", skip_serializing_if = "Option::is_none")]
+    residue_name: Option<String>,
+    #[serde(rename = "chainId", skip_serializing_if = "Option::is_none")]
+    chain_id: Option<String>,
+    #[serde(rename = "residueSequence", skip_serializing_if = "Option::is_none")]
+    residue_sequence: Option<i32>,
+    #[serde(rename = "insertionCode", skip_serializing_if = "Option::is_none")]
+    insertion_code: Option<String>,
+    #[serde(rename = "atomIndices")]
+    atom_indices: Vec<usize>,
+    centroid: SerialPoint,
+}
+
+#[derive(Serialize)]
+struct SerialPoint {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Serialize)]
 struct MoleculeData {
     path: String,
     name: String,
     atoms: Vec<SerialAtom>,
     bonds: Vec<SerialBond>,
+    groups: Vec<SerialMoleculeGroup>,
     metadata: SerialMoleculeMetadata,
+}
+
+#[derive(Serialize)]
+struct BenchmarkConfig {
+    enabled: bool,
+    #[serde(rename = "outputPath")]
+    output_path: Option<String>,
+    #[serde(rename = "sampleMs")]
+    sample_ms: u32,
+    #[serde(rename = "targetFps")]
+    target_fps: f64,
+    #[serde(rename = "maxAtoms")]
+    max_atoms: usize,
 }
 
 #[derive(Deserialize, Serialize, Clone, Default)]
@@ -133,7 +171,8 @@ struct RecentFileEntry {
 fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<MoleculeData, String> {
     log::info!("Loading molecule from: {}", path);
 
-    let structure = read_structure(&path, FileFormat::Auto).map_err(format_load_error)?;
+    let structure = read_structure_with_options(&path, FileFormat::Auto, read_options_from_env())
+        .map_err(format_load_error)?;
 
     let center = structure.center();
 
@@ -162,6 +201,8 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
         })
         .collect();
 
+    let groups = build_molecule_groups(&structure, center);
+
     let bonds = structure
         .bonds
         .iter()
@@ -184,6 +225,7 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
         name: structure.name.clone(),
         atoms,
         bonds,
+        groups,
         metadata: SerialMoleculeMetadata {
             source_format: structure.metadata.source_format.clone(),
             title: structure.metadata.title.clone(),
@@ -198,6 +240,167 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
     *state.structure.lock() = Some(structure);
 
     Ok(data)
+}
+
+fn benchmark_enabled() -> bool {
+    std::env::var("CYLFORM_BENCHMARK")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn read_options_from_env() -> ReadOptions {
+    if !benchmark_enabled() {
+        return ReadOptions::default();
+    }
+
+    let max_atoms = std::env::var("CYLFORM_BENCH_MAX_ATOMS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MAX_ATOMS);
+
+    ReadOptions { max_atoms }
+}
+
+#[tauri::command]
+fn get_benchmark_config() -> BenchmarkConfig {
+    BenchmarkConfig {
+        enabled: benchmark_enabled(),
+        output_path: std::env::var("CYLFORM_BENCH_OUTPUT").ok(),
+        sample_ms: std::env::var("CYLFORM_BENCH_SAMPLE_MS")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|value| *value >= 250)
+            .unwrap_or(3_000),
+        target_fps: std::env::var("CYLFORM_BENCH_TARGET_FPS")
+            .ok()
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| *value > 0.0)
+            .unwrap_or(30.0),
+        max_atoms: read_options_from_env().max_atoms,
+    }
+}
+
+#[tauri::command]
+fn write_benchmark_result(
+    app: AppHandle,
+    output_path: Option<String>,
+    result: serde_json::Value,
+) -> Result<(), String> {
+    let path = output_path
+        .or_else(|| std::env::var("CYLFORM_BENCH_OUTPUT").ok())
+        .ok_or_else(|| "Benchmark output path was not provided.".to_string())?;
+    let path = PathBuf::from(path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create benchmark output directory: {error}"))?;
+    }
+    let contents = serde_json::to_string_pretty(&result)
+        .map_err(|error| format!("Could not encode benchmark result: {error}"))?;
+    fs::write(&path, contents)
+        .map_err(|error| format!("Could not write benchmark result: {error}"))?;
+    app.exit(0);
+    Ok(())
+}
+
+fn build_molecule_groups(structure: &Structure, center: glam::Vec3) -> Vec<SerialMoleculeGroup> {
+    #[derive(Clone)]
+    struct GroupAccumulator {
+        residue_name: Option<String>,
+        chain_id: Option<String>,
+        residue_sequence: Option<i32>,
+        insertion_code: Option<String>,
+        atom_indices: Vec<usize>,
+        sum: glam::Vec3,
+    }
+
+    let mut groups = std::collections::BTreeMap::<String, GroupAccumulator>::new();
+
+    for (atom_index, atom) in structure.atoms.iter().enumerate() {
+        let Some(metadata) = atom.metadata.as_ref() else {
+            continue;
+        };
+        if metadata.residue_name.is_none()
+            && metadata.residue_sequence.is_none()
+            && metadata.chain_id.is_none()
+            && metadata.insertion_code.is_none()
+        {
+            continue;
+        }
+
+        let key = format!(
+            "{}:{}:{}:{}",
+            metadata.chain_id.as_deref().unwrap_or(""),
+            metadata.residue_name.as_deref().unwrap_or(""),
+            metadata
+                .residue_sequence
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            metadata.insertion_code.as_deref().unwrap_or("")
+        );
+        let entry = groups.entry(key).or_insert_with(|| GroupAccumulator {
+            residue_name: metadata.residue_name.clone(),
+            chain_id: metadata.chain_id.clone(),
+            residue_sequence: metadata.residue_sequence,
+            insertion_code: metadata.insertion_code.clone(),
+            atom_indices: Vec::new(),
+            sum: glam::Vec3::ZERO,
+        });
+        entry.atom_indices.push(atom_index);
+        entry.sum += atom.position - center;
+    }
+
+    if groups.len() < 2 {
+        return Vec::new();
+    }
+
+    groups
+        .into_iter()
+        .map(|(id, group)| {
+            let centroid = group.sum / group.atom_indices.len() as f32;
+            let label = format_group_label(
+                group.residue_name.as_deref(),
+                group.chain_id.as_deref(),
+                group.residue_sequence,
+                group.insertion_code.as_deref(),
+            );
+            SerialMoleculeGroup {
+                id,
+                label,
+                residue_name: group.residue_name,
+                chain_id: group.chain_id,
+                residue_sequence: group.residue_sequence,
+                insertion_code: group.insertion_code,
+                atom_indices: group.atom_indices,
+                centroid: SerialPoint {
+                    x: centroid.x,
+                    y: centroid.y,
+                    z: centroid.z,
+                },
+            }
+        })
+        .collect()
+}
+
+fn format_group_label(
+    residue_name: Option<&str>,
+    chain_id: Option<&str>,
+    residue_sequence: Option<i32>,
+    insertion_code: Option<&str>,
+) -> String {
+    let mut label = residue_name.unwrap_or("Group").to_string();
+    if let Some(sequence) = residue_sequence {
+        label.push(' ');
+        label.push_str(&sequence.to_string());
+    }
+    if let Some(code) = insertion_code.filter(|value| !value.is_empty()) {
+        label.push_str(code);
+    }
+    if let Some(chain) = chain_id.filter(|value| !value.is_empty()) {
+        label.push_str(" · ");
+        label.push_str(chain);
+    }
+    label
 }
 
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -453,6 +656,8 @@ fn main() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             load_molecule,
+            get_benchmark_config,
+            write_benchmark_result,
             get_startup_file,
             load_presentation_state,
             save_presentation_state,

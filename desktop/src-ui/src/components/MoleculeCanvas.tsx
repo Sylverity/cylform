@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
@@ -9,7 +9,9 @@ import {
   Fog,
   GridHelper,
   Group,
+  InstancedMesh,
   Material,
+  Matrix4,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
@@ -18,12 +20,14 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   Raycaster,
   Scene,
   SphereGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
+  type Intersection,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -36,6 +40,8 @@ import type {
   MoleculeData,
   AtomStyleOverride,
   BondStyleOverride,
+  BenchmarkConfig,
+  BenchmarkRenderMetrics,
   SelectionMode,
   SelectionSummary,
   SelectedAngleMeasurement,
@@ -139,6 +145,8 @@ interface Props {
   onOpenFile: () => void;
   onError: (msg: string) => void;
   onToast: (text: string, type?: ToastMessage['type']) => void;
+  benchmarkConfig?: BenchmarkConfig;
+  onBenchmarkRender?: (metrics: BenchmarkRenderMetrics) => void;
 }
 
 interface BondSelectionData {
@@ -148,6 +156,45 @@ interface BondSelectionData {
   midpoint: Vector3;
   atom1Index: number;
   atom2Index: number;
+  displayRadius: number;
+  matrix: Matrix4;
+}
+
+interface AtomSelectionData {
+  element: string;
+  atomIndex: number;
+  position: Vector3;
+  baseRadius: number;
+}
+
+interface SceneRenderStats {
+  renderCalls: number;
+  triangles: number;
+  geometries: number;
+  textures: number;
+  sceneObjects: number;
+}
+
+interface MoleculeVisibilityIndex {
+  moleculeData: MoleculeData;
+  adjacency: number[][];
+  isHydrogen: boolean[];
+  isCarbonHydrogen: boolean[];
+  bounds: Box3 | null;
+}
+
+interface PickMetrics {
+  pickAtomMs: number | null;
+  pickBondMs: number | null;
+  pickTotalMs: number;
+  pickHitType: 'atom' | 'bond' | 'none';
+  pickAtomCandidates: number;
+  pickBondCandidates: number;
+}
+
+interface PickResult extends PickMetrics {
+  atom: AtomSelectionData | null;
+  bond: BondSelectionData | null;
 }
 
 interface SceneCtx {
@@ -179,15 +226,17 @@ interface SceneCtx {
   selectedBondMat: MeshPhongMaterial;
   raycaster: Raycaster;
   pointer: Vector2;
-  selectedBondMesh: Mesh | null;
+  selectedBondOverlay: Mesh | null;
   selectedBondData: BondSelectionData | null;
-  bondMeshes: Mesh[];
+  bondPickObjects: Array<Mesh | InstancedMesh>;
   selectedAtomMat: MeshPhongMaterial;
-  atomMeshes: Mesh[];
-  selectedAtomMeshes: Mesh[];
-  modeSelectedAtomMeshes: Mesh[];
-  modeSelectedBondMeshes: Mesh[];
-  angleSelection: Mesh[];
+  atomPickObjects: InstancedMesh[];
+  selectedAtomOverlays: Mesh[];
+  modeSelectedAtomOverlays: Mesh[];
+  modeSelectedBondOverlays: Mesh[];
+  modeSelectedAtoms: AtomSelectionData[];
+  modeSelectedBonds: BondSelectionData[];
+  angleSelection: AtomSelectionData[];
   angleLabelPosition: Vector3 | null;
   angleDegrees: number | null;
   dihedralLabelPosition: Vector3 | null;
@@ -311,9 +360,9 @@ function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshP
 }
 
 function updateAngleSelection(
-  selection: Mesh[],
-  clickedAtom: Mesh,
-): Mesh[] {
+  selection: AtomSelectionData[],
+  clickedAtom: AtomSelectionData,
+): AtomSelectionData[] {
   if (selection.length >= 4) {
     return [clickedAtom];
   }
@@ -322,22 +371,202 @@ function updateAngleSelection(
     return [clickedAtom];
   }
 
-  if (selection[selection.length - 1] === clickedAtom) {
+  if (selection[selection.length - 1].atomIndex === clickedAtom.atomIndex) {
     return selection;
   }
 
   return [...selection, clickedAtom];
 }
 
-function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || atom.element !== 'H') return false;
-
-  return moleculeData.bonds.some((bond) => {
-    if (bond.atom1 === atomIndex) return moleculeData.atoms[bond.atom2]?.element === 'C';
-    if (bond.atom2 === atomIndex) return moleculeData.atoms[bond.atom1]?.element === 'C';
-    return false;
+function atomMaterial(color: string): MeshPhongMaterial {
+  return new MeshPhongMaterial({
+    color,
+    shininess: 42,
+    specular: new Color(0.18, 0.18, 0.18),
   });
+}
+
+function bondTransform(start: Vector3, end: Vector3, radius: number): Matrix4 {
+  const UP = new Vector3(0, 1, 0);
+  const dir = new Vector3().subVectors(end, start);
+  const len = dir.length();
+  const midpoint = new Vector3().addVectors(start, end).multiplyScalar(0.5);
+  const matrix = new Matrix4();
+  const quaternion = new Quaternion();
+  const dirNorm = dir.clone().normalize();
+
+  if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
+    quaternion.setFromAxisAngle(new Vector3(1, 0, 0), dirNorm.y < 0 ? Math.PI : 0);
+  } else {
+    quaternion.setFromUnitVectors(UP, dirNorm);
+  }
+
+  return matrix.compose(midpoint, quaternion, new Vector3(radius, len, radius));
+}
+
+function removeOverlay(ctx: SceneCtx, mesh: Mesh | null): void {
+  if (!mesh) return;
+  ctx.molGroup.remove(mesh);
+}
+
+function clearOverlays(ctx: SceneCtx, overlays: Mesh[]): void {
+  for (const overlay of overlays) {
+    ctx.molGroup.remove(overlay);
+  }
+  overlays.length = 0;
+}
+
+function createAtomOverlay(ctx: SceneCtx, atom: AtomSelectionData): Mesh {
+  const overlay = new Mesh(ctx.sphereGeom, ctx.selectedAtomMat);
+  overlay.position.copy(atom.position);
+  overlay.scale.setScalar(atom.baseRadius * 1.45);
+  overlay.userData.atom = atom;
+  ctx.molGroup.add(overlay);
+  return overlay;
+}
+
+function createBondOverlay(ctx: SceneCtx, bond: BondSelectionData): Mesh {
+  const overlay = new Mesh(ctx.cylGeom, ctx.selectedBondMat);
+  overlay.applyMatrix4(bond.matrix);
+  overlay.scale.multiplyScalar(1.22);
+  overlay.userData.bond = bond;
+  ctx.molGroup.add(overlay);
+  return overlay;
+}
+
+function resolveAtomHit(hit: Intersection | undefined): AtomSelectionData | null {
+  if (!hit || !(hit.object instanceof InstancedMesh) || typeof hit.instanceId !== 'number') {
+    return null;
+  }
+  const atoms = hit.object.userData.atoms as AtomSelectionData[] | undefined;
+  return atoms?.[hit.instanceId] ?? null;
+}
+
+function resolveBondHit(hit: Intersection | undefined): BondSelectionData | null {
+  if (!hit) return null;
+  if (hit.object instanceof InstancedMesh && typeof hit.instanceId === 'number') {
+    const bonds = hit.object.userData.bonds as BondSelectionData[] | undefined;
+    return bonds?.[hit.instanceId] ?? null;
+  }
+  if (hit.object instanceof Mesh) {
+    return (hit.object.userData.bond as BondSelectionData | undefined) ?? null;
+  }
+  return null;
+}
+
+function pickScene(ctx: SceneCtx, mode: SelectionMode): PickResult {
+  const totalStart = performance.now();
+  let atomHit: Intersection | undefined;
+  let bondHit: Intersection | undefined;
+  let pickAtomMs: number | null = null;
+  let pickBondMs: number | null = null;
+
+  const pickAtoms = () => {
+    const startedAt = performance.now();
+    atomHit = ctx.raycaster.intersectObjects(ctx.atomPickObjects, false)[0];
+    pickAtomMs = performance.now() - startedAt;
+    return resolveAtomHit(atomHit);
+  };
+
+  const pickBonds = () => {
+    const startedAt = performance.now();
+    bondHit = ctx.raycaster.intersectObjects(ctx.bondPickObjects, false)[0];
+    pickBondMs = performance.now() - startedAt;
+    return resolveBondHit(bondHit);
+  };
+
+  let atom: AtomSelectionData | null = null;
+  let bond: BondSelectionData | null = null;
+
+  if (mode === 'label' || mode === 'atom') {
+    atom = pickAtoms();
+  } else if (mode === 'bond') {
+    bond = pickBonds();
+  } else if (mode === 'atom-bond' || mode === 'measure') {
+    atom = pickAtoms();
+    if (!atom) {
+      bond = pickBonds();
+    }
+  }
+
+  const pickTotalMs = performance.now() - totalStart;
+  return {
+    atom,
+    bond,
+    pickAtomMs,
+    pickBondMs,
+    pickTotalMs,
+    pickHitType: atom ? 'atom' : bond ? 'bond' : 'none',
+    pickAtomCandidates: ctx.atomPickObjects.reduce((sum, object) => sum + object.count, 0),
+    pickBondCandidates: ctx.bondPickObjects.reduce((sum, object) => (
+      sum + (object instanceof InstancedMesh ? object.count : 1)
+    ), 0),
+  };
+}
+
+function benchmarkPickMetrics(ctx: SceneCtx): PickMetrics {
+  ctx.pointer.set(0, 0);
+  ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
+  const result = pickScene(ctx, 'atom-bond');
+  return {
+    pickAtomMs: result.pickAtomMs,
+    pickBondMs: result.pickBondMs,
+    pickTotalMs: result.pickTotalMs,
+    pickHitType: result.pickHitType,
+    pickAtomCandidates: result.pickAtomCandidates,
+    pickBondCandidates: result.pickBondCandidates,
+  };
+}
+
+function sceneRenderStats(ctx: SceneCtx): SceneRenderStats {
+  let sceneObjects = 0;
+  ctx.molGroup.traverse(() => {
+    sceneObjects += 1;
+  });
+
+  return {
+    renderCalls: ctx.renderer.info.render.calls,
+    triangles: ctx.renderer.info.render.triangles,
+    geometries: ctx.renderer.info.memory.geometries,
+    textures: ctx.renderer.info.memory.textures,
+    sceneObjects,
+  };
+}
+
+function buildMoleculeVisibilityIndex(moleculeData: MoleculeData | null): MoleculeVisibilityIndex | null {
+  if (!moleculeData || moleculeData.atoms.length === 0) return null;
+
+  const adjacency = moleculeData.atoms.map(() => [] as number[]);
+  const isHydrogen = moleculeData.atoms.map((atom) => atom.element === 'H');
+  const isCarbonHydrogen = moleculeData.atoms.map(() => false);
+  const bounds = new Box3();
+
+  moleculeData.atoms.forEach((atom) => {
+    const radius = Math.max(atomDisplayRadius(atom.element), atom.radius, 0.15);
+    bounds.expandByPoint(new Vector3(atom.x - radius, atom.y - radius, atom.z - radius));
+    bounds.expandByPoint(new Vector3(atom.x + radius, atom.y + radius, atom.z + radius));
+  });
+
+  for (const bond of moleculeData.bonds) {
+    if (!moleculeData.atoms[bond.atom1] || !moleculeData.atoms[bond.atom2]) continue;
+    adjacency[bond.atom1].push(bond.atom2);
+    adjacency[bond.atom2].push(bond.atom1);
+  }
+
+  for (const [atomIndex, atom] of moleculeData.atoms.entries()) {
+    if (atom.element !== 'H') continue;
+    isCarbonHydrogen[atomIndex] = adjacency[atomIndex].some((neighborIndex) => (
+      moleculeData.atoms[neighborIndex]?.element === 'C'
+    ));
+  }
+
+  return {
+    moleculeData,
+    adjacency,
+    isHydrogen,
+    isCarbonHydrogen,
+    bounds: bounds.isEmpty() ? null : bounds,
+  };
 }
 
 function isAtomVisible(
@@ -345,11 +574,12 @@ function isAtomVisible(
   moleculeData: MoleculeData,
   hydrogenVisibility: HydrogenVisibility,
   hiddenAtomSet: Set<number>,
+  visibilityIndex: MoleculeVisibilityIndex | null,
 ): boolean {
   const atom = moleculeData.atoms[atomIndex];
   if (!atom || hiddenAtomSet.has(atomIndex)) return false;
-  if (hydrogenVisibility === 'hidden' && atom.element === 'H') return false;
-  if (hydrogenVisibility === 'hide-c-h' && isCarbonHydrogen(atomIndex, moleculeData)) return false;
+  if (hydrogenVisibility === 'hidden' && (visibilityIndex?.isHydrogen[atomIndex] ?? atom.element === 'H')) return false;
+  if (hydrogenVisibility === 'hide-c-h' && (visibilityIndex?.isCarbonHydrogen[atomIndex] ?? false)) return false;
   return true;
 }
 
@@ -358,6 +588,7 @@ function labelSourceVisible(
   moleculeData: MoleculeData | null,
   hydrogenVisibility: HydrogenVisibility,
   hiddenAtomSet: Set<number>,
+  visibilityIndex: MoleculeVisibilityIndex | null,
 ): boolean {
   if (!moleculeData) return false;
   const atomIndices = label.source?.atomIndices
@@ -366,8 +597,62 @@ function labelSourceVisible(
 
   if (!atomIndices || atomIndices.length === 0) return true;
   return atomIndices.every((atomIndex) => (
-    isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet)
+    isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet, visibilityIndex)
   ));
+}
+
+function percentile(values: number[], percentileValue: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil((percentileValue / 100) * sorted.length) - 1),
+  );
+  return sorted[index];
+}
+
+function sampleFrameTimes(durationMs: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    const frameTimes: number[] = [];
+    let startedAt: number | null = null;
+    let previous: number | null = null;
+
+    const tick = (timestamp: number) => {
+      if (startedAt === null) {
+        startedAt = timestamp;
+        previous = timestamp;
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      if (previous !== null) {
+        frameTimes.push(timestamp - previous);
+      }
+      previous = timestamp;
+
+      if (timestamp - startedAt >= durationMs) {
+        resolve(frameTimes);
+        return;
+      }
+
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+  });
+}
+
+function webglDebugInfo(renderer: WebGLRenderer): { webglRenderer: string | null; webglVendor: string | null } {
+  const gl = renderer.getContext();
+  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  if (!debugInfo) {
+    return { webglRenderer: null, webglVendor: null };
+  }
+
+  return {
+    webglRenderer: gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string,
+    webglVendor: gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) as string,
+  };
 }
 
 export function MoleculeCanvas({
@@ -395,6 +680,8 @@ export function MoleculeCanvas({
   onOpenFile,
   onError,
   onToast,
+  benchmarkConfig,
+  onBenchmarkRender,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<SceneCtx | null>(null);
@@ -407,9 +694,11 @@ export function MoleculeCanvas({
   const hiddenAtomIndicesRef = useRef<number[]>(hiddenAtomIndices);
   const hydrogenVisibilityRef = useRef<HydrogenVisibility>(hydrogenVisibility);
   const moleculeDataRef = useRef<MoleculeData | null>(moleculeData);
+  const visibilityIndexRef = useRef<MoleculeVisibilityIndex | null>(null);
   const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
+  const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -435,6 +724,10 @@ export function MoleculeCanvas({
   useEffect(() => {
     moleculeDataRef.current = moleculeData;
   }, [moleculeData]);
+
+  useEffect(() => {
+    visibilityIndexRef.current = visibilityIndex;
+  }, [visibilityIndex]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -588,6 +881,7 @@ export function MoleculeCanvas({
       }
 
       const currentMoleculeData = moleculeDataRef.current;
+      const currentVisibilityIndex = visibilityIndexRef.current;
       const currentHiddenAtomSet = new Set(hiddenAtomIndicesRef.current);
       const currentHydrogenVisibility = hydrogenVisibilityRef.current;
 
@@ -596,7 +890,13 @@ export function MoleculeCanvas({
         if (!labelElement) continue;
         if (
           !label.visible ||
-          !labelSourceVisible(label, currentMoleculeData, currentHydrogenVisibility, currentHiddenAtomSet)
+          !labelSourceVisible(
+            label,
+            currentMoleculeData,
+            currentHydrogenVisibility,
+            currentHiddenAtomSet,
+            currentVisibilityIndex,
+          )
         ) {
           labelElement.style.display = 'none';
           continue;
@@ -623,9 +923,9 @@ export function MoleculeCanvas({
       lastMoleculeBox: null,
       animId,
       sphereGeom, cylGeom, atomMats, bondMat, selectedBondMat,
-      raycaster, pointer, selectedBondMesh: null, selectedBondData: null, bondMeshes: [],
-      selectedAtomMat, atomMeshes: [], selectedAtomMeshes: [], modeSelectedAtomMeshes: [],
-      modeSelectedBondMeshes: [], angleSelection: [],
+      raycaster, pointer, selectedBondOverlay: null, selectedBondData: null, bondPickObjects: [],
+      selectedAtomMat, atomPickObjects: [], selectedAtomOverlays: [], modeSelectedAtomOverlays: [],
+      modeSelectedBondOverlays: [], modeSelectedAtoms: [], modeSelectedBonds: [], angleSelection: [],
       angleLabelPosition: null, angleDegrees: null, dihedralLabelPosition: null,
       dihedralDegrees: null,
     };
@@ -688,49 +988,13 @@ export function MoleculeCanvas({
       pointerDown = { x: event.clientX, y: event.clientY };
     };
 
-    const clearSelection = () => {
-      const current = ctxRef.current;
-      if (!current) return;
-      if (current.selectedBondMesh) {
-        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
-      }
-      current.selectedBondMesh = null;
-      current.selectedBondData = null;
-      for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-      }
-      for (const atomMesh of current.modeSelectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-      }
-      for (const bondMesh of current.modeSelectedBondMeshes) {
-        bondMesh.material = bondMesh.userData.defaultMaterial as Material;
-      }
-      current.selectedAtomMeshes = [];
-      current.modeSelectedAtomMeshes = [];
-      current.modeSelectedBondMeshes = [];
-      current.angleSelection = [];
-      current.angleLabelPosition = null;
-      current.angleDegrees = null;
-      current.dihedralLabelPosition = null;
-      current.dihedralDegrees = null;
-      onBondSelected(null);
-      onAngleSelected(null);
-      onDihedralSelected(null);
-      onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
-    };
-
     const clearMeasurementSelection = () => {
       const current = ctxRef.current;
       if (!current) return;
-      if (current.selectedBondMesh) {
-        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
-      }
-      current.selectedBondMesh = null;
+      removeOverlay(current, current.selectedBondOverlay);
+      current.selectedBondOverlay = null;
       current.selectedBondData = null;
-      for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-      }
-      current.selectedAtomMeshes = [];
+      clearOverlays(current, current.selectedAtomOverlays);
       current.angleSelection = [];
       current.angleLabelPosition = null;
       current.angleDegrees = null;
@@ -739,46 +1003,57 @@ export function MoleculeCanvas({
       onBondSelected(null);
       onAngleSelected(null);
       onDihedralSelected(null);
+    };
+
+    const clearSelection = () => {
+      const current = ctxRef.current;
+      if (!current) return;
+      clearMeasurementSelection();
+      clearOverlays(current, current.modeSelectedAtomOverlays);
+      clearOverlays(current, current.modeSelectedBondOverlays);
+      current.modeSelectedAtoms = [];
+      current.modeSelectedBonds = [];
+      onSelectionSummaryChange({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
     };
 
     const publishModeSelectionSummary = (current: SceneCtx) => {
       onSelectionSummaryChange({
-        atomCount: current.modeSelectedAtomMeshes.length,
-        bondCount: current.modeSelectedBondMeshes.length,
-        atomIndices: current.modeSelectedAtomMeshes
-          .map((mesh) => Number(mesh.userData.atomIndex ?? -1))
-          .filter((atomIndex) => atomIndex >= 0),
-        bondKeys: current.modeSelectedBondMeshes
-          .map((mesh) => mesh.userData.bond as BondSelectionData | undefined)
-          .filter((bond): bond is BondSelectionData => Boolean(bond))
-          .map((bond) => bondKey(bond.atom1Index, bond.atom2Index)),
+        atomCount: current.modeSelectedAtoms.length,
+        bondCount: current.modeSelectedBonds.length,
+        atomIndices: current.modeSelectedAtoms.map((atom) => atom.atomIndex),
+        bondKeys: current.modeSelectedBonds.map((bond) => bondKey(bond.atom1Index, bond.atom2Index)),
       });
     };
 
-    const toggleModeAtom = (atomMesh: Mesh) => {
+    const toggleModeAtom = (atom: AtomSelectionData) => {
       const current = ctxRef.current;
       if (!current) return;
-      const index = current.modeSelectedAtomMeshes.indexOf(atomMesh);
+      const index = current.modeSelectedAtoms.findIndex((candidate) => candidate.atomIndex === atom.atomIndex);
       if (index >= 0) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-        current.modeSelectedAtomMeshes.splice(index, 1);
+        current.modeSelectedAtoms.splice(index, 1);
+        const [overlay] = current.modeSelectedAtomOverlays.splice(index, 1);
+        removeOverlay(current, overlay ?? null);
       } else {
-        atomMesh.material = current.selectedAtomMat;
-        current.modeSelectedAtomMeshes.push(atomMesh);
+        current.modeSelectedAtoms.push(atom);
+        current.modeSelectedAtomOverlays.push(createAtomOverlay(current, atom));
       }
       publishModeSelectionSummary(current);
     };
 
-    const toggleModeBond = (bondMesh: Mesh) => {
+    const toggleModeBond = (bond: BondSelectionData) => {
       const current = ctxRef.current;
       if (!current) return;
-      const index = current.modeSelectedBondMeshes.indexOf(bondMesh);
+      const key = bondKey(bond.atom1Index, bond.atom2Index);
+      const index = current.modeSelectedBonds.findIndex(
+        (candidate) => bondKey(candidate.atom1Index, candidate.atom2Index) === key,
+      );
       if (index >= 0) {
-        bondMesh.material = bondMesh.userData.defaultMaterial as Material;
-        current.modeSelectedBondMeshes.splice(index, 1);
+        current.modeSelectedBonds.splice(index, 1);
+        const [overlay] = current.modeSelectedBondOverlays.splice(index, 1);
+        removeOverlay(current, overlay ?? null);
       } else {
-        bondMesh.material = current.selectedBondMat;
-        current.modeSelectedBondMeshes.push(bondMesh);
+        current.modeSelectedBonds.push(bond);
+        current.modeSelectedBondOverlays.push(createBondOverlay(current, bond));
       }
       publishModeSelectionSummary(current);
     };
@@ -803,25 +1078,36 @@ export function MoleculeCanvas({
         return;
       }
 
-      const atomHit = current.raycaster.intersectObjects(current.atomMeshes, false)[0];
-      const bondHit = current.raycaster.intersectObjects(current.bondMeshes, false)[0];
+      const pick = pickScene(current, activeMode);
+      const { atom, bond } = pick;
+      if (perfLoggingEnabled()) {
+        console.info(
+          '[Cylform perf] pick',
+          {
+            totalMs: Math.round(pick.pickTotalMs * 100) / 100,
+            atomMs: pick.pickAtomMs === null ? null : Math.round(pick.pickAtomMs * 100) / 100,
+            bondMs: pick.pickBondMs === null ? null : Math.round(pick.pickBondMs * 100) / 100,
+            hit: pick.pickHitType,
+            atoms: pick.pickAtomCandidates,
+            bonds: pick.pickBondCandidates,
+            mode: activeMode,
+          },
+        );
+      }
 
       if (activeMode === 'label') {
         clearMeasurementSelection();
-        if (atomHit && atomHit.object instanceof Mesh) {
-          const atomMesh = atomHit.object;
-          const atomIndex = Number(atomMesh.userData.atomIndex ?? 0);
-          const element = String(atomMesh.userData.element ?? 'Atom');
-          const serial = atomIndex + 1;
+        if (atom) {
+          const serial = atom.atomIndex + 1;
           onPersistentLabelCreate({
             type: 'atom',
-            text: `${element}${serial}`,
+            text: `${atom.element}${serial}`,
             anchor: {
-              x: atomMesh.position.x,
-              y: atomMesh.position.y + 0.25,
-              z: atomMesh.position.z,
+              x: atom.position.x,
+              y: atom.position.y + 0.25,
+              z: atom.position.z,
             },
-            source: { atomIndex },
+            source: { atomIndex: atom.atomIndex },
           });
         }
         return;
@@ -831,41 +1117,32 @@ export function MoleculeCanvas({
         clearMeasurementSelection();
         if (
           (activeMode === 'atom' || activeMode === 'atom-bond') &&
-          atomHit &&
-          atomHit.object instanceof Mesh
+          atom
         ) {
-          toggleModeAtom(atomHit.object);
+          toggleModeAtom(atom);
           return;
         }
 
         if (
           (activeMode === 'bond' || activeMode === 'atom-bond') &&
-          bondHit &&
-          bondHit.object instanceof Mesh
+          bond
         ) {
-          toggleModeBond(bondHit.object);
+          toggleModeBond(bond);
         }
         return;
       }
 
-      if (atomHit && atomHit.object instanceof Mesh) {
-        if (current.selectedBondMesh) {
-          current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
-        }
-        current.selectedBondMesh = null;
+      if (atom) {
+        removeOverlay(current, current.selectedBondOverlay);
+        current.selectedBondOverlay = null;
         current.selectedBondData = null;
         onBondSelected(null);
 
-        for (const atomMesh of current.selectedAtomMeshes) {
-          atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-        }
-
-        current.angleSelection = updateAngleSelection(current.angleSelection, atomHit.object);
-        current.selectedAtomMeshes = [...current.angleSelection];
-
-        for (const atomMesh of current.selectedAtomMeshes) {
-          atomMesh.material = current.selectedAtomMat;
-        }
+        clearOverlays(current, current.selectedAtomOverlays);
+        current.angleSelection = updateAngleSelection(current.angleSelection, atom);
+        current.selectedAtomOverlays = current.angleSelection.map((selectedAtom) => (
+          createAtomOverlay(current, selectedAtom)
+        ));
 
         if (current.angleSelection.length === 1) {
           current.angleLabelPosition = null;
@@ -873,12 +1150,12 @@ export function MoleculeCanvas({
           current.dihedralLabelPosition = null;
           current.dihedralDegrees = null;
           onAngleSelected({
-            atomElements: [atomHit.object.userData.element as string, '', ''],
+            atomElements: [atom.element, '', ''],
             angleDegrees: 0,
             stage: 1,
           });
           onDihedralSelected({
-            atomElements: [atomHit.object.userData.element as string, '', '', ''],
+            atomElements: [atom.element, '', '', ''],
             dihedralDegrees: 0,
             stage: 1,
           });
@@ -892,8 +1169,8 @@ export function MoleculeCanvas({
           current.dihedralDegrees = null;
           onAngleSelected({
             atomElements: [
-              current.angleSelection[0].userData.element as string,
-              current.angleSelection[1].userData.element as string,
+              current.angleSelection[0].element,
+              current.angleSelection[1].element,
               '',
             ],
             angleDegrees: 0,
@@ -901,8 +1178,8 @@ export function MoleculeCanvas({
           });
           onDihedralSelected({
             atomElements: [
-              current.angleSelection[0].userData.element as string,
-              current.angleSelection[1].userData.element as string,
+              current.angleSelection[0].element,
+              current.angleSelection[1].element,
               '',
               '',
             ],
@@ -939,17 +1216,17 @@ export function MoleculeCanvas({
         const angleAnchor = current.angleLabelPosition.clone();
         onAngleSelected({
           atomElements: [
-            a.userData.element as string,
-            b.userData.element as string,
-            c.userData.element as string,
+            a.element,
+            b.element,
+            c.element,
           ],
           angleDegrees,
           stage: 3,
           anchor: { x: angleAnchor.x, y: angleAnchor.y, z: angleAnchor.z },
           atomIndices: [
-            Number(a.userData.atomIndex ?? 0),
-            Number(b.userData.atomIndex ?? 0),
-            Number(c.userData.atomIndex ?? 0),
+            a.atomIndex,
+            b.atomIndex,
+            c.atomIndex,
           ],
         });
 
@@ -958,9 +1235,9 @@ export function MoleculeCanvas({
           current.dihedralDegrees = null;
           onDihedralSelected({
             atomElements: [
-              a.userData.element as string,
-              b.userData.element as string,
-              c.userData.element as string,
+              a.element,
+              b.element,
+              c.element,
               '',
             ],
             dihedralDegrees: 0,
@@ -1002,34 +1279,30 @@ export function MoleculeCanvas({
         const dihedralAnchor = current.dihedralLabelPosition.clone();
         onDihedralSelected({
           atomElements: [
-            a.userData.element as string,
-            b.userData.element as string,
-            c.userData.element as string,
-            d.userData.element as string,
+            a.element,
+            b.element,
+            c.element,
+            d.element,
           ],
           dihedralDegrees,
           stage: 4,
           anchor: { x: dihedralAnchor.x, y: dihedralAnchor.y, z: dihedralAnchor.z },
           atomIndices: [
-            Number(a.userData.atomIndex ?? 0),
-            Number(b.userData.atomIndex ?? 0),
-            Number(c.userData.atomIndex ?? 0),
-            Number(d.userData.atomIndex ?? 0),
+            a.atomIndex,
+            b.atomIndex,
+            c.atomIndex,
+            d.atomIndex,
           ],
         });
         return;
       }
 
-      const hit = bondHit;
-      if (!hit || !(hit.object instanceof Mesh)) {
+      if (!bond) {
         clearSelection();
         return;
       }
 
-      for (const atomMesh of current.selectedAtomMeshes) {
-        atomMesh.material = atomMesh.userData.defaultMaterial as Material;
-      }
-      current.selectedAtomMeshes = [];
+      clearOverlays(current, current.selectedAtomOverlays);
       current.angleSelection = [];
       current.angleLabelPosition = null;
       current.angleDegrees = null;
@@ -1038,18 +1311,8 @@ export function MoleculeCanvas({
       onAngleSelected(null);
       onDihedralSelected(null);
 
-      if (current.selectedBondMesh && current.selectedBondMesh !== hit.object) {
-        current.selectedBondMesh.material = current.selectedBondMesh.userData.defaultMaterial as Material;
-      }
-
-      current.selectedBondMesh = hit.object;
-      current.selectedBondMesh.material = current.selectedBondMat;
-
-      const bond = hit.object.userData.bond as BondSelectionData | undefined;
-      if (!bond) {
-        clearSelection();
-        return;
-      }
+      removeOverlay(current, current.selectedBondOverlay);
+      current.selectedBondOverlay = createBondOverlay(current, bond);
 
       current.selectedBondData = bond;
       onBondSelected({
@@ -1194,11 +1457,11 @@ export function MoleculeCanvas({
     } = ctx;
     const shouldFitCamera = moleculeData !== previousMoleculeDataRef.current;
 
-    // Clear previous meshes while keeping shared element materials alive.
+    // Clear previous molecule batches while keeping shared base materials alive.
     const sharedAtomMaterials = new Set(atomMats.values());
     molGroup.traverse(obj => {
       if (
-        obj instanceof Mesh &&
+        (obj instanceof Mesh || obj instanceof InstancedMesh) &&
         obj.material !== bondMat &&
         obj.material !== selectedBondMat &&
         obj.material !== selectedAtomMat &&
@@ -1208,13 +1471,15 @@ export function MoleculeCanvas({
       }
     });
     molGroup.clear();
-    ctx.bondMeshes = [];
-    ctx.atomMeshes = [];
-    ctx.selectedBondMesh = null;
+    ctx.bondPickObjects = [];
+    ctx.atomPickObjects = [];
+    ctx.selectedBondOverlay = null;
     ctx.selectedBondData = null;
-    ctx.selectedAtomMeshes = [];
-    ctx.modeSelectedAtomMeshes = [];
-    ctx.modeSelectedBondMeshes = [];
+    ctx.selectedAtomOverlays = [];
+    ctx.modeSelectedAtomOverlays = [];
+    ctx.modeSelectedBondOverlays = [];
+    ctx.modeSelectedAtoms = [];
+    ctx.modeSelectedBonds = [];
     ctx.angleSelection = [];
     ctx.angleLabelPosition = null;
     ctx.angleDegrees = null;
@@ -1232,10 +1497,21 @@ export function MoleculeCanvas({
       return;
     }
 
-    const UP = new Vector3(0, 1, 0);
+    const activeVisibilityIndex = visibilityIndex?.moleculeData === moleculeData ? visibilityIndex : null;
     const hiddenAtomSet = new Set(hiddenAtomIndices);
     let visibleBondCount = 0;
     let visibleAtomCount = 0;
+    const atomBuckets = new Map<string, { material: MeshPhongMaterial; atoms: AtomSelectionData[] }>();
+    const normalBonds: BondSelectionData[] = [];
+
+    const addBondMesh = (bondData: BondSelectionData, material: MeshPhongMaterial) => {
+      const mesh = new Mesh(cylGeom, material);
+      mesh.applyMatrix4(bondData.matrix);
+      mesh.userData.bond = bondData;
+      mesh.userData.defaultMaterial = material;
+      molGroup.add(mesh);
+      ctx.bondPickObjects.push(mesh);
+    };
 
     // --- Bonds first (atoms rendered on top) ---
     for (const bond of moleculeData.bonds) {
@@ -1243,8 +1519,8 @@ export function MoleculeCanvas({
       const a2 = moleculeData.atoms[bond.atom2];
       if (!a1 || !a2) continue;
       if (
-        !isAtomVisible(bond.atom1, moleculeData, hydrogenVisibility, hiddenAtomSet) ||
-        !isAtomVisible(bond.atom2, moleculeData, hydrogenVisibility, hiddenAtomSet)
+        !isAtomVisible(bond.atom1, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex) ||
+        !isAtomVisible(bond.atom2, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex)
       ) {
         continue;
       }
@@ -1255,75 +1531,85 @@ export function MoleculeCanvas({
       const len     = dir.length();
       if (len < 0.01) continue;
 
-      const dirNorm = dir.clone().normalize();
       const style = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)];
-      const mat = bondStyleMaterial(style, bondMat);
-      const mesh    = new Mesh(cylGeom, mat);
-      mesh.position.addVectors(start, end).multiplyScalar(0.5);
       const displayRadius = style?.type === 'thin'
         ? Math.max(0.026, bond.radius * 0.38)
         : Math.max(0.055, bond.radius * 0.82);
-      mesh.scale.set(displayRadius, len, displayRadius);
-      mesh.userData.bond = {
+      const bondData = {
         atom1Element: a1.element,
         atom2Element: a2.element,
         distance: len,
-        midpoint: mesh.position.clone(),
+        midpoint: new Vector3().addVectors(start, end).multiplyScalar(0.5),
         atom1Index: bond.atom1,
         atom2Index: bond.atom2,
+        displayRadius,
+        matrix: bondTransform(start, end, displayRadius),
       } satisfies BondSelectionData;
-      mesh.userData.defaultMaterial = mat;
 
-      if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
-        // Bond nearly parallel to Y — rotate 180° around X to point the right way
-        mesh.quaternion.setFromAxisAngle(
-          new Vector3(1, 0, 0),
-          dirNorm.y < 0 ? Math.PI : 0,
-        );
+      if (!style || style.type === 'full') {
+        normalBonds.push(bondData);
       } else {
-        mesh.quaternion.setFromUnitVectors(UP, dirNorm);
+        addBondMesh(bondData, bondStyleMaterial(style, bondMat));
       }
 
-      molGroup.add(mesh);
-      ctx.bondMeshes.push(mesh);
       visibleBondCount += 1;
+    }
+
+    if (normalBonds.length > 0) {
+      const bondBatch = new InstancedMesh(cylGeom, bondMat, normalBonds.length);
+      normalBonds.forEach((bond, index) => {
+        bondBatch.setMatrixAt(index, bond.matrix);
+      });
+      bondBatch.instanceMatrix.needsUpdate = true;
+      bondBatch.userData.bonds = normalBonds;
+      molGroup.add(bondBatch);
+      ctx.bondPickObjects.push(bondBatch);
     }
 
     // --- Atoms on top ---
     for (const [atomIndex, atom] of moleculeData.atoms.entries()) {
-      if (!isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet)) continue;
+      if (!isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex)) continue;
 
-      if (!atomMats.has(atom.element)) {
-        atomMats.set(atom.element, new MeshPhongMaterial({
-          color:     atomColorHex(atom.element),
-          shininess: 42,
-          specular:  new Color(0.18, 0.18, 0.18),
-        }));
-      }
       const atomStyle = atomStyleOverrides[String(atomIndex)];
-      const baseMat  = atomMats.get(atom.element)!;
-      const mat = atomStyle?.color
-        ? new MeshPhongMaterial({
-            color: atomStyle.color,
-            shininess: 42,
-            specular: new Color(0.18, 0.18, 0.18),
-          })
-        : baseMat;
-      const r    = atomDisplayRadius(atom.element) * (atomStyle?.sizeScale ?? 1);
-      const mesh = new Mesh(sphereGeom, mat);
-      mesh.position.set(atom.x, atom.y, atom.z);
-      mesh.scale.setScalar(r);
-      mesh.userData.element = atom.element;
-      mesh.userData.atomIndex = atomIndex;
-      mesh.userData.baseRadius = r;
-      mesh.userData.defaultMaterial = mat;
-      molGroup.add(mesh);
-      ctx.atomMeshes.push(mesh);
+      const color = atomStyle?.color ?? elementColorOverrides[atom.element] ?? atomColorHex(atom.element);
+      const r = atomDisplayRadius(atom.element) * (atomStyle?.sizeScale ?? 1) * atomSizeScale;
+      const bucketKey = `${atom.element}|${color}|${r.toFixed(4)}`;
+      let bucket = atomBuckets.get(bucketKey);
+      if (!bucket) {
+        const material = atomStyle?.color || elementColorOverrides[atom.element]
+          ? atomMaterial(color)
+          : (atomMats.get(atom.element) ?? atomMaterial(color));
+        if (!atomStyle?.color && !elementColorOverrides[atom.element] && !atomMats.has(atom.element)) {
+          atomMats.set(atom.element, material);
+        }
+        bucket = { material, atoms: [] };
+        atomBuckets.set(bucketKey, bucket);
+      }
+      bucket.atoms.push({
+        element: atom.element,
+        atomIndex,
+        position: new Vector3(atom.x, atom.y, atom.z),
+        baseRadius: r,
+      });
       visibleAtomCount += 1;
     }
 
+    const atomMatrix = new Matrix4();
+    for (const bucket of atomBuckets.values()) {
+      const atomBatch = new InstancedMesh(sphereGeom, bucket.material, bucket.atoms.length);
+      bucket.atoms.forEach((atom, index) => {
+        atomMatrix.makeScale(atom.baseRadius, atom.baseRadius, atom.baseRadius);
+        atomMatrix.setPosition(atom.position);
+        atomBatch.setMatrixAt(index, atomMatrix);
+      });
+      atomBatch.instanceMatrix.needsUpdate = true;
+      atomBatch.userData.atoms = bucket.atoms;
+      molGroup.add(atomBatch);
+      ctx.atomPickObjects.push(atomBatch);
+    }
+
     // --- Fit camera ---
-    const box = new Box3().setFromObject(molGroup);
+    const box = activeVisibilityIndex?.bounds?.clone() ?? new Box3().setFromObject(molGroup);
     ctx.lastMoleculeBox = box.isEmpty() ? null : box.clone();
     updateFloorPlacement(ctx);
     const currentViewOptions = viewOptionsRef.current;
@@ -1354,29 +1640,88 @@ export function MoleculeCanvas({
     }
 
     previousMoleculeDataRef.current = moleculeData;
+    const rebuildSceneMs = performance.now() - perfStart;
+    ctx.renderer.render(ctx.scene, ctx.camera);
+    const renderStats = sceneRenderStats(ctx);
     if (perfLoggingEnabled()) {
       console.info(
         '[Cylform perf] rebuild_scene',
         {
-          ms: Math.round(performance.now() - perfStart),
+          ms: Math.round(rebuildSceneMs),
           atoms: visibleAtomCount,
           bonds: visibleBondCount,
           totalAtoms: moleculeData.atoms.length,
           totalBonds: moleculeData.bonds.length,
+          renderCalls: renderStats.renderCalls,
+          triangles: renderStats.triangles,
+          geometries: renderStats.geometries,
+          textures: renderStats.textures,
+          sceneObjects: renderStats.sceneObjects,
         },
       );
     }
 
+    if (benchmarkConfig?.enabled && onBenchmarkRender && shouldFitCamera) {
+      const sampleMs = benchmarkConfig.sampleMs || 3000;
+      const targetFrameMs = 1000 / (benchmarkConfig.targetFps || 30);
+      void sampleFrameTimes(sampleMs).then((frameTimes) => {
+        const debugInfo = webglDebugInfo(ctx.renderer);
+        const pickMetrics = benchmarkPickMetrics(ctx);
+        const averageFrameMs = frameTimes.length > 0
+          ? frameTimes.reduce((sum, value) => sum + value, 0) / frameTimes.length
+          : null;
+        const p95FrameMs = percentile(frameTimes, 95);
+        const worstFrameMs = frameTimes.length > 0 ? Math.max(...frameTimes) : null;
+        onBenchmarkRender({
+          rebuildSceneMs,
+          visibleAtoms: visibleAtomCount,
+          visibleBonds: visibleBondCount,
+          totalAtoms: moleculeData.atoms.length,
+          totalBonds: moleculeData.bonds.length,
+          renderCalls: renderStats.renderCalls,
+          triangles: renderStats.triangles,
+          geometries: renderStats.geometries,
+          textures: renderStats.textures,
+          sceneObjects: renderStats.sceneObjects,
+          pickAtomMs: pickMetrics.pickAtomMs,
+          pickBondMs: pickMetrics.pickBondMs,
+          pickTotalMs: pickMetrics.pickTotalMs,
+          pickHitType: pickMetrics.pickHitType,
+          pickAtomCandidates: pickMetrics.pickAtomCandidates,
+          pickBondCandidates: pickMetrics.pickBondCandidates,
+          frameSampleMs: sampleMs,
+          sampledFrames: frameTimes.length,
+          averageFrameMs,
+          p95FrameMs,
+          minFps: worstFrameMs ? 1000 / worstFrameMs : null,
+          averageFps: averageFrameMs ? 1000 / averageFrameMs : null,
+          webglRenderer: debugInfo.webglRenderer,
+          webglVendor: debugInfo.webglVendor,
+          responsive: Boolean(
+            frameTimes.length > 0 &&
+            p95FrameMs !== null &&
+            p95FrameMs <= targetFrameMs * 1.5 &&
+            rebuildSceneMs <= 15_000
+          ),
+        });
+      });
+    }
+
   }, [
     moleculeData,
+    visibilityIndex,
     hydrogenVisibility,
     hiddenAtomIndices,
+    elementColorOverrides,
     atomStyleOverrides,
+    atomSizeScale,
     bondStyleOverrides,
     onBondSelected,
     onAngleSelected,
     onDihedralSelected,
     onSelectionSummaryChange,
+    benchmarkConfig,
+    onBenchmarkRender,
   ]);
 
   // Apply scene/view options in place so rendering controls do not rebuild meshes.
@@ -1424,7 +1769,6 @@ export function MoleculeCanvas({
     ctx.floorGrid.visible = viewOptions.showGrid;
   }, [viewOptions]);
 
-  // Update atom colours without rebuilding meshes or touching the camera.
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
@@ -1433,19 +1777,6 @@ export function MoleculeCanvas({
       material.color.set(elementColorOverrides[element] ?? atomColorHex(element));
     }
   }, [elementColorOverrides, moleculeData, hydrogenVisibility, hiddenAtomIndices]);
-
-  // Update atom scale without rebuilding meshes or touching the camera.
-  useEffect(() => {
-    const ctx = ctxRef.current;
-    if (!ctx) return;
-
-    for (const atomMesh of ctx.atomMeshes) {
-      const baseRadius = typeof atomMesh.userData.baseRadius === 'number'
-        ? atomMesh.userData.baseRadius
-        : atomDisplayRadius(String(atomMesh.userData.element ?? ''));
-      atomMesh.scale.setScalar(baseRadius * atomSizeScale);
-    }
-  }, [atomSizeScale, moleculeData, hydrogenVisibility, hiddenAtomIndices]);
 
   const measureHelpText = selectedDihedral?.stage === 1
     ? 'Select atom 2'

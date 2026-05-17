@@ -3,10 +3,10 @@
   --bg-secondary: oklch(98.8% 0.004 248);
   --text-primary: oklch(24.5% 0.018 248);
   --text-secondary: oklch(51.5% 0.02 248);
-  --accent: oklch(66.2% 0.17 244);
-  --accent-strong: oklch(58.5% 0.18 244);
+  --accent: oklch(43% 0.13 158);
+  --accent-strong: oklch(36% 0.12 158);
   --border: oklch(88.5% 0.011 248);
-  --focus-ring: oklch(73% 0.15 244 / 0.42);
+  --focus-ring: oklch(58% 0.13 158 / 0.36);
   --toolbar-height: 50px;
   --panel-width: 276px;
 }

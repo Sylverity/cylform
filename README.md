@@ -83,7 +83,7 @@ Cylform v1 targets the original CYLview family's core publication workflow: fast
 
 Cylform treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
 
-For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 10,000 atoms are rejected with a clear error. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
+For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 25,000 atoms are rejected with a clear error in normal builds. That 25,000 atom cap is a conservative real-time viewer limit, not a chemistry file-format limit. Larger structures may work on faster CPU/GPU/RAM combinations, and contributors can run the app benchmark below to measure a specific system before changing the public claim. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
 
 ---
 
@@ -239,6 +239,32 @@ target/release/cylform                             ← standalone binary
 target/release/bundle/appimage/*.AppImage            ← AppImage bundle
 target/release/bundle/deb/*.deb                      ← Debian package
 ```
+
+### Atom capacity benchmark
+
+Cylform includes an automated desktop benchmark for validating realistic atom-count claims without driving the browser or using headless rendering. It generates XYZ fixtures, launches the real Tauri app with each fixture as the startup file, records parse/load time, scene rebuild time, and a short requestAnimationFrame responsiveness sample, then writes JSON results under `benchmark-results/`.
+
+Build the desktop app first:
+
+```bash
+pnpm --dir desktop/src-ui run build:desktop:fast
+```
+
+Run a quick smoke benchmark:
+
+```bash
+node scripts/benchmark-atom-capacity.mjs --sizes 5000,10000,25000
+```
+
+Run the full default ladder:
+
+```bash
+node scripts/benchmark-atom-capacity.mjs
+```
+
+The script reports two numbers: the largest responsive atom count observed on the current machine, and a lower conservative recommendation for README/release wording on average systems. Benchmark mode is enabled only by `CYLFORM_BENCHMARK=1`; normal app launches keep the production 25,000 atom safety cap.
+
+See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, result interpretation, and guidance for contributors or agents changing performance-sensitive code.
 
 ---
 

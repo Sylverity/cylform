@@ -33,7 +33,22 @@ fn parse_optional_f32(value: &str) -> Option<f32> {
 pub const MAX_FILE_SIZE_BYTES: u64 = 25 * 1024 * 1024;
 
 /// Maximum atom count accepted by the current real-time viewer path.
-pub const MAX_ATOMS: usize = 10_000;
+pub const MAX_ATOMS: usize = 25_000;
+
+/// Options for reading a molecular structure.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadOptions {
+    /// Maximum atom count accepted by this read.
+    pub max_atoms: usize,
+}
+
+impl Default for ReadOptions {
+    fn default() -> Self {
+        Self {
+            max_atoms: MAX_ATOMS,
+        }
+    }
+}
 
 /// Error type for I/O operations
 #[derive(Debug, thiserror::Error)]
@@ -118,6 +133,15 @@ impl FileFormat {
 /// println!("Loaded {} atoms", structure.atom_count());
 /// ```
 pub fn read_structure<P: AsRef<Path>>(path: P, format: FileFormat) -> Result<Structure> {
+    read_structure_with_options(path, format, ReadOptions::default())
+}
+
+/// Read a molecular structure from a file with explicit loader limits.
+pub fn read_structure_with_options<P: AsRef<Path>>(
+    path: P,
+    format: FileFormat,
+    options: ReadOptions,
+) -> Result<Structure> {
     let path = path.as_ref();
     validate_file_size(path)?;
 
@@ -128,8 +152,8 @@ pub fn read_structure<P: AsRef<Path>>(path: P, format: FileFormat) -> Result<Str
     };
 
     match format {
-        FileFormat::Xyz => read_xyz(path),
-        FileFormat::Pdb => read_pdb(path),
+        FileFormat::Xyz => read_xyz(path, options),
+        FileFormat::Pdb => read_pdb(path, options),
         FileFormat::Sdf => Err(CoreError::Io(IoError::UnsupportedFormat(
             "SDF/MOL files are not supported yet. Please open an XYZ or PDB file.".to_string(),
         ))),
@@ -171,12 +195,9 @@ fn parse_f32(value: &str, line_number: usize, axis: &str) -> Result<f32> {
     })
 }
 
-fn validate_atom_count(count: usize) -> Result<()> {
-    if count > MAX_ATOMS {
-        return Err(CoreError::Io(IoError::TooManyAtoms {
-            count,
-            limit: MAX_ATOMS,
-        }));
+fn validate_atom_count(count: usize, limit: usize) -> Result<()> {
+    if count > limit {
+        return Err(CoreError::Io(IoError::TooManyAtoms { count, limit }));
     }
 
     Ok(())
@@ -209,7 +230,7 @@ fn parse_energy_from_title(title: &str) -> Option<f64> {
     None
 }
 
-fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize) -> usize {
+fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize, max_atoms: usize) -> usize {
     let mut index = first_atom_count + 2;
     let mut count = 1;
 
@@ -226,7 +247,7 @@ fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize) -> usize {
             break;
         };
 
-        if atom_count > MAX_ATOMS || index + 1 + atom_count > lines.len() {
+        if atom_count > max_atoms || index + 1 + atom_count > lines.len() {
             break;
         }
 
@@ -278,7 +299,7 @@ fn pdb_display_name(
 }
 
 /// Read XYZ format
-fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
+fn read_xyz<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> {
     let file = File::open(path).map_err(|e| CoreError::Io(IoError::NotFound(e.to_string())))?;
     let reader = BufReader::new(file);
     let lines: Vec<String> = reader
@@ -298,7 +319,7 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
             ))
         })?;
 
-    validate_atom_count(num_atoms)?;
+    validate_atom_count(num_atoms, options.max_atoms)?;
 
     // Second line: comment/title
     let title = lines
@@ -306,7 +327,7 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
 
-    let frame_count = detect_xyz_frame_count(&lines, num_atoms);
+    let frame_count = detect_xyz_frame_count(&lines, num_atoms, options.max_atoms);
     let energy = parse_energy_from_title(&title);
     let mut structure = Structure::new(title.clone());
     structure.metadata.source_format = Some("XYZ".to_string());
@@ -373,7 +394,7 @@ fn read_xyz<P: AsRef<Path>>(path: P) -> Result<Structure> {
 }
 
 /// Read PDB format (basic support)
-fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
+fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> {
     let file = File::open(path).map_err(|e| CoreError::Io(IoError::NotFound(e.to_string())))?;
     let reader = BufReader::new(file);
 
@@ -485,7 +506,7 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
             }
             atom_index += 1;
 
-            validate_atom_count(structure.atom_count())?;
+            validate_atom_count(structure.atom_count(), options.max_atoms)?;
         }
     }
 
@@ -536,7 +557,11 @@ fn read_pdb<P: AsRef<Path>>(path: P) -> Result<Structure> {
     }
 
     if structure.bonds.is_empty() {
-        structure.perceive_bonds();
+        if structure.has_metadata_groups() {
+            structure.perceive_bonds_within_metadata_groups();
+        } else {
+            structure.perceive_bonds();
+        }
     }
 
     Ok(structure)
@@ -843,7 +868,7 @@ ENDMDL\n";
         let temp_file = NamedTempFile::new().unwrap();
         write_xyz(temp_file.path(), &original).unwrap();
 
-        let loaded = read_xyz(temp_file.path()).unwrap();
+        let loaded = read_xyz(temp_file.path(), ReadOptions::default()).unwrap();
 
         assert_eq!(loaded.atom_count(), 3);
         assert_eq!(loaded.atoms[0].element, "C");

@@ -5,6 +5,7 @@
 # Tauri
 dist/
 dist-js/
+/cylform
 
 # Node
 node_modules/
@@ -24,6 +25,7 @@ Thumbs.db
 # Test artifacts
 *.tmp
 *.log
+benchmark-results/
 
 # Build outputs
 *.exe

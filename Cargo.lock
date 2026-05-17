@@ -700,6 +700,7 @@ version = "1.0.0-rc.1"
 dependencies = [
  "cylform-core",
  "env_logger",
+ "glam",
  "log",
  "parking_lot",
  "serde",

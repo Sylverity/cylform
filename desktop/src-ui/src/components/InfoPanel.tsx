@@ -7,6 +7,7 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   BondStyleType,
+  MoleculeGroup,
   RecentFileEntry,
   SavedPose,
   SelectionMode,
@@ -114,6 +115,39 @@ function metadataSummary(moleculeData: MoleculeData) {
   };
 }
 
+function summarizeGroups(groups: MoleculeGroup[], hiddenAtomSet: Set<number>) {
+  const summaries = new Map<string, {
+    ids: string[];
+    label: string;
+    residueName: string;
+    moleculeCount: number;
+    atomCount: number;
+    hiddenCount: number;
+  }>();
+
+  for (const group of groups) {
+    const residueName = group.residueName ?? 'Group';
+    const summary = summaries.get(residueName) ?? {
+      ids: [],
+      label: residueName,
+      residueName,
+      moleculeCount: 0,
+      atomCount: 0,
+      hiddenCount: 0,
+    };
+    summary.ids.push(group.id);
+    summary.moleculeCount += 1;
+    summary.atomCount += group.atomIndices.length;
+    if (group.atomIndices.every((atomIndex) => hiddenAtomSet.has(atomIndex))) {
+      summary.hiddenCount += 1;
+    }
+    summaries.set(residueName, summary);
+  }
+
+  return Array.from(summaries.values())
+    .sort((a, b) => b.moleculeCount - a.moleculeCount || a.label.localeCompare(b.label));
+}
+
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
   hydrogenVisibility: HydrogenVisibility;
@@ -137,6 +171,8 @@ interface InfoPanelProps {
   onAtomSizeScaleChange: (scale: number) => void;
   onHydrogenVisibilityChange: (mode: HydrogenVisibility) => void;
   onHideSelectedAtoms: () => void;
+  onHideGroups: (groupIds: string[]) => void;
+  onHighlightGroups: (groupIds: string[]) => void;
   onShowAllAtoms: () => void;
   onStyleSelectedAtoms: (color: string) => void;
   onSizeSelectedAtoms: () => void;
@@ -206,6 +242,8 @@ export function InfoPanel({
   onAtomSizeScaleChange,
   onHydrogenVisibilityChange,
   onHideSelectedAtoms,
+  onHideGroups,
+  onHighlightGroups,
   onShowAllAtoms,
   onStyleSelectedAtoms,
   onSizeSelectedAtoms,
@@ -271,6 +309,7 @@ export function InfoPanel({
   const hasAtomStyleOverrides = Object.keys(atomStyleOverrides).length > 0;
   const hasBondStyleOverrides = Object.keys(bondStyleOverrides).length > 0;
   const sourceMetadata = moleculeData ? metadataSummary(moleculeData) : null;
+  const groupSummaries = moleculeData ? summarizeGroups(moleculeData.groups, hiddenAtomSet) : [];
   const canAddMeasurementLabel = Boolean(
     selectedBond ||
     (selectedAngle?.stage === 3 && selectedAngle.anchor) ||
@@ -495,6 +534,53 @@ export function InfoPanel({
           </div>
         )}
       </CollapsibleSection>
+
+      {groupSummaries.length > 0 && (
+        <CollapsibleSection title="Molecules" collapsed={collapsedSections.has('Molecules')} onToggle={() => toggleSection('Molecules')}>
+          <div className="style-control-header">
+            <span className="info-label">Groups</span>
+            <span className="info-value">
+              {moleculeData.groups.length.toLocaleString()} molecules
+            </span>
+          </div>
+          <div className="group-list">
+            {groupSummaries.slice(0, 12).map((group) => (
+              <div key={group.residueName} className="group-row">
+                <div className="group-row-main">
+                  <span className={group.hiddenCount === group.moleculeCount ? 'group-name muted' : 'group-name'}>
+                    {group.label}
+                  </span>
+                  <span className="group-detail">
+                    {group.moleculeCount.toLocaleString()} mol · {group.atomCount.toLocaleString()} atoms
+                    {group.hiddenCount > 0 && ` · ${group.hiddenCount.toLocaleString()} hidden`}
+                  </span>
+                </div>
+                <div className="group-actions">
+                  <button
+                    type="button"
+                    className="color-reset"
+                    onClick={() => onHighlightGroups(group.ids)}
+                  >
+                    Highlight
+                  </button>
+                  <button
+                    type="button"
+                    className="color-reset"
+                    onClick={() => onHideGroups(group.ids)}
+                  >
+                    Hide
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {groupSummaries.length > 12 && (
+            <p className="info-note">
+              Showing the 12 most common molecule types.
+            </p>
+          )}
+        </CollapsibleSection>
+      )}
 
       <CollapsibleSection title="Measure" collapsed={collapsedSections.has('Measure')} onToggle={() => toggleSection('Measure')}>
         <div className="info-row">

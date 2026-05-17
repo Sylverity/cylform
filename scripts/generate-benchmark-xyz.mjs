@@ -3,7 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const atomCount = Number.parseInt(process.argv[2] ?? '10000', 10);
+const atomCount = Number.parseInt(process.argv[2] ?? '25000', 10);
 const outputPath = resolve(process.argv[3] ?? `benchmark-${atomCount}-atoms.xyz`);
 
 if (!Number.isFinite(atomCount) || atomCount < 1) {

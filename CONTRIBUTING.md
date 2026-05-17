@@ -48,6 +48,17 @@ cargo test --workspace
 cargo check --workspace
 ```
 
+## Benchmarking performance
+
+Use the desktop benchmark before changing public atom-count claims or after modifying renderer, parser, or molecule-loading code:
+
+```bash
+pnpm --dir desktop/src-ui run build:desktop:fast
+node scripts/benchmark-atom-capacity.mjs --sizes 5000,10000,25000
+```
+
+The benchmark launches the real app, loads generated XYZ fixtures, samples frame timing, and writes ignored JSON artifacts under `benchmark-results/`. See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup, result interpretation, and guidance for humans or agents working on performance-sensitive changes.
+
 ## Project structure
 
 ```
