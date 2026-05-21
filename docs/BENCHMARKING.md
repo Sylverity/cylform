@@ -1,4 +1,4 @@
-# Benchmarking Cylform Atom Capacity
+# Developer Benchmarking: Cylform Atom Capacity
 
 This guide is for humans and coding agents evaluating Cylform performance claims. The benchmark launches the real Tauri desktop app, loads generated XYZ files through the startup-file path, samples frame timing in the WebGL canvas, writes JSON results, and exits. It does not use browser automation or headless rendering.
 
@@ -23,19 +23,19 @@ pnpm --dir desktop/src-ui run build:desktop:fast
 Run a quick smoke test:
 
 ```bash
-node scripts/benchmark-atom-capacity.mjs --sizes 500,1000,2000 --sample-ms 1000
+pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 500,1000,2000 --sample-ms 1000
 ```
 
 Run the standard README-validation ladder:
 
 ```bash
-node scripts/benchmark-atom-capacity.mjs --sizes 5000,10000,25000
+pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 5000,10000,25000
 ```
 
 Run the full default ladder:
 
 ```bash
-node scripts/benchmark-atom-capacity.mjs
+pnpm --dir desktop/src-ui run benchmark:atoms
 ```
 
 Results are written under `benchmark-results/`, which is intentionally ignored by git.

@@ -240,7 +240,7 @@ target/release/bundle/appimage/*.AppImage            ← AppImage bundle
 target/release/bundle/deb/*.deb                      ← Debian package
 ```
 
-### Atom capacity benchmark
+### Developer atom capacity benchmark
 
 Cylform includes an automated desktop benchmark for validating realistic atom-count claims without driving the browser or using headless rendering. It generates XYZ fixtures, launches the real Tauri app with each fixture as the startup file, records parse/load time, scene rebuild time, and a short requestAnimationFrame responsiveness sample, then writes JSON results under `benchmark-results/`.
 
@@ -253,13 +253,13 @@ pnpm --dir desktop/src-ui run build:desktop:fast
 Run a quick smoke benchmark:
 
 ```bash
-node scripts/benchmark-atom-capacity.mjs --sizes 5000,10000,25000
+pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 5000,10000,25000
 ```
 
 Run the full default ladder:
 
 ```bash
-node scripts/benchmark-atom-capacity.mjs
+pnpm --dir desktop/src-ui run benchmark:atoms
 ```
 
 The script reports two numbers: the largest responsive atom count observed on the current machine, and a lower conservative recommendation for README/release wording on average systems. Benchmark mode is enabled only by `CYLFORM_BENCHMARK=1`; normal app launches keep the production 25,000 atom safety cap.
