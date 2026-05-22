@@ -168,16 +168,30 @@ struct RecentFileEntry {
 /// Load a molecular file and return the full atom/bond geometry to the frontend.
 /// Coordinates are re-centred to the geometric centre of the molecule.
 #[tauri::command]
-fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<MoleculeData, String> {
-    log::info!("Loading molecule from: {}", path);
+fn load_molecule(
+    path: String,
+    frame_index: Option<usize>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<MoleculeData, String> {
+    let frame_index = frame_index.unwrap_or(0);
+    log::info!("Loading molecule from: {} (frame {})", path, frame_index);
 
-    let structure = read_structure_with_options(&path, FileFormat::Auto, read_options_from_env())
-        .map_err(format_load_error)?;
+    let mut structure =
+        read_structure_with_options(&path, FileFormat::Auto, read_options_from_env())
+            .map_err(format_load_error)?;
+    if structure.frame(frame_index).is_none() {
+        return Err(format!(
+            "Frame index {} is out of range for {} frame(s).",
+            frame_index,
+            structure.frames.len()
+        ));
+    }
+    structure.metadata.loaded_frame_index = Some(frame_index);
 
     let center = structure.center();
 
     let atoms = structure
-        .atoms
+        .atoms()
         .iter()
         .map(|a| SerialAtom {
             x: a.position.x - center.x,
@@ -204,7 +218,7 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
     let groups = build_molecule_groups(&structure, center);
 
     let bonds = structure
-        .bonds
+        .bonds()
         .iter()
         .map(|b| SerialBond {
             atom1: b.atom1,
@@ -215,14 +229,14 @@ fn load_molecule(path: String, state: State<'_, Arc<AppState>>) -> Result<Molecu
 
     log::info!(
         "Loaded '{}': {} atoms, {} bonds",
-        structure.name,
+        structure.name(),
         structure.atom_count(),
         structure.bond_count()
     );
 
     let data = MoleculeData {
         path: path.clone(),
-        name: structure.name.clone(),
+        name: structure.name().to_string(),
         atoms,
         bonds,
         groups,
@@ -316,7 +330,7 @@ fn build_molecule_groups(structure: &Structure, center: glam::Vec3) -> Vec<Seria
 
     let mut groups = std::collections::BTreeMap::<String, GroupAccumulator>::new();
 
-    for (atom_index, atom) in structure.atoms.iter().enumerate() {
+    for (atom_index, atom) in structure.atoms().iter().enumerate() {
         let Some(metadata) = atom.metadata.as_ref() else {
             continue;
         };
@@ -741,6 +755,6 @@ mod tests {
         *state.structure.lock() = Some(structure);
 
         assert!(state.structure.lock().is_some());
-        assert_eq!(state.structure.lock().as_ref().unwrap().name, "test");
+        assert_eq!(state.structure.lock().as_ref().unwrap().name(), "test");
     }
 }

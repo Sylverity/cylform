@@ -179,65 +179,138 @@ impl Bond {
     }
 }
 
-/// A complete molecular structure
+/// One coordinate frame in a molecular structure or trajectory.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Structure {
-    /// Structure name
-    pub name: String,
+pub struct Frame {
     /// Atoms in the structure
     pub atoms: Vec<Atom>,
-    /// Bonds in the structure
-    pub bonds: Vec<Bond>,
+}
+
+impl Frame {
+    /// Create an empty coordinate frame.
+    pub fn new() -> Self {
+        Self { atoms: Vec::new() }
+    }
+}
+
+/// A complete molecular structure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Structure {
+    /// Coordinate frames. Current loaders populate one frame, with trajectory playback planned.
+    pub frames: Vec<Frame>,
+    /// Bonds perceived from frame 0 and reused as static topology.
+    pub static_bonds: Vec<Bond>,
     /// Transform matrix (for positioning)
     pub transform: Mat4,
     /// Optional source-file metadata
-    pub metadata: StructureMetadata,
+    pub metadata: SourceMetadata,
+}
+
+impl Default for Structure {
+    fn default() -> Self {
+        Self::new("Untitled")
+    }
 }
 
 impl Structure {
     /// Create a new empty structure
     pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
         Self {
-            name: name.into(),
-            atoms: Vec::new(),
-            bonds: Vec::new(),
+            frames: vec![Frame::new()],
+            static_bonds: Vec::new(),
             transform: Mat4::IDENTITY,
-            metadata: StructureMetadata::default(),
+            metadata: SourceMetadata {
+                title: Some(name),
+                ..SourceMetadata::default()
+            },
         }
+    }
+
+    /// Display name for this structure.
+    pub fn name(&self) -> &str {
+        self.metadata.title.as_deref().unwrap_or("Untitled")
+    }
+
+    /// Update the display name/title for this structure.
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.metadata.title = Some(name.into());
+    }
+
+    /// Get a coordinate frame by zero-based index.
+    pub fn frame(&self, index: usize) -> Option<&Frame> {
+        self.frames.get(index)
+    }
+
+    /// Get the currently displayed frame. Today this is always frame 0.
+    pub fn active_frame(&self) -> &Frame {
+        self.frames
+            .first()
+            .expect("Structure always has at least one frame")
+    }
+
+    fn active_frame_mut(&mut self) -> &mut Frame {
+        if self.frames.is_empty() {
+            self.frames.push(Frame::new());
+        }
+        &mut self.frames[0]
+    }
+
+    /// Atoms in frame 0. Compatibility helper while the app adopts frames.
+    pub fn atoms(&self) -> &[Atom] {
+        self.active_frame().atoms.as_slice()
+    }
+
+    /// Mutable atoms in frame 0. Compatibility helper while the app adopts frames.
+    pub fn atoms_mut(&mut self) -> &mut Vec<Atom> {
+        &mut self.active_frame_mut().atoms
+    }
+
+    /// Static topology bonds. Compatibility helper while the app adopts static_bonds.
+    pub fn bonds(&self) -> &[Bond] {
+        self.static_bonds.as_slice()
+    }
+
+    /// Mutable static topology bonds. Compatibility helper while the app adopts static_bonds.
+    pub fn bonds_mut(&mut self) -> &mut Vec<Bond> {
+        &mut self.static_bonds
     }
 
     /// Add an atom and return its index
     pub fn add_atom(&mut self, atom: Atom) -> usize {
-        self.atoms.push(atom);
-        self.atoms.len() - 1
+        let atoms = self.atoms_mut();
+        atoms.push(atom);
+        atoms.len() - 1
     }
 
     /// Add a bond
     pub fn add_bond(&mut self, bond: Bond) {
-        self.bonds.push(bond);
+        self.static_bonds.push(bond);
     }
 
     /// Get center of geometry
     pub fn center(&self) -> Vec3 {
-        if self.atoms.is_empty() {
+        let atoms = self.atoms();
+        if atoms.is_empty() {
             return Vec3::ZERO;
         }
 
-        let sum: Vec3 = self.atoms.iter().map(|a| a.position).sum();
-        sum / self.atoms.len() as f32
+        let sum: Vec3 = atoms.iter().map(|a| a.position).sum();
+        sum / atoms.len() as f32
     }
 
     /// Compute bounding box
     pub fn bounding_box(&self) -> (Vec3, Vec3) {
-        if self.atoms.is_empty() {
+        let atoms = self.atoms();
+        if atoms.is_empty() {
             return (Vec3::ZERO, Vec3::ONE);
         }
 
-        let first = self.atoms[0].position;
+        let first = atoms[0].position;
         let mut min = first;
         let mut max = first;
 
-        for atom in &self.atoms {
+        for atom in atoms {
             min = min.min(atom.position);
             max = max.max(atom.position);
         }
@@ -247,15 +320,15 @@ impl Structure {
 
     /// Auto-perceive bonds using covalent radii thresholds.
     pub fn perceive_bonds(&mut self) {
-        self.bonds.clear();
-        let indices = (0..self.atoms.len()).collect::<Vec<_>>();
+        self.static_bonds.clear();
+        let indices = (0..self.atoms().len()).collect::<Vec<_>>();
         self.perceive_bonds_for_indices(&indices);
     }
 
     /// Whether source metadata can identify molecule-like residue groups.
     pub fn has_metadata_groups(&self) -> bool {
         let mut groups = HashMap::<String, usize>::new();
-        for (index, atom) in self.atoms.iter().enumerate() {
+        for (index, atom) in self.atoms().iter().enumerate() {
             if let Some(key) = atom_metadata_group_key(atom) {
                 groups.entry(key).or_insert(index);
             }
@@ -265,11 +338,11 @@ impl Structure {
 
     /// Auto-perceive bonds independently inside source metadata groups.
     pub fn perceive_bonds_within_metadata_groups(&mut self) {
-        self.bonds.clear();
+        self.static_bonds.clear();
 
         let mut groups = HashMap::<String, Vec<usize>>::new();
         let mut ungrouped = Vec::<usize>::new();
-        for (index, atom) in self.atoms.iter().enumerate() {
+        for (index, atom) in self.atoms().iter().enumerate() {
             if let Some(key) = atom_metadata_group_key(atom) {
                 groups.entry(key).or_default().push(index);
             } else {
@@ -294,7 +367,7 @@ impl Structure {
         let mut cells = HashMap::<(i32, i32, i32), Vec<usize>>::new();
 
         for &atom_index in indices {
-            let position = self.atoms[atom_index].position;
+            let position = self.atoms()[atom_index].position;
             let cell = (
                 (position.x / CELL_SIZE).floor() as i32,
                 (position.y / CELL_SIZE).floor() as i32,
@@ -310,15 +383,15 @@ impl Structure {
                         };
 
                         for &candidate_index in candidates {
-                            let atom_i = &self.atoms[candidate_index];
-                            let atom_j = &self.atoms[atom_index];
+                            let atom_i = &self.atoms()[candidate_index];
+                            let atom_j = &self.atoms()[atom_index];
                             let distance = atom_i.position.distance(atom_j.position);
                             let max_bond_dist = (Atom::covalent_radius(&atom_i.element)
                                 + Atom::covalent_radius(&atom_j.element))
                                 * 1.3;
 
                             if distance > 0.4 && distance < max_bond_dist {
-                                self.bonds.push(Bond::new(
+                                self.static_bonds.push(Bond::new(
                                     candidate_index as u32,
                                     atom_index as u32,
                                     BondOrder::Single,
@@ -335,12 +408,12 @@ impl Structure {
 
     /// Count atoms
     pub fn atom_count(&self) -> usize {
-        self.atoms.len()
+        self.atoms().len()
     }
 
     /// Count bonds
     pub fn bond_count(&self) -> usize {
-        self.bonds.len()
+        self.static_bonds.len()
     }
 }
 
@@ -368,7 +441,7 @@ fn atom_metadata_group_key(atom: &Atom) -> Option<String> {
 
 /// Optional metadata preserved from the source molecular file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct StructureMetadata {
+pub struct SourceMetadata {
     /// Source format label such as XYZ or PDB
     pub source_format: Option<String>,
     /// Title/comment/header text from the source file
@@ -384,6 +457,9 @@ pub struct StructureMetadata {
     /// Non-fatal parser notes about ignored or deferred metadata
     pub warnings: Vec<String>,
 }
+
+/// Temporary compatibility alias while downstream code adopts SourceMetadata.
+pub type StructureMetadata = SourceMetadata;
 
 #[cfg(test)]
 mod tests {
@@ -403,5 +479,20 @@ mod tests {
         structure.add_atom(Atom::new(1, "C", Vec3::new(2.0, 0.0, 0.0)));
 
         assert_eq!(structure.center(), Vec3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn test_structure_frame_helpers_and_static_bonds() {
+        let mut structure = Structure::new("test");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "C", Vec3::new(1.4, 0.0, 0.0)));
+        structure.perceive_bonds();
+
+        assert_eq!(structure.frames.len(), 1);
+        assert_eq!(structure.frame(0).unwrap().atoms.len(), 2);
+        assert_eq!(structure.active_frame().atoms.len(), 2);
+        assert_eq!(structure.atoms().len(), 2);
+        assert_eq!(structure.bonds().len(), 1);
+        assert_eq!(structure.static_bonds.len(), 1);
     }
 }

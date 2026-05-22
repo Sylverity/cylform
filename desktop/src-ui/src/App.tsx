@@ -377,7 +377,7 @@ function App() {
     const perfStart = performance.now();
 
     try {
-      const data = await invoke<MoleculeData>('load_molecule', { path });
+      const data = await invoke<MoleculeData>('load_molecule', { path, frameIndex: 0 });
       const loadMs = performance.now() - perfStart;
       if (benchmarkConfig.current?.enabled) {
         benchmarkLoadMetrics.current = {

@@ -489,7 +489,7 @@ export function InfoPanel({
               {moleculeData.metadata.sourceFormat === 'PDB' ? 'Models' : 'Frames'}
             </span>
             <span className="info-value">
-              {moleculeData.metadata.loadedFrameIndex ?? 1} / {moleculeData.metadata.frameCount}
+              {(moleculeData.metadata.loadedFrameIndex ?? 0) + 1} / {moleculeData.metadata.frameCount}
             </span>
           </div>
         )}

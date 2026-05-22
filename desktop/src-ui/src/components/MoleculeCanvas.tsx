@@ -40,6 +40,7 @@ import type {
   MoleculeData,
   AtomStyleOverride,
   BondStyleOverride,
+  BondStyleType,
   BenchmarkConfig,
   BenchmarkRenderMetrics,
   SelectionMode,
@@ -357,6 +358,10 @@ function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshP
     material.color.set(0x3bd16f);
   }
   return material;
+}
+
+function bondMaterialForType(type: BondStyleType, fallback: MeshPhongMaterial): MeshPhongMaterial {
+  return bondStyleMaterial(type === 'full' ? undefined : { type }, fallback);
 }
 
 function updateAngleSelection(
@@ -1502,15 +1507,18 @@ export function MoleculeCanvas({
     let visibleBondCount = 0;
     let visibleAtomCount = 0;
     const atomBuckets = new Map<string, { material: MeshPhongMaterial; atoms: AtomSelectionData[] }>();
-    const normalBonds: BondSelectionData[] = [];
+    const bondBuckets = new Map<BondStyleType, { material: MeshPhongMaterial; bonds: BondSelectionData[] }>();
 
-    const addBondMesh = (bondData: BondSelectionData, material: MeshPhongMaterial) => {
-      const mesh = new Mesh(cylGeom, material);
-      mesh.applyMatrix4(bondData.matrix);
-      mesh.userData.bond = bondData;
-      mesh.userData.defaultMaterial = material;
-      molGroup.add(mesh);
-      ctx.bondPickObjects.push(mesh);
+    const addBondToBucket = (styleType: BondStyleType, bondData: BondSelectionData) => {
+      let bucket = bondBuckets.get(styleType);
+      if (!bucket) {
+        bucket = {
+          material: styleType === 'full' ? bondMat : bondMaterialForType(styleType, bondMat),
+          bonds: [],
+        };
+        bondBuckets.set(styleType, bucket);
+      }
+      bucket.bonds.push(bondData);
     };
 
     // --- Bonds first (atoms rendered on top) ---
@@ -1546,22 +1554,18 @@ export function MoleculeCanvas({
         matrix: bondTransform(start, end, displayRadius),
       } satisfies BondSelectionData;
 
-      if (!style || style.type === 'full') {
-        normalBonds.push(bondData);
-      } else {
-        addBondMesh(bondData, bondStyleMaterial(style, bondMat));
-      }
+      addBondToBucket(style?.type ?? 'full', bondData);
 
       visibleBondCount += 1;
     }
 
-    if (normalBonds.length > 0) {
-      const bondBatch = new InstancedMesh(cylGeom, bondMat, normalBonds.length);
-      normalBonds.forEach((bond, index) => {
+    for (const bucket of bondBuckets.values()) {
+      const bondBatch = new InstancedMesh(cylGeom, bucket.material, bucket.bonds.length);
+      bucket.bonds.forEach((bond, index) => {
         bondBatch.setMatrixAt(index, bond.matrix);
       });
       bondBatch.instanceMatrix.needsUpdate = true;
-      bondBatch.userData.bonds = normalBonds;
+      bondBatch.userData.bonds = bucket.bonds;
       molGroup.add(bondBatch);
       ctx.bondPickObjects.push(bondBatch);
     }

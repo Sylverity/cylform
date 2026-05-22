@@ -333,7 +333,7 @@ fn read_xyz<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
     structure.metadata.source_format = Some("XYZ".to_string());
     structure.metadata.title = Some(title.clone());
     structure.metadata.frame_count = Some(frame_count);
-    structure.metadata.loaded_frame_index = Some(1);
+    structure.metadata.loaded_frame_index = Some(0);
     structure.metadata.energy = energy;
     if energy.is_some() {
         structure.metadata.energy_unit = Some("unknown".to_string());
@@ -400,7 +400,7 @@ fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
 
     let mut structure = Structure::new("PDB Structure");
     structure.metadata.source_format = Some("PDB".to_string());
-    structure.metadata.loaded_frame_index = Some(1);
+    structure.metadata.loaded_frame_index = Some(0);
     let mut atom_index = 0u32;
     let mut serial_to_index = std::collections::HashMap::<i32, u32>::new();
     let mut conect_pairs = Vec::<(i32, i32)>::new();
@@ -510,7 +510,7 @@ fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
         }
     }
 
-    if structure.atoms.is_empty() {
+    if structure.atoms().is_empty() {
         return Err(CoreError::Io(IoError::Parse(
             "No atoms found in PDB file".to_string(),
         )));
@@ -526,8 +526,11 @@ fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
     } else {
         Some(compound_parts.join(" "))
     };
-    structure.name = pdb_display_name(header.clone(), title.clone(), compound.clone());
-    structure.metadata.title = Some(structure.name.clone());
+    structure.set_name(pdb_display_name(
+        header.clone(),
+        title.clone(),
+        compound.clone(),
+    ));
     structure.metadata.frame_count = Some(if saw_model { model_count.max(1) } else { 1 });
     if saw_model && model_count > 1 {
         structure.metadata.warnings.push(format!(
@@ -556,7 +559,7 @@ fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
         }
     }
 
-    if structure.bonds.is_empty() {
+    if structure.bonds().is_empty() {
         if structure.has_metadata_groups() {
             structure.perceive_bonds_within_metadata_groups();
         } else {
@@ -573,10 +576,10 @@ pub fn write_xyz<P: AsRef<Path>>(path: P, structure: &Structure) -> Result<()> {
 
     // Write header
     writeln!(file, "{}", structure.atom_count()).map_err(|e| CoreError::Io(IoError::Io(e)))?;
-    writeln!(file, "{}", structure.name).map_err(|e| CoreError::Io(IoError::Io(e)))?;
+    writeln!(file, "{}", structure.name()).map_err(|e| CoreError::Io(IoError::Io(e)))?;
 
     // Write atoms
-    for atom in &structure.atoms {
+    for atom in structure.atoms() {
         writeln!(
             file,
             "{} {:>12.6} {:>12.6} {:>12.6}",
@@ -648,8 +651,10 @@ H -0.757000 0.586000 0.000000
         let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
 
         assert_eq!(structure.atom_count(), 3);
-        assert_eq!(structure.atoms[0].element, "O");
+        assert_eq!(structure.frames.len(), 1);
+        assert_eq!(structure.atoms()[0].element, "O");
         assert!(structure.bond_count() > 0);
+        assert!(!structure.static_bonds.is_empty());
         assert_eq!(structure.metadata.source_format.as_deref(), Some("XYZ"));
         assert_eq!(structure.metadata.title.as_deref(), Some("Water molecule"));
     }
@@ -662,7 +667,7 @@ H -0.757000 0.586000 0.000000
 
         let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
 
-        assert_eq!(structure.name, "energy=-123.456 hartree");
+        assert_eq!(structure.name(), "energy=-123.456 hartree");
         assert_eq!(structure.metadata.energy, Some(-123.456));
     }
 
@@ -683,8 +688,9 @@ H 0.8 0.0 0.0
         let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
 
         assert_eq!(structure.atom_count(), 2);
+        assert_eq!(structure.frames.len(), 1);
         assert_eq!(structure.metadata.frame_count, Some(2));
-        assert_eq!(structure.metadata.loaded_frame_index, Some(1));
+        assert_eq!(structure.metadata.loaded_frame_index, Some(0));
         assert!(structure
             .metadata
             .warnings
@@ -798,9 +804,10 @@ END\n";
         temp_file.write_all(pdb_content.as_bytes()).unwrap();
 
         let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
-        let metadata = structure.atoms[0].metadata.as_ref().unwrap();
+        let metadata = structure.atoms()[0].metadata.as_ref().unwrap();
 
-        assert_eq!(structure.name, "EXAMPLE PDB TITLE");
+        assert_eq!(structure.frames.len(), 1);
+        assert_eq!(structure.name(), "EXAMPLE PDB TITLE");
         assert_eq!(structure.metadata.source_format.as_deref(), Some("PDB"));
         assert_eq!(metadata.record_type.as_deref(), Some("ATOM"));
         assert_eq!(metadata.serial, Some(7));
@@ -828,8 +835,8 @@ END\n";
         let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
 
         assert_eq!(structure.bond_count(), 1);
-        assert_eq!(structure.bonds[0].atom1, 0);
-        assert_eq!(structure.bonds[0].atom2, 1);
+        assert_eq!(structure.static_bonds[0].atom1, 0);
+        assert_eq!(structure.static_bonds[0].atom2, 1);
     }
 
     #[test]
@@ -847,7 +854,8 @@ ENDMDL\n";
         let structure = read_structure(temp_file.path(), FileFormat::Pdb).unwrap();
 
         assert_eq!(structure.atom_count(), 1);
-        assert_eq!(structure.atoms[0].element, "C");
+        assert_eq!(structure.frames.len(), 1);
+        assert_eq!(structure.atoms()[0].element, "C");
         assert_eq!(structure.metadata.frame_count, Some(2));
         assert!(structure
             .metadata
@@ -871,7 +879,7 @@ ENDMDL\n";
         let loaded = read_xyz(temp_file.path(), ReadOptions::default()).unwrap();
 
         assert_eq!(loaded.atom_count(), 3);
-        assert_eq!(loaded.atoms[0].element, "C");
-        assert!((loaded.atoms[0].position.x - 1.0).abs() < 0.001);
+        assert_eq!(loaded.atoms()[0].element, "C");
+        assert!((loaded.atoms()[0].position.x - 1.0).abs() < 0.001);
     }
 }
