@@ -70,21 +70,26 @@ export interface SelectionSummary {
 }
 
 export type ElementColorOverrides = Record<string, string>;
-export type LabelType = 'atom' | 'distance' | 'angle' | 'dihedral';
+export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
 export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
 
-export interface PersistentLabel {
+export interface Annotation {
   id: string;
-  type: LabelType;
+  type: AnnotationType;
   text: string;
   anchor: LabelAnchor;
   visible: boolean;
+  atom_id?: number;
+  atoms?: number[];
+  value?: number;
   source?: {
     atomIndex?: number;
     atomIndices?: number[];
     bond?: [number, number];
   };
 }
+
+export type PersistentLabel = Annotation;
 
 export type BackdropTone = 'clean' | 'warm' | 'slate';
 export type ProjectionMode = 'perspective' | 'orthographic';
@@ -166,15 +171,17 @@ export interface BondStyleOverride {
 
 export interface PresentationState {
   version: 1;
-  labels: PersistentLabel[];
-  hiddenAtomIndices: number[];
-  hydrogenVisibility: HydrogenVisibility;
-  elementColorOverrides: ElementColorOverrides;
-  atomSizeScale: number;
-  atomStyleOverrides: Record<string, AtomStyleOverride>;
-  bondStyleOverrides: Record<string, BondStyleOverride>;
-  viewOptions: ViewOptions;
-  savedPoses: SavedPose[];
+  poses: SavedPose[];
+  annotations: Annotation[];
+  hidden_atoms: number[];
+  styles: {
+    hydrogen_visibility?: HydrogenVisibility;
+    element_color_overrides?: ElementColorOverrides;
+    atom_size_scale?: number;
+    atom_style_overrides?: Record<string, AtomStyleOverride>;
+    bond_style_overrides?: Record<string, BondStyleOverride>;
+  };
+  camera?: ViewOptions;
 }
 
 export interface RecentFileEntry {
@@ -284,14 +291,17 @@ function App() {
   });
 
   const defaultPresentationState = useCallback(() => ({
-    labels: [] as PersistentLabel[],
-    hiddenAtomIndices: [] as number[],
-    hydrogenVisibility: 'shown' as HydrogenVisibility,
-    elementColorOverrides: {} as ElementColorOverrides,
-    atomSizeScale: 1,
-    atomStyleOverrides: {} as Record<string, AtomStyleOverride>,
-    bondStyleOverrides: {} as Record<string, BondStyleOverride>,
-    savedPoses: [] as SavedPose[],
+    annotations: [] as Annotation[],
+    hidden_atoms: [] as number[],
+    styles: {
+      hydrogen_visibility: 'shown' as HydrogenVisibility,
+      element_color_overrides: {} as ElementColorOverrides,
+      atom_size_scale: 1,
+      atom_style_overrides: {} as Record<string, AtomStyleOverride>,
+      bond_style_overrides: {} as Record<string, BondStyleOverride>,
+    },
+    poses: [] as SavedPose[],
+    camera: undefined as ViewOptions | undefined,
   }), []);
 
   const refreshRecentFiles = useCallback(async () => {
@@ -313,15 +323,15 @@ function App() {
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
     const defaults = defaultPresentationState();
-    setPersistentLabels(state?.labels ?? defaults.labels);
-    setHiddenAtomIndices(state?.hiddenAtomIndices ?? defaults.hiddenAtomIndices);
-    setHydrogenVisibility(state?.hydrogenVisibility ?? defaults.hydrogenVisibility);
-    setElementColorOverrides(state?.elementColorOverrides ?? defaults.elementColorOverrides);
-    setAtomSizeScale(state?.atomSizeScale ?? defaults.atomSizeScale);
-    setAtomStyleOverrides(state?.atomStyleOverrides ?? defaults.atomStyleOverrides);
-    setBondStyleOverrides(state?.bondStyleOverrides ?? defaults.bondStyleOverrides);
-    setSavedPoses(state?.savedPoses ?? defaults.savedPoses);
-    setViewOptions(state?.viewOptions ?? {
+    setPersistentLabels(state?.annotations ?? defaults.annotations);
+    setHiddenAtomIndices(state?.hidden_atoms ?? defaults.hidden_atoms);
+    setHydrogenVisibility(state?.styles?.hydrogen_visibility ?? defaults.styles.hydrogen_visibility);
+    setElementColorOverrides(state?.styles?.element_color_overrides ?? defaults.styles.element_color_overrides);
+    setAtomSizeScale(state?.styles?.atom_size_scale ?? defaults.styles.atom_size_scale);
+    setAtomStyleOverrides(state?.styles?.atom_style_overrides ?? defaults.styles.atom_style_overrides);
+    setBondStyleOverrides(state?.styles?.bond_style_overrides ?? defaults.styles.bond_style_overrides);
+    setSavedPoses(state?.poses ?? defaults.poses);
+    setViewOptions(state?.camera ?? {
       showFloor: true,
       showGrid: true,
       backdropTone: 'clean',
@@ -334,11 +344,11 @@ function App() {
     });
     nextLabelId.current = Math.max(
       1,
-      ...(state?.labels ?? []).map((label) => Number(label.id.replace(/^label-/, '')) + 1 || 1),
+      ...(state?.annotations ?? []).map((label) => Number(label.id.replace(/^label-/, '')) + 1 || 1),
     );
     nextPoseId.current = Math.max(
       1,
-      ...(state?.savedPoses ?? []).map((pose) => Number(pose.id.replace(/^pose-/, '')) + 1 || 1),
+      ...(state?.poses ?? []).map((pose) => Number(pose.id.replace(/^pose-/, '')) + 1 || 1),
     );
     window.setTimeout(() => {
       isApplyingPresentationState.current = false;
@@ -636,7 +646,7 @@ function App() {
     handleClearSelection();
   }, [handleClearSelection]);
 
-  const handleCreatePersistentLabel = useCallback((label: Omit<PersistentLabel, 'id' | 'visible'>) => {
+  const handleCreatePersistentLabel = useCallback((label: Omit<Annotation, 'id' | 'visible'>) => {
     setPersistentLabels((current) => [
       ...current,
       {
@@ -650,9 +660,11 @@ function App() {
   const handleAddMeasurementLabel = useCallback(() => {
     if (selectedDihedral?.stage === 4 && selectedDihedral.anchor) {
       handleCreatePersistentLabel({
-        type: 'dihedral',
+        type: 'Dihedral',
         text: `${selectedDihedral.atomElements.join('-')} ${selectedDihedral.dihedralDegrees.toFixed(2)} deg`,
         anchor: selectedDihedral.anchor,
+        atoms: selectedDihedral.atomIndices,
+        value: selectedDihedral.dihedralDegrees,
         source: { atomIndices: selectedDihedral.atomIndices },
       });
       return;
@@ -660,9 +672,11 @@ function App() {
 
     if (selectedAngle?.stage === 3 && selectedAngle.anchor) {
       handleCreatePersistentLabel({
-        type: 'angle',
+        type: 'Angle',
         text: `${selectedAngle.atomElements.join('-')} ${selectedAngle.angleDegrees.toFixed(2)} deg`,
         anchor: selectedAngle.anchor,
+        atoms: selectedAngle.atomIndices,
+        value: selectedAngle.angleDegrees,
         source: { atomIndices: selectedAngle.atomIndices },
       });
       return;
@@ -670,9 +684,11 @@ function App() {
 
     if (selectedBond) {
       handleCreatePersistentLabel({
-        type: 'distance',
+        type: 'Distance',
         text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${selectedBond.distance.toFixed(2)} A`,
         anchor: selectedBond.anchor,
+        atoms: selectedBond.atomIndices,
+        value: selectedBond.distance,
         source: {
           bond: selectedBond.atomIndices,
           atomIndices: selectedBond.atomIndices,
@@ -900,15 +916,17 @@ function App() {
     }
     const state: PresentationState = {
       version: 1,
-      labels: persistentLabels,
-      hiddenAtomIndices,
-      hydrogenVisibility,
-      elementColorOverrides,
-      atomSizeScale,
-      atomStyleOverrides,
-      bondStyleOverrides,
-      viewOptions,
-      savedPoses,
+      poses: savedPoses,
+      annotations: persistentLabels,
+      hidden_atoms: hiddenAtomIndices,
+      styles: {
+        hydrogen_visibility: hydrogenVisibility,
+        element_color_overrides: elementColorOverrides,
+        atom_size_scale: atomSizeScale,
+        atom_style_overrides: atomStyleOverrides,
+        bond_style_overrides: bondStyleOverrides,
+      },
+      camera: viewOptions,
     };
     saveStateTimer.current = window.setTimeout(() => {
       void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {

@@ -666,22 +666,22 @@ export function InfoPanel({
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Labels" collapsed={collapsedSections.has('Labels')} onToggle={() => toggleSection('Labels')}>
+      <CollapsibleSection title="Annotations" collapsed={collapsedSections.has('Labels')} onToggle={() => toggleSection('Labels')}>
         <div className="style-control-header">
-          <h4>Labels</h4>
+          <h4>Annotations</h4>
           {persistentLabels.length > 0 && (
             <button
               type="button"
               className="color-reset-all"
               onClick={onClearPersistentLabels}
             >
-              Clear labels
+              Clear annotations
             </button>
           )}
         </div>
         {persistentLabels.length === 0 ? (
           <p className="info-note">
-            Use Label mode to click atoms, or add labels from active measurements.
+            Use Label mode to click atoms, or save active measurements as annotations.
           </p>
         ) : (
           <div className="label-list">
@@ -693,7 +693,7 @@ export function InfoPanel({
                     className={label.visible ? 'label-edit-input' : 'label-edit-input muted'}
                     value={label.text}
                     onChange={(event) => onRenamePersistentLabel(label.id, event.target.value)}
-                    aria-label={`${label.type} label text`}
+                    aria-label={`${label.type} annotation text`}
                   />
                 </div>
                 <div className="label-actions">

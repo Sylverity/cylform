@@ -1105,13 +1105,14 @@ export function MoleculeCanvas({
         if (atom) {
           const serial = atom.atomIndex + 1;
           onPersistentLabelCreate({
-            type: 'atom',
+            type: 'AtomLabel',
             text: `${atom.element}${serial}`,
             anchor: {
               x: atom.position.x,
               y: atom.position.y + 0.25,
               z: atom.position.z,
             },
+            atom_id: atom.atomIndex,
             source: { atomIndex: atom.atomIndex },
           });
         }

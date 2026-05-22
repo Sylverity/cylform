@@ -14,6 +14,7 @@ use cylform_core::{
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -159,6 +160,120 @@ struct BenchmarkConfig {
 struct RecentFileEntry {
     path: String,
     name: String,
+}
+
+fn presentation_state_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
+enum Annotation {
+    AtomLabel {
+        #[serde(default)]
+        id: String,
+        #[serde(default)]
+        visible: bool,
+        #[serde(default)]
+        atom_id: usize,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        anchor: Value,
+        #[serde(default)]
+        source: Value,
+    },
+    Distance {
+        #[serde(default)]
+        id: String,
+        #[serde(default)]
+        visible: bool,
+        #[serde(default)]
+        atoms: [usize; 2],
+        #[serde(default)]
+        value: f64,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        anchor: Value,
+        #[serde(default)]
+        source: Value,
+    },
+    Angle {
+        #[serde(default)]
+        id: String,
+        #[serde(default)]
+        visible: bool,
+        #[serde(default)]
+        atoms: [usize; 3],
+        #[serde(default)]
+        value: f64,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        anchor: Value,
+        #[serde(default)]
+        source: Value,
+    },
+    Dihedral {
+        #[serde(default)]
+        id: String,
+        #[serde(default)]
+        visible: bool,
+        #[serde(default)]
+        atoms: [usize; 4],
+        #[serde(default)]
+        value: f64,
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        anchor: Value,
+        #[serde(default)]
+        source: Value,
+    },
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct PresentationStyles {
+    #[serde(default)]
+    hydrogen_visibility: Option<String>,
+    #[serde(default)]
+    element_color_overrides: Value,
+    #[serde(default)]
+    atom_size_scale: Option<f64>,
+    #[serde(default)]
+    atom_style_overrides: Value,
+    #[serde(default)]
+    bond_style_overrides: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct PresentationStateEnvelope {
+    #[serde(default = "presentation_state_version")]
+    version: u32,
+    #[serde(default)]
+    poses: Value,
+    #[serde(default)]
+    annotations: Vec<Annotation>,
+    #[serde(default)]
+    hidden_atoms: Vec<usize>,
+    #[serde(default)]
+    styles: PresentationStyles,
+    #[serde(default)]
+    camera: Value,
+}
+
+impl Default for PresentationStateEnvelope {
+    fn default() -> Self {
+        Self {
+            version: presentation_state_version(),
+            poses: Value::Array(Vec::new()),
+            annotations: Vec::new(),
+            hidden_atoms: Vec::new(),
+            styles: PresentationStyles::default(),
+            camera: Value::Null,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +562,131 @@ fn presentation_state_path(app: &AppHandle, path: &str) -> Result<PathBuf, Strin
     Ok(presentation_dir(app)?.join(format!("{}.json", path_key(path))))
 }
 
+fn value_array(value: Option<&Value>) -> Value {
+    match value {
+        Some(Value::Array(items)) => Value::Array(items.clone()),
+        _ => Value::Array(Vec::new()),
+    }
+}
+
+fn value_object(value: Option<&Value>) -> Value {
+    match value {
+        Some(Value::Object(map)) => Value::Object(map.clone()),
+        _ => Value::Object(Default::default()),
+    }
+}
+
+fn legacy_label_to_annotation(label: &Value) -> Value {
+    let label_type = label.get("type").and_then(Value::as_str).unwrap_or("atom");
+    let text = label.get("text").cloned().unwrap_or_else(|| json!(""));
+    let id = label.get("id").cloned().unwrap_or_else(|| json!(""));
+    let visible = label.get("visible").cloned().unwrap_or_else(|| json!(true));
+    let anchor = label.get("anchor").cloned().unwrap_or(Value::Null);
+    let source = label.get("source").cloned().unwrap_or_else(|| json!({}));
+    let atom_indices = source
+        .get("atomIndices")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    match label_type {
+        "distance" => json!({
+            "type": "Distance",
+            "id": id,
+            "visible": visible,
+            "atoms": [
+                atom_indices.first().and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(1).and_then(Value::as_u64).unwrap_or(0) as usize
+            ],
+            "value": 0.0,
+            "text": text,
+            "anchor": anchor,
+            "source": source,
+        }),
+        "angle" => json!({
+            "type": "Angle",
+            "id": id,
+            "visible": visible,
+            "atoms": [
+                atom_indices.first().and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(1).and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(2).and_then(Value::as_u64).unwrap_or(0) as usize
+            ],
+            "value": 0.0,
+            "text": text,
+            "anchor": anchor,
+            "source": source,
+        }),
+        "dihedral" => json!({
+            "type": "Dihedral",
+            "id": id,
+            "visible": visible,
+            "atoms": [
+                atom_indices.first().and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(1).and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(2).and_then(Value::as_u64).unwrap_or(0) as usize,
+                atom_indices.get(3).and_then(Value::as_u64).unwrap_or(0) as usize
+            ],
+            "value": 0.0,
+            "text": text,
+            "anchor": anchor,
+            "source": source,
+        }),
+        _ => json!({
+            "type": "AtomLabel",
+            "id": id,
+            "visible": visible,
+            "atom_id": source.get("atomIndex").and_then(Value::as_u64).unwrap_or(0) as usize,
+            "text": text,
+            "anchor": anchor,
+            "source": source,
+        }),
+    }
+}
+
+fn normalize_presentation_state(value: Value) -> Result<Value, String> {
+    if value.get("annotations").is_some()
+        || value.get("hidden_atoms").is_some()
+        || value.get("styles").is_some()
+        || value.get("camera").is_some()
+        || value.get("poses").is_some()
+    {
+        let envelope: PresentationStateEnvelope = serde_json::from_value(value)
+            .map_err(|error| format!("Saved presentation state is invalid: {error}"))?;
+        return serde_json::to_value(envelope)
+            .map_err(|error| format!("Could not normalize presentation state: {error}"));
+    }
+
+    let legacy_labels = value
+        .get("labels")
+        .and_then(Value::as_array)
+        .map(|labels| {
+            labels
+                .iter()
+                .map(legacy_label_to_annotation)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let envelope = json!({
+        "version": value.get("version").and_then(Value::as_u64).unwrap_or(1),
+        "poses": value_array(value.get("savedPoses")),
+        "annotations": legacy_labels,
+        "hidden_atoms": value.get("hiddenAtomIndices").cloned().unwrap_or_else(|| json!([])),
+        "styles": {
+            "hydrogen_visibility": value.get("hydrogenVisibility").cloned(),
+            "element_color_overrides": value_object(value.get("elementColorOverrides")),
+            "atom_size_scale": value.get("atomSizeScale").cloned(),
+            "atom_style_overrides": value_object(value.get("atomStyleOverrides")),
+            "bond_style_overrides": value_object(value.get("bondStyleOverrides"))
+        },
+        "camera": value.get("viewOptions").cloned().unwrap_or(Value::Null)
+    });
+    let envelope: PresentationStateEnvelope = serde_json::from_value(envelope)
+        .map_err(|error| format!("Saved presentation state is invalid: {error}"))?;
+    serde_json::to_value(envelope)
+        .map_err(|error| format!("Could not normalize presentation state: {error}"))
+}
+
 #[tauri::command]
 fn load_presentation_state(
     app: AppHandle,
@@ -459,9 +699,9 @@ fn load_presentation_state(
 
     let contents = fs::read_to_string(&state_path)
         .map_err(|error| format!("Could not read saved presentation state: {error}"))?;
-    serde_json::from_str(&contents)
-        .map(Some)
-        .map_err(|error| format!("Saved presentation state is invalid JSON: {error}"))
+    let value = serde_json::from_str(&contents)
+        .map_err(|error| format!("Saved presentation state is invalid JSON: {error}"))?;
+    normalize_presentation_state(value).map(Some)
 }
 
 #[tauri::command]
@@ -471,6 +711,7 @@ fn save_presentation_state(
     state: serde_json::Value,
 ) -> Result<(), String> {
     let state_path = presentation_state_path(&app, &path)?;
+    let state = normalize_presentation_state(state)?;
     let contents = serde_json::to_string_pretty(&state)
         .map_err(|error| format!("Could not encode presentation state: {error}"))?;
     fs::write(&state_path, contents)
@@ -719,6 +960,69 @@ mod tests {
         let key1 = path_key("/home/user/mol1.xyz");
         let key2 = path_key("/home/user/mol2.xyz");
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_presentation_state_defaults() {
+        let normalized = normalize_presentation_state(json!({})).unwrap();
+
+        assert_eq!(normalized["version"], json!(1));
+        assert_eq!(normalized["poses"], json!([]));
+        assert_eq!(normalized["annotations"], json!([]));
+        assert_eq!(normalized["hidden_atoms"], json!([]));
+        assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
+    }
+
+    #[test]
+    fn test_legacy_presentation_state_normalizes_to_envelope() {
+        let normalized = normalize_presentation_state(json!({
+            "version": 1,
+            "labels": [{
+                "id": "label-1",
+                "type": "distance",
+                "text": "C-O 1.20 A",
+                "visible": true,
+                "anchor": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                "source": { "atomIndices": [0, 1], "bond": [0, 1] }
+            }],
+            "hiddenAtomIndices": [3, 5],
+            "hydrogenVisibility": "hide-c-h",
+            "elementColorOverrides": { "C": "#ffffff" },
+            "atomSizeScale": 1.25,
+            "atomStyleOverrides": {},
+            "bondStyleOverrides": {},
+            "viewOptions": { "projection": "orthographic" },
+            "savedPoses": [{ "id": "pose-1" }]
+        }))
+        .unwrap();
+
+        assert_eq!(normalized["annotations"][0]["type"], json!("Distance"));
+        assert_eq!(normalized["annotations"][0]["atoms"], json!([0, 1]));
+        assert_eq!(normalized["hidden_atoms"], json!([3, 5]));
+        assert_eq!(
+            normalized["styles"]["hydrogen_visibility"],
+            json!("hide-c-h")
+        );
+        assert_eq!(normalized["camera"]["projection"], json!("orthographic"));
+        assert_eq!(normalized["poses"][0]["id"], json!("pose-1"));
+    }
+
+    #[test]
+    fn test_annotation_variants_deserialize() {
+        let annotations = vec![
+            json!({ "type": "AtomLabel", "atom_id": 1, "text": "C2" }),
+            json!({ "type": "Distance", "atoms": [0, 1], "value": 1.2, "text": "C-O" }),
+            json!({ "type": "Angle", "atoms": [0, 1, 2], "value": 109.5, "text": "angle" }),
+            json!({ "type": "Dihedral", "atoms": [0, 1, 2, 3], "value": 180.0, "text": "dihedral" }),
+        ];
+        let value = json!({
+            "version": 1,
+            "annotations": annotations
+        });
+
+        let envelope: PresentationStateEnvelope = serde_json::from_value(value).unwrap();
+
+        assert_eq!(envelope.annotations.len(), 4);
     }
 
     #[test]
