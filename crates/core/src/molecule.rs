@@ -138,6 +138,27 @@ pub enum BondOrder {
     Interaction,
 }
 
+/// Figure/rendering style for a bond.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BondKind {
+    /// Normal covalent-style tube.
+    Normal,
+    /// Transition-state bond.
+    Ts,
+    /// Dative bond.
+    Dative,
+    /// Weak interaction/contact.
+    Interaction,
+    /// Thin highlighted bond.
+    Thin,
+}
+
+impl Default for BondKind {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
 impl BondOrder {
     /// Get the bond radius multiplier
     pub fn radius_multiplier(&self) -> f32 {
@@ -160,6 +181,8 @@ pub struct Bond {
     pub atom2: u32,
     /// Bond order/type
     pub order: BondOrder,
+    /// Figure/rendering style kind
+    pub kind: BondKind,
     /// Selection state
     pub selected: bool,
     /// Visibility
@@ -173,6 +196,7 @@ impl Bond {
             atom1,
             atom2,
             order,
+            kind: BondKind::Normal,
             selected: false,
             visible: true,
         }
@@ -494,5 +518,17 @@ mod tests {
         assert_eq!(structure.atoms().len(), 2);
         assert_eq!(structure.bonds().len(), 1);
         assert_eq!(structure.static_bonds.len(), 1);
+    }
+
+    #[test]
+    fn test_bond_kind_defaults_and_serializes() {
+        let mut bond = Bond::new(0, 1, BondOrder::Single);
+        assert_eq!(bond.kind, BondKind::Normal);
+        bond.kind = BondKind::Ts;
+
+        let encoded = serde_json::to_string(&bond).unwrap();
+        let decoded: Bond = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded.kind, BondKind::Ts);
     }
 }

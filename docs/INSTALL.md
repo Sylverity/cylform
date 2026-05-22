@@ -87,7 +87,8 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
 5. Use **Style** to adjust element colours, atom visibility, selected atom styling, and visual bond styles.
 6. Use **Poses** to save reusable camera views and **Files** to reopen recent files.
-7. Click **Export PNG** to save the current view, including visible labels, as an image.
+7. Use the **View** overlay to switch between CYLview and Houkmol material presets when preparing figures.
+8. Click **Export PNG** to save the current view, including visible annotations, as an image.
 
 The desktop app also includes a standard menu bar. Use **File** → **Quit Cylform** to close the app and **Help** → **About Cylform** for version/about details. The **Edit**, **View**, and **Window** menus are scaffolded for future commands.
 
@@ -103,5 +104,5 @@ The current app supports XYZ and PDB files for normal opening. It may display in
 - **Linux says the file is not executable:** run `chmod +x` on AppImage or standalone binary downloads.
 - **Ubuntu/Debian cannot install the `.deb`:** run `sudo apt update`, then try the `sudo apt install ./Cylform_..._amd64.deb` command again so apt can resolve dependencies.
 - **The app does not open on Linux:** install system WebView/runtime packages for Tauri apps, then retry. On Ubuntu/Debian, the contributor dependency list in `CONTRIBUTING.md` includes the relevant GTK/WebKit packages.
-- **A molecule file does not appear in the picker:** Cylform currently advertises `.xyz` and `.pdb`. Use **All Files** only if you know the file is one of those supported formats with a non-standard extension.
+- **A molecule file does not appear in the picker:** Cylform advertises the extensions supported by its built-in parser registry. Current release builds support `.xyz` and `.pdb`. Use **All Files** only if you know the file is one of those supported formats with a non-standard extension.
 - **A file is rejected as too large:** reduce the structure size or split trajectories into individual structures. Large trajectory workflows are planned separately.

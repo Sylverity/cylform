@@ -85,9 +85,9 @@ WSLg numbers may still differ from native Windows release builds because renderi
 
 - If `loadMs` is low but FPS collapses, the bottleneck is rendering, not Rust parsing.
 - If `rebuildSceneMs` is high, scene construction or object allocation is the immediate problem.
-- If `averageFps` is low and p95 frame time is high even after rebuild, draw-call/object count or shader/geometry cost is the sustained interaction problem.
-- Current non-instanced rendering creates one Three.js mesh per atom and per bond; large fixtures can therefore create tens of thousands of render objects and draw participants.
-- Strong GPUs help most after visual geometry is batched or instanced. If many individual meshes remain, CPU/WebView/driver overhead can dominate before the GPU is saturated.
+- If `averageFps` is low and p95 frame time is high even after rebuild, shader/geometry cost, WebView overhead, or driver path may be the sustained interaction problem.
+- Current rendering batches atoms and bonds with Three.js `InstancedMesh`, including styled bond buckets. Large structures should therefore avoid one-object-per-atom or one-object-per-bond behavior in normal rendering.
+- Strong GPUs help most once the WebView is using a hardware-accelerated path. If `renderCalls` or `sceneObjects` rises unexpectedly after a renderer change, check that new styles or overlays did not bypass the instanced batches.
 
 For README wording, prefer conservative language:
 
@@ -102,4 +102,4 @@ For README wording, prefer conservative language:
 - Treat WSLg `llvmpipe` results as invalid for public performance claims.
 - Do not commit `benchmark-results/` artifacts.
 - After renderer performance changes, run at least `2000,3000,5000` for cutoff detection and `5000,10000,25000` for README-limit validation.
-- If results show low FPS with low `rebuildSceneMs`, prioritize instancing/batching over Rust parser optimization.
+- If results show low FPS with low `rebuildSceneMs`, inspect renderer/material changes, WebGL acceleration, and batch counts before optimizing Rust parsing.

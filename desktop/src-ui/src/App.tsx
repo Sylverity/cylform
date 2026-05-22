@@ -27,6 +27,7 @@ export interface BondData {
   atom1: number;
   atom2: number;
   radius: number;
+  kind: BondKind;
 }
 
 export interface LabelAnchor {
@@ -72,6 +73,45 @@ export interface SelectionSummary {
 export type ElementColorOverrides = Record<string, string>;
 export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
 export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
+export type BondKind = 'Normal' | 'Ts' | 'Dative' | 'Interaction' | 'Thin';
+export type MaterialPresetId = 'CYLview' | 'Houkmol';
+
+export interface MaterialPreset {
+  id: MaterialPresetId;
+  ambient: number;
+  diffuse: number;
+  specular: number;
+  shininess: number;
+  outline: boolean;
+  outline_size: number;
+  quadrants: boolean;
+  quadrant_size: number;
+}
+
+export const MATERIAL_PRESETS: Record<MaterialPresetId, MaterialPreset> = {
+  CYLview: {
+    id: 'CYLview',
+    ambient: 0.52,
+    diffuse: 1.65,
+    specular: 0.9,
+    shininess: 175,
+    outline: false,
+    outline_size: 0,
+    quadrants: false,
+    quadrant_size: 0,
+  },
+  Houkmol: {
+    id: 'Houkmol',
+    ambient: 0.7,
+    diffuse: 0.95,
+    specular: 0.18,
+    shininess: 36,
+    outline: false,
+    outline_size: 0,
+    quadrants: true,
+    quadrant_size: 0.5,
+  },
+};
 
 export interface Annotation {
   id: string;
@@ -180,6 +220,7 @@ export interface PresentationState {
     atom_size_scale?: number;
     atom_style_overrides?: Record<string, AtomStyleOverride>;
     bond_style_overrides?: Record<string, BondStyleOverride>;
+    material_preset?: MaterialPresetId;
   };
   camera?: ViewOptions;
 }
@@ -266,6 +307,7 @@ function App() {
   const [atomStyleOverrides, setAtomStyleOverrides] = useState<Record<string, AtomStyleOverride>>({});
   const [bondStyleOverrides, setBondStyleOverrides] = useState<Record<string, BondStyleOverride>>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
+  const [materialPreset, setMaterialPreset] = useState<MaterialPresetId>('CYLview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
@@ -299,6 +341,7 @@ function App() {
       atom_size_scale: 1,
       atom_style_overrides: {} as Record<string, AtomStyleOverride>,
       bond_style_overrides: {} as Record<string, BondStyleOverride>,
+      material_preset: 'CYLview' as MaterialPresetId,
     },
     poses: [] as SavedPose[],
     camera: undefined as ViewOptions | undefined,
@@ -330,6 +373,7 @@ function App() {
     setAtomSizeScale(state?.styles?.atom_size_scale ?? defaults.styles.atom_size_scale);
     setAtomStyleOverrides(state?.styles?.atom_style_overrides ?? defaults.styles.atom_style_overrides);
     setBondStyleOverrides(state?.styles?.bond_style_overrides ?? defaults.styles.bond_style_overrides);
+    setMaterialPreset(state?.styles?.material_preset ?? defaults.styles.material_preset);
     setSavedPoses(state?.poses ?? defaults.poses);
     setViewOptions(state?.camera ?? {
       showFloor: true,
@@ -454,7 +498,10 @@ function App() {
       const selected = await open({
         multiple: false,
         filters: [
-          { name: 'Molecular Files', extensions: ['xyz', 'pdb'] },
+          {
+            name: 'Molecular Files',
+            extensions: await invoke<string[]>('get_supported_read_extensions'),
+          },
           { name: 'All Files', extensions: ['*'] },
         ],
       });
@@ -925,6 +972,7 @@ function App() {
         atom_size_scale: atomSizeScale,
         atom_style_overrides: atomStyleOverrides,
         bond_style_overrides: bondStyleOverrides,
+        material_preset: materialPreset,
       },
       camera: viewOptions,
     };
@@ -947,6 +995,7 @@ function App() {
     handleError,
     hiddenAtomIndices,
     hydrogenVisibility,
+    materialPreset,
     persistentLabels,
     savedPoses,
     viewOptions,
@@ -1013,8 +1062,10 @@ function App() {
             atomStyleOverrides={atomStyleOverrides}
             bondStyleOverrides={bondStyleOverrides}
             atomSizeScale={atomSizeScale}
+            materialPreset={materialPreset}
             viewOptions={viewOptions}
             onViewOptionsChange={setViewOptions}
+            onMaterialPresetChange={setMaterialPreset}
             selectedBond={selectedBond}
             selectedAngle={selectedAngle}
             selectedDihedral={selectedDihedral}

@@ -8,8 +8,11 @@
 )]
 
 use cylform_core::{
-    io::{read_structure_with_options, FileFormat, IoError, ReadOptions, MAX_ATOMS},
-    molecule::Structure,
+    io::{
+        read_structure_with_options, supported_read_extensions, FileFormat, IoError, ReadOptions,
+        MAX_ATOMS,
+    },
+    molecule::{BondKind, Structure},
     CoreError,
 };
 use parking_lot::Mutex;
@@ -64,6 +67,7 @@ struct SerialBond {
     atom2: u32,
     /// cylinder radius (Å) derived from bond order
     radius: f32,
+    kind: BondKind,
 }
 
 #[derive(Serialize)]
@@ -166,6 +170,10 @@ fn presentation_state_version() -> u32 {
     1
 }
 
+fn default_material_preset() -> String {
+    "CYLview".to_string()
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 enum Annotation {
@@ -233,7 +241,7 @@ enum Annotation {
     },
 }
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct PresentationStyles {
     #[serde(default)]
     hydrogen_visibility: Option<String>,
@@ -245,6 +253,21 @@ struct PresentationStyles {
     atom_style_overrides: Value,
     #[serde(default)]
     bond_style_overrides: Value,
+    #[serde(default = "default_material_preset")]
+    material_preset: String,
+}
+
+impl Default for PresentationStyles {
+    fn default() -> Self {
+        Self {
+            hydrogen_visibility: None,
+            element_color_overrides: Value::Object(Default::default()),
+            atom_size_scale: None,
+            atom_style_overrides: Value::Object(Default::default()),
+            bond_style_overrides: Value::Object(Default::default()),
+            material_preset: default_material_preset(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -339,6 +362,7 @@ fn load_molecule(
             atom1: b.atom1,
             atom2: b.atom2,
             radius: b.order.radius_multiplier(),
+            kind: b.kind,
         })
         .collect();
 
@@ -677,7 +701,8 @@ fn normalize_presentation_state(value: Value) -> Result<Value, String> {
             "element_color_overrides": value_object(value.get("elementColorOverrides")),
             "atom_size_scale": value.get("atomSizeScale").cloned(),
             "atom_style_overrides": value_object(value.get("atomStyleOverrides")),
-            "bond_style_overrides": value_object(value.get("bondStyleOverrides"))
+            "bond_style_overrides": value_object(value.get("bondStyleOverrides")),
+            "material_preset": value.get("materialPreset").cloned().unwrap_or_else(|| json!("CYLview"))
         },
         "camera": value.get("viewOptions").cloned().unwrap_or(Value::Null)
     });
@@ -726,6 +751,11 @@ fn clear_presentation_state(app: AppHandle, path: String) -> Result<(), String> 
             .map_err(|error| format!("Could not remove presentation state: {error}"))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn get_supported_read_extensions() -> Vec<&'static str> {
+    supported_read_extensions()
 }
 
 fn recent_files_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -917,6 +947,7 @@ fn main() {
             load_presentation_state,
             save_presentation_state,
             clear_presentation_state,
+            get_supported_read_extensions,
             get_recent_files,
             record_recent_file,
             list_supported_files_near
@@ -971,6 +1002,7 @@ mod tests {
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
+        assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
     }
 
     #[test]
@@ -991,6 +1023,7 @@ mod tests {
             "atomSizeScale": 1.25,
             "atomStyleOverrides": {},
             "bondStyleOverrides": {},
+            "materialPreset": "Houkmol",
             "viewOptions": { "projection": "orthographic" },
             "savedPoses": [{ "id": "pose-1" }]
         }))
@@ -1003,6 +1036,7 @@ mod tests {
             normalized["styles"]["hydrogen_visibility"],
             json!("hide-c-h")
         );
+        assert_eq!(normalized["styles"]["material_preset"], json!("Houkmol"));
         assert_eq!(normalized["camera"]["projection"], json!("orthographic"));
         assert_eq!(normalized["poses"][0]["id"], json!("pose-1"));
     }

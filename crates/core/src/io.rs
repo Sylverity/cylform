@@ -9,7 +9,7 @@
 use crate::molecule::{Atom, AtomMetadata, Bond, BondOrder, Structure};
 use crate::{CoreError, Result};
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Write};
 use std::path::Path;
 
 fn text_value(value: &str) -> Option<String> {
@@ -119,6 +119,72 @@ impl FileFormat {
     }
 }
 
+/// Parser for one or more molecular file extensions.
+pub trait FormatParser: Send + Sync {
+    /// Supported lowercase file extensions without a leading dot.
+    fn extensions(&self) -> &'static [&'static str];
+
+    /// Parse a molecular structure from file content.
+    fn parse(&self, content: &str, options: ReadOptions) -> Result<Structure>;
+}
+
+struct XyzParser;
+struct PdbParser;
+
+impl FormatParser for XyzParser {
+    fn extensions(&self) -> &'static [&'static str] {
+        &["xyz"]
+    }
+
+    fn parse(&self, content: &str, options: ReadOptions) -> Result<Structure> {
+        read_xyz_content(content, options)
+    }
+}
+
+impl FormatParser for PdbParser {
+    fn extensions(&self) -> &'static [&'static str] {
+        &["pdb"]
+    }
+
+    fn parse(&self, content: &str, options: ReadOptions) -> Result<Structure> {
+        read_pdb_content(content, options)
+    }
+}
+
+static XYZ_PARSER: XyzParser = XyzParser;
+static PDB_PARSER: PdbParser = PdbParser;
+static BUILTIN_PARSERS: [&dyn FormatParser; 2] = [&XYZ_PARSER, &PDB_PARSER];
+
+/// Built-in parsers registered for v1.
+pub fn builtin_parsers() -> &'static [&'static dyn FormatParser] {
+    &BUILTIN_PARSERS
+}
+
+/// Extensions supported by built-in readers.
+pub fn supported_read_extensions() -> Vec<&'static str> {
+    builtin_parsers()
+        .iter()
+        .flat_map(|parser| parser.extensions().iter().copied())
+        .collect()
+}
+
+fn extension_from_path(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+}
+
+/// Find a parser by extension.
+pub fn parser_for_extension(extension: &str) -> Option<&'static dyn FormatParser> {
+    let extension = extension.trim_start_matches('.').to_ascii_lowercase();
+    builtin_parsers().iter().copied().find(|parser| {
+        parser
+            .extensions()
+            .iter()
+            .any(|candidate| *candidate == extension)
+    })
+}
+
 /// Read a molecular structure from a file
 ///
 /// # Arguments
@@ -144,23 +210,39 @@ pub fn read_structure_with_options<P: AsRef<Path>>(
 ) -> Result<Structure> {
     let path = path.as_ref();
     validate_file_size(path)?;
+    let content = fs::read_to_string(path).map_err(|e| CoreError::Io(IoError::Io(e)))?;
 
-    let format = if format == FileFormat::Auto {
-        FileFormat::from_path(path)
-    } else {
-        format
+    let parser = match format {
+        FileFormat::Auto => {
+            let extension = extension_from_path(path).ok_or_else(|| {
+                CoreError::Io(IoError::UnsupportedFormat(format!(
+                    "Could not determine file format. Supported formats are {}.",
+                    supported_read_extensions().join(", ").to_uppercase()
+                )))
+            })?;
+            if matches!(extension.as_str(), "sdf" | "mol") {
+                return Err(CoreError::Io(IoError::UnsupportedFormat(
+                    "SDF/MOL files are not supported yet. Please open an XYZ or PDB file."
+                        .to_string(),
+                )));
+            }
+            parser_for_extension(&extension).ok_or_else(|| {
+                CoreError::Io(IoError::UnsupportedFormat(format!(
+                    "Could not determine file format. Supported formats are {}.",
+                    supported_read_extensions().join(", ").to_uppercase()
+                )))
+            })?
+        }
+        FileFormat::Xyz => parser_for_extension("xyz").expect("XYZ parser is registered"),
+        FileFormat::Pdb => parser_for_extension("pdb").expect("PDB parser is registered"),
+        FileFormat::Sdf => {
+            return Err(CoreError::Io(IoError::UnsupportedFormat(
+                "SDF/MOL files are not supported yet. Please open an XYZ or PDB file.".to_string(),
+            )));
+        }
     };
 
-    match format {
-        FileFormat::Xyz => read_xyz(path, options),
-        FileFormat::Pdb => read_pdb(path, options),
-        FileFormat::Sdf => Err(CoreError::Io(IoError::UnsupportedFormat(
-            "SDF/MOL files are not supported yet. Please open an XYZ or PDB file.".to_string(),
-        ))),
-        FileFormat::Auto => Err(CoreError::Io(IoError::UnsupportedFormat(
-            "Could not determine file format. Supported formats are XYZ and PDB.".to_string(),
-        ))),
-    }
+    parser.parse(&content, options)
 }
 
 fn validate_file_size(path: &Path) -> Result<()> {
@@ -298,14 +380,8 @@ fn pdb_display_name(
         .unwrap_or_else(|| "PDB Structure".to_string())
 }
 
-/// Read XYZ format
-fn read_xyz<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> {
-    let file = File::open(path).map_err(|e| CoreError::Io(IoError::NotFound(e.to_string())))?;
-    let reader = BufReader::new(file);
-    let lines: Vec<String> = reader
-        .lines()
-        .collect::<io::Result<Vec<_>>>()
-        .map_err(|e| CoreError::Io(IoError::Io(e)))?;
+fn read_xyz_content(content: &str, options: ReadOptions) -> Result<Structure> {
+    let lines: Vec<String> = content.lines().map(str::to_string).collect();
 
     // First line: number of atoms
     let num_atoms: usize = lines
@@ -393,11 +469,7 @@ fn read_xyz<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
     Ok(structure)
 }
 
-/// Read PDB format (basic support)
-fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> {
-    let file = File::open(path).map_err(|e| CoreError::Io(IoError::NotFound(e.to_string())))?;
-    let reader = BufReader::new(file);
-
+fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
     let mut structure = Structure::new("PDB Structure");
     structure.metadata.source_format = Some("PDB".to_string());
     structure.metadata.loaded_frame_index = Some(0);
@@ -412,9 +484,8 @@ fn read_pdb<P: AsRef<Path>>(path: P, options: ReadOptions) -> Result<Structure> 
     let mut finished_first_model = false;
     let mut saw_model = false;
 
-    for (line_index, line) in reader.lines().enumerate() {
+    for (line_index, line) in content.lines().enumerate() {
         let line_number = line_index + 1;
-        let line = line.map_err(|e| CoreError::Io(IoError::Io(e)))?;
         let record = line.get(0..6).unwrap_or("").trim();
 
         match record {
@@ -725,6 +796,13 @@ H 0.8 0.0 0.0
     }
 
     #[test]
+    fn test_parser_registry_resolves_builtin_extensions() {
+        assert!(parser_for_extension("xyz").is_some());
+        assert!(parser_for_extension(".pdb").is_some());
+        assert_eq!(supported_read_extensions(), vec!["xyz", "pdb"]);
+    }
+
+    #[test]
     fn test_rejects_oversized_xyz_declared_atom_count() {
         let xyz_content = format!("{}\nToo large\n", MAX_ATOMS + 1);
         let mut temp_file = NamedTempFile::new().unwrap();
@@ -876,7 +954,9 @@ ENDMDL\n";
         let temp_file = NamedTempFile::new().unwrap();
         write_xyz(temp_file.path(), &original).unwrap();
 
-        let loaded = read_xyz(temp_file.path(), ReadOptions::default()).unwrap();
+        let loaded =
+            read_structure_with_options(temp_file.path(), FileFormat::Xyz, ReadOptions::default())
+                .unwrap();
 
         assert_eq!(loaded.atom_count(), 3);
         assert_eq!(loaded.atoms()[0].element, "C");

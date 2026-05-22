@@ -1,0 +1,93 @@
+# Cylform Architecture
+
+This note is for contributors who want to understand where molecule data enters the app, how it becomes a rendered scene, and which extension points should stay stable for v1.
+
+## Data Flow
+
+```text
+molecule file
+  -> cylform-core parser registry
+  -> Structure { frames, static_bonds, metadata }
+  -> Tauri load_molecule command
+  -> React MoleculeData state
+  -> Three.js instanced atoms and bond batches
+```
+
+The product rule is simple: computational file handling stays in Rust, while interactive presentation stays in the desktop UI. The frontend should receive plain, centered molecule data and focus on camera controls, styling, annotations, and export.
+
+## Rust Core
+
+`crates/core` owns molecule data, parsing, metadata, and chemistry-oriented helpers.
+
+- `molecule.rs` defines `Atom`, `Frame`, `Bond`, `BondOrder`, `BondKind`, `SourceMetadata`, and `Structure`.
+- `Structure` stores `frames: Vec<Frame>` even though current release builds display frame 0 only.
+- `static_bonds` stores bonds perceived or imported from frame 0 and reused for the current single-frame UI.
+- `BondKind` captures figure-oriented bond styles at the data-model level: normal, transition-state, dative, interaction, and thin.
+- Compatibility helpers such as `atoms()`, `bonds()`, `frame(index)`, `center()`, `atom_count()`, and `bond_count()` keep older call sites readable while the frame model settles.
+
+`io.rs` provides the built-in parser registry. New read formats should implement `FormatParser`, expose their supported extensions, and be added to the built-in parser list. `read_structure_with_options(path, FileFormat::Auto, options)` remains the compatibility entry point and dispatches through the registry after reading file content once.
+
+Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not been redesigned in this slice.
+
+## Tauri Layer
+
+`desktop/src-tauri/src/main.rs` is the native bridge.
+
+- `load_molecule` accepts a path and optional `frameIndex`, defaults to frame 0, and returns the existing frontend `MoleculeData` shape.
+- `get_supported_read_extensions` exposes the parser registry to the frontend so the native open dialog does not hardcode supported formats.
+- Per-file presentation state is stored under app data in a versioned JSON envelope.
+- Legacy saved keys such as `labels`, `hiddenAtomIndices`, `savedPoses`, and older style maps are normalized into the v1 envelope when loaded.
+
+The saved-state envelope is intentionally presentation-focused. It belongs to the desktop app, not `cylform-core`.
+
+## Frontend Layer
+
+The React app owns interaction state and the Three.js scene.
+
+- `App.tsx` coordinates file loading, saved state, annotations, material preset selection, visibility, style overrides, measurements, and exports.
+- `MoleculeCanvas.tsx` builds the WebGL scene and keeps normal molecule topology rendering batched.
+- Atoms are rendered with instanced sphere geometry.
+- Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
+- Selection and measurement overlays may use separate transient objects because they are small UI overlays, not persistent topology rendering.
+
+The renderer chooses bond style in this order:
+
+1. Per-file frontend style override.
+2. Backend `BondKind`.
+3. Normal bond style.
+
+## Presentation State
+
+Saved presentation state is versioned so future releases can add fields without breaking old files.
+
+```json
+{
+  "version": 1,
+  "poses": [],
+  "annotations": [],
+  "hidden_atoms": [],
+  "styles": {
+    "material_preset": "CYLview"
+  },
+  "camera": {}
+}
+```
+
+Every field has defaults on the Rust side and the TypeScript side. Persisted annotations use one model for atom labels, distances, angles, and dihedrals. Active measurement picking remains transient UI state until the user chooses to save an annotation.
+
+## Material Presets
+
+Material presets are serializable presentation choices. Current presets are:
+
+- `CYLview`: the glossy default used for the classic cylindrical-bond look.
+- `Houkmol`: a flatter figure-preparation preset with quadrants enabled in state for future rendering parity.
+
+The active preset is stored in per-file state and applied when bond and selected-overlay materials are created or updated. Future exporters, such as POV-Ray output, should reuse the same preset data rather than inventing separate finish settings.
+
+## Extension Points
+
+- Add a file format by writing a `FormatParser` implementation and registering it in the built-in parser list.
+- Add trajectory playback by loading additional frames into `Structure.frames` and updating frontend instance matrices by frame index.
+- Add a persisted annotation type by extending the Rust enum, TypeScript union, and annotations panel rendering.
+- Add a material preset by extending the shared preset list and preserving the saved-state default behavior.
+- Add a bond style by extending `BondKind`, Tauri serialization, TypeScript style mapping, and the existing instanced bond bucket path.

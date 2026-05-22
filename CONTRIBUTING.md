@@ -63,20 +63,22 @@ The benchmark launches the real app, loads generated XYZ fixtures, samples frame
 
 ```
 crates/core/src/
-  molecule.rs   — Atom, Bond, Structure; bond perception
-  io.rs         — XYZ + PDB readers/writers
+  molecule.rs   — Atom, Bond, BondKind, frame-ready Structure; bond perception
+  io.rs         — parser registry; XYZ + PDB readers/writers
   camera.rs     — Orbital camera maths
   picker.rs     — Selection framework
 
 desktop/src-tauri/src/
-  main.rs       — load_molecule command, Tauri app setup
+  main.rs       — load_molecule command, saved state, Tauri app setup
 
 desktop/src-ui/src/
   App.tsx                         — root component, shared types
-  components/MoleculeCanvas.tsx   — Three.js scene
+  components/MoleculeCanvas.tsx   — Three.js scene, instanced atom/bond rendering
   components/Toolbar.tsx          — file open, reset view
   components/InfoPanel.tsx        — molecule metadata
 ```
+
+For the current data flow, renderer batching model, frame-ready structure model, parser registry, material presets, and saved presentation schema, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Conventions
 
@@ -90,6 +92,11 @@ desktop/src-ui/src/
 1. Fork → feature branch → PR
 2. Keep PRs focused — one concern per PR
 3. Open an issue first for anything architectural
+4. Prefer existing extension points before adding new cross-cutting systems:
+   - New molecule readers should use the `FormatParser` registry.
+   - New persisted UI state should extend the versioned presentation envelope with defaults.
+   - New saved labels or measurements should extend the unified annotation model.
+   - New permanent bond styles should flow through `BondKind` and the instanced bond batches.
 
 ## License
 

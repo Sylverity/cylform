@@ -41,6 +41,8 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   BondStyleType,
+  BondKind,
+  MaterialPresetId,
   BenchmarkConfig,
   BenchmarkRenderMetrics,
   SelectionMode,
@@ -129,8 +131,10 @@ interface Props {
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
+  materialPreset: MaterialPresetId;
   viewOptions: ViewOptions;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
+  onMaterialPresetChange: Dispatch<SetStateAction<MaterialPresetId>>;
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
@@ -360,8 +364,36 @@ function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshP
   return material;
 }
 
+const MATERIAL_PRESETS = {
+  CYLview: {
+    specular: new Color(0.86, 0.9, 0.96),
+    shininess: 175,
+    bondColor: 0x2f9df4,
+  },
+  Houkmol: {
+    specular: new Color(0.18, 0.18, 0.18),
+    shininess: 36,
+    bondColor: 0x6f8796,
+  },
+} satisfies Record<MaterialPresetId, { specular: Color; shininess: number; bondColor: number }>;
+
+function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId) {
+  const preset = MATERIAL_PRESETS[presetId];
+  material.color.set(preset.bondColor);
+  material.specular.copy(preset.specular);
+  material.shininess = preset.shininess;
+}
+
 function bondMaterialForType(type: BondStyleType, fallback: MeshPhongMaterial): MeshPhongMaterial {
   return bondStyleMaterial(type === 'full' ? undefined : { type }, fallback);
+}
+
+function bondKindToStyleType(kind: BondKind | undefined): BondStyleType {
+  if (kind === 'Ts') return 'ts';
+  if (kind === 'Dative') return 'dative';
+  if (kind === 'Interaction') return 'interaction';
+  if (kind === 'Thin') return 'thin';
+  return 'full';
 }
 
 function updateAngleSelection(
@@ -668,8 +700,10 @@ export function MoleculeCanvas({
   atomStyleOverrides,
   bondStyleOverrides,
   atomSizeScale,
+  materialPreset,
   viewOptions,
   onViewOptionsChange,
+  onMaterialPresetChange,
   selectedBond,
   selectedAngle,
   selectedDihedral,
@@ -813,9 +847,9 @@ export function MoleculeCanvas({
 
     // Saturated cyan cylinders with enough gloss to read like polished tubes.
     const bondMat = new MeshPhongMaterial({
-      color:     0x2f9df4,
-      shininess: 175,
-      specular:  new Color(0.86, 0.9, 0.96),
+      color:     MATERIAL_PRESETS[materialPreset].bondColor,
+      shininess: MATERIAL_PRESETS[materialPreset].shininess,
+      specular:  MATERIAL_PRESETS[materialPreset].specular.clone(),
     });
     const selectedBondMat = new MeshPhongMaterial({
       color:     0xffa24c,
@@ -1449,6 +1483,20 @@ export function MoleculeCanvas({
     onSelectionSummaryChange,
   ]);
 
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+    applyMaterialPreset(ctx.bondMat, materialPreset);
+    ctx.molGroup.traverse((object) => {
+      if (object instanceof InstancedMesh && object.material instanceof MeshPhongMaterial) {
+        const bonds = object.userData.bonds as BondSelectionData[] | undefined;
+        if (bonds && object.material === ctx.bondMat) {
+          applyMaterialPreset(object.material, materialPreset);
+        }
+      }
+    });
+  }, [materialPreset]);
+
   // ------------------------------------------------------------------
   // Rebuild molecule meshes when topology or visibility changes.
   // ------------------------------------------------------------------
@@ -1540,8 +1588,8 @@ export function MoleculeCanvas({
       const len     = dir.length();
       if (len < 0.01) continue;
 
-      const style = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)];
-      const displayRadius = style?.type === 'thin'
+      const styleType = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)]?.type ?? bondKindToStyleType(bond.kind);
+      const displayRadius = styleType === 'thin'
         ? Math.max(0.026, bond.radius * 0.38)
         : Math.max(0.055, bond.radius * 0.82);
       const bondData = {
@@ -1555,7 +1603,7 @@ export function MoleculeCanvas({
         matrix: bondTransform(start, end, displayRadius),
       } satisfies BondSelectionData;
 
-      addBondToBucket(style?.type ?? 'full', bondData);
+      addBondToBucket(styleType, bondData);
 
       visibleBondCount += 1;
     }
@@ -1884,6 +1932,17 @@ export function MoleculeCanvas({
             <option value="publication">Publication</option>
             <option value="soft-studio">Soft studio</option>
             <option value="high-contrast">High contrast</option>
+          </select>
+        </label>
+
+        <label className="view-control">
+          <span>Material</span>
+          <select
+            value={materialPreset}
+            onChange={(event) => onMaterialPresetChange(event.target.value as MaterialPresetId)}
+          >
+            <option value="CYLview">CYLview</option>
+            <option value="Houkmol">Houkmol</option>
           </select>
         </label>
 

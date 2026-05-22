@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-A modern reimplementation of CYLview — the chemistry community's favourite tool for generating publication-quality 3-D molecular figures. Download the desktop app, open an `.xyz` or `.pdb` file, rotate, measure, style, and export.
+A modern reimplementation of CYLview — the chemistry community's favourite tool for generating publication-quality 3-D molecular figures. Download the desktop app, open an `.xyz` or `.pdb` file, rotate, measure, style, annotate, and export.
 
 ---
 
@@ -30,29 +30,30 @@ Rules:
 - Treat rendering style as a core product feature, not later polish.
 - Favor usable, testable increments over broad scaffolding.
 
-## Rendering Architecture
+## How Cylform Works
 
-Rust (`cylform-core`) handles all file I/O and chemistry. The desktop app sends atom/bond JSON to the React frontend via a single `load_molecule` Tauri command. Three.js (WebGL) renders the scene inside the Tauri WebView.
+Rust (`cylform-core`) reads molecule files, detects the parser by extension, stores coordinates in a frame-ready structure, and perceives or imports bonds. The Tauri desktop shell sends centered atom/bond data to a React frontend, where Three.js/WebGL renders atoms and bonds as instanced geometry for responsive rotation, measurement, styling, and export.
 
 ## Current State
 
 - Standalone Windows and Linux desktop builds
 - XYZ and PDB file loading via native dialog
-- Three.js scene: cylinder bonds (CYLview blue), CPK atom spheres, 4-point lighting
+- Three.js scene: instanced cylinder bonds, instanced CPK atom spheres, material presets, and 4-point lighting
 - OrbitControls: rotate / pan / zoom / reset
-- In-canvas View overlay for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
+- In-canvas View overlay for floor/grid, backdrop, projection, lighting, material preset, fog, auto-rotate, and camera presets
 - Covalent-radius bond perception (no phantom bonds)
 - XYZ/PDB metadata awareness for titles, energies, PDB atom/residue fields, multi-frame/model detection, and PDB CONECT bonds
+- Core bond kinds for normal, transition-state, dative, interaction, and thin figure bonds
 - In-canvas measurement guidance and a task-oriented Molecule / Measure / Style panel
 - Explicit transient selection modes for view, measure, atom, bond, and atom+bond workflows
-- Session-persistent atom and measurement labels with show/hide/delete controls
+- Session-persistent atom and measurement annotations with show/hide/delete controls
 - Session atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
-- Centralized per-file presentation state, saved poses, recent files, selected styling, and visual bond restyling
+- Versioned per-file presentation state for annotations, hidden atoms, styles, material preset, camera choices, and saved poses
 - Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
 
-Cylform v1 targets the original CYLview family's core publication workflow: fast structure loading, clean real-time viewing, measurements, labels, styling, saved presentation state, and high-quality image export. Large computational chemistry modules such as Gaussian trajectory playback, frequency animation, steric-contact analysis, and movie generation are important parity goals, but they belong after the viewer, annotation, and styling model is stable.
+Cylform v1 targets the original CYLview family's core publication workflow: fast structure loading, clean real-time viewing, measurements, annotations, styling, saved presentation state, and high-quality image export. Large computational chemistry modules such as Gaussian trajectory playback, frequency animation, steric-contact analysis, and movie generation are important parity goals, but they belong after the viewer, annotation, and styling model is stable.
 
 ---
 
@@ -60,52 +61,61 @@ Cylform v1 targets the original CYLview family's core publication workflow: fast
 
 - **Friendly desktop downloads** — Windows installers and Ubuntu/Debian packages from GitHub Releases
 - **Real-time 3-D rendering** — WebGL via Three.js, smooth 60 fps orbit/pan/zoom
-- **CYLview visual style** — glossy cyan cylinders, tiny CPK atom spheres, white background, 4-point lighting
-- **View controls overlay** — floor/grid reference plane, backdrop tones, projection mode, lighting moods, fog, auto-rotate, and camera presets
+- **Publication material presets** — CYLview-style glossy cylinders and a flatter Houkmol-style preset for figure preparation
+- **View controls overlay** — floor/grid reference plane, backdrop tones, projection mode, lighting moods, material preset, fog, auto-rotate, and camera presets
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Source metadata disclosure** — preserves common XYZ/PDB titles, energies, PDB atom/residue fields, frame/model counts, parser notes, and explicit PDB `CONECT` bonds
-- **Native file dialogs** — open `.xyz` and `.pdb` files through the OS file picker
+- **Native file dialogs** — open supported molecule files through the OS file picker; current builds support `.xyz` and `.pdb`
 - **Atom visibility controls** — hide selected atoms, show all atoms, hide all hydrogens, or hide only C-H hydrogens for cleaner figures
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
-- **Session labels** — add persistent atom, distance, angle, and dihedral labels for the current molecule session
-- **Saved presentation state** — labels, visibility, styles, poses, and view choices are stored in app data per file
+- **Annotations** — add persistent atom, distance, angle, and dihedral annotations for the current molecule session
+- **Saved presentation state** — annotations, visibility, styles, material preset, poses, and view choices are stored in app data per file
 - **Saved poses and recent files** — recall publication camera views and move between supported files in a folder
 - **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
-- **Selected styling** — apply local atom colours/sizes and visual bond styles for selected regions
+- **Selected styling** — apply local atom colours/sizes and normal, transition-state, dative, interaction, or thin bond styles for selected regions
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
 - **Desktop menu scaffold** — standard File / Edit / View / Window / Help menus, with Quit and About wired
-- **Rust file I/O** — fast, reliable parsing with automatic format detection
+- **Rust file I/O** — fast, reliable parsing with a built-in parser registry for supported formats
 
 ---
 
 ## File Safety
 
-Cylform treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current loaders read text records, parse atoms, coordinates, and common source metadata in Rust, perceive or read bonds locally, and send geometry data to the renderer.
+Cylform treats molecule files as inert data. Opening an `.xyz` or `.pdb` file does not execute embedded scripts, shell commands, job directives, or macros. The current parser registry reads text records, parses atoms, coordinates, and common source metadata in Rust, perceives or imports bonds locally, and sends geometry data to the renderer.
 
-For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 25,000 atoms are rejected with a clear error in normal builds. That 25,000 atom cap is a conservative real-time viewer limit, not a chemistry file-format limit. Larger structures may work on faster CPU/GPU/RAM combinations, and contributors can run the app benchmark below to measure a specific system before changing the public claim. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
+For v1 stability, single-structure loading is intentionally bounded: files larger than 25 MB and structures larger than 25,000 atoms are rejected with a clear error in normal builds. That 25,000 atom cap is a conservative real-time viewer limit, not a chemistry file-format limit. Cylform already keeps the Rust data model frame-ready for future trajectory playback, but the current app deliberately displays the first frame/model only. Larger trajectory and computational-output workflows will get separate streaming/lazy-loading designs later.
 
 ---
 
-## Architecture
+## Architecture In Brief
 
 ```
 ┌──────────────────────────────────────────────┐
+│  cylform-core (Rust)                         │
+│  • Parser registry for XYZ/PDB text files    │
+│  • Frame-ready Structure + static bonds      │
+│  • Bond perception, metadata, bond kinds     │
+└────────────────────┬─────────────────────────┘
+                     │
+┌────────────────────▼─────────────────────────┐
 │  Tauri desktop shell (Rust)                  │
-│  • Native window, file dialogs               │
+│  • Native window, file dialogs, app data     │
 │  • load_molecule command                     │
-│     reads file → perceives bonds             │
-│     centres coordinates → sends JSON         │
+│  • versioned per-file presentation state     │
 └────────────────────┬─────────────────────────┘
                      │  Tauri invoke (JSON)
 ┌────────────────────▼─────────────────────────┐
 │  React + TypeScript frontend                 │
 │  • Three.js / WebGL renders to <canvas>      │
 │  • OrbitControls — rotate / pan / zoom       │
-│  • CPK colour table, atom + bond meshes      │
+│  • Instanced atom and bond rendering         │
+│  • Annotations, material presets, PNG export │
 │  • ResizeObserver keeps canvas crisp         │
 └──────────────────────────────────────────────┘
 ```
+
+This keeps computational file handling in Rust and interactive presentation in the desktop UI. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for contributor-facing details.
 
 ### Technology stack
 
@@ -272,7 +282,7 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 
 | Action | Control |
 |---|---|
-| Open file | Click **Open File** → pick `.xyz` or `.pdb` |
+| Open file | Click **Open File** → pick a supported `.xyz` or `.pdb` file |
 | Rotate | Left-click + drag |
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
@@ -282,6 +292,7 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 | Toggle floor/grid/backdrop | Use the left-side **View** overlay |
 | Toggle perspective/orthographic | Use **View** overlay → **Projection** |
 | Adjust lighting/fog/auto-rotate | Use the left-side **View** overlay |
+| Switch material preset | Use **View** overlay → **Material** |
 | Cycle hydrogen visibility | **Hide H / Hide C-H / Show H** button, or press **H** |
 | Choose hydrogen mode | Use **Style** → **Show H**, **Hide H**, or **Hide C-H H** |
 | Hide selected atoms | Switch to **Atom** or **Atom+Bond**, select atoms, then click **Hide Selected Atoms** |
@@ -291,9 +302,9 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 | Measure bond distance | Click a bond |
 | Measure bond angle | Click three atoms progressively |
 | Measure dihedral angle | Click four atoms progressively |
-| Add atom label | Switch to **Label** mode, then click an atom |
-| Add measurement label | Measure a distance/angle/dihedral, then click **Add Label** in the side panel |
-| Manage labels | Use **Labels** in the side panel to show, hide, delete, or clear session labels |
+| Add atom annotation | Switch to **Label** mode, then click an atom |
+| Add measurement annotation | Measure a distance/angle/dihedral, then click **Add Label** in the side panel |
+| Manage annotations | Use **Annotations** in the side panel to show, hide, delete, or clear saved annotations |
 | Save a pose | Use **Poses** → **Save pose** in the side panel |
 | Reopen recent file | Use **Files** in the side panel |
 | Export PNG | Click **Export PNG**, or press **Ctrl+E** |
@@ -313,8 +324,8 @@ Cylform/
 │   └── core/                    # cylform-core — pure Rust library
 │       └── src/
 │           ├── lib.rs
-│           ├── molecule.rs      # Atom, Bond, Structure; bond perception
-│           ├── io.rs            # XYZ + PDB readers/writers
+│           ├── molecule.rs      # Atom, Bond, BondKind, frame-ready Structure
+│           ├── io.rs            # Parser registry; XYZ + PDB readers/writers
 │           ├── camera.rs        # Orbital camera maths
 │           └── picker.rs        # Selection framework
 │
@@ -330,6 +341,9 @@ Cylform/
 │               └── InfoPanel.tsx
 │
 ├── docs/
+│   ├── ARCHITECTURE.md          # Contributor data-flow and extension-point notes
+│   ├── BENCHMARKING.md          # Desktop performance benchmark guide
+│   ├── INSTALL.md               # Install, uninstall, troubleshooting notes
 │   └── references/              # CYLview manuals, reference image, sample structures
 └── scripts/
     ├── build-desktop.mjs        # Cross-platform standalone desktop build
@@ -345,12 +359,15 @@ Cylform/
 - [x] XYZ and PDB file I/O
 - [x] Covalent-radius bond perception (no phantom bonds)
 - [x] Tauri desktop shell — single standalone `.exe`
-- [x] Three.js real-time renderer — glossy cyan cylinders, tiny CPK atom spheres
+- [x] Three.js real-time renderer — instanced cylinders and tiny CPK atom spheres
 - [x] White background, 4-point CYLview-style lighting
+- [x] CYLview and Houkmol material presets
 - [x] Orbit / pan / zoom camera with damping
 - [x] Session view controls for floor/grid, backdrop, projection, lighting, fog, auto-rotate, and camera presets
 - [x] Native OS file dialog
 - [x] XYZ/PDB source metadata disclosure, including PDB atom/residue fields and CONECT bonds
+- [x] Parser registry for built-in XYZ/PDB readers
+- [x] Frame-ready Rust structure model for future trajectories
 - [x] Auto-fit camera to loaded molecule
 - [x] Hydrogen visibility toggle (hide/show H)
 - [x] Atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
@@ -359,14 +376,14 @@ Cylform/
 - [x] Angle label on three selected atoms
 - [x] Dihedral label on four selected atoms
 - [x] Transient selection mode foundation for view, measure, atom, bond, and atom+bond workflows
-- [x] Session-persistent labels for atoms, distances, angles, and dihedrals
-- [x] Editable label text for saved labels
-- [x] Selected atom styling and visual bond restyling
+- [x] Session-persistent annotations for atoms, distances, angles, and dihedrals
+- [x] Editable annotation text for saved annotations
+- [x] Selected atom styling and normal/TS/dative/interaction/thin bond restyling
 - [x] Saved poses for reusable publication viewpoints
 - [x] Recent files plus previous/next navigation within the current structure directory
-- [x] Centralized per-file presentation state for labels, styles, hidden atoms, custom bonds, and poses
+- [x] Versioned per-file presentation state for annotations, styles, hidden atoms, material preset, custom bonds, and poses
 - [x] PNG export with native save dialog
-- [x] PNG export includes visible labels
+- [x] PNG export includes visible annotations
 
 ### V1 Release Target
 - [ ] Windows 11 and Ubuntu/Debian smoke test from `1.0.0-rc.1` GitHub Release artifacts
