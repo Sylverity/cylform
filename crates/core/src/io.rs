@@ -490,15 +490,15 @@ fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
 
         match record {
             "HEADER" if header.is_none() => {
-                header = text_value(pdb_record_text(&line));
+                header = text_value(pdb_record_text(line));
             }
             "TITLE" => {
-                if let Some(value) = text_value(pdb_record_text(&line)) {
+                if let Some(value) = text_value(pdb_record_text(line)) {
                     title_parts.push(value);
                 }
             }
             "COMPND" => {
-                if let Some(value) = text_value(pdb_record_text(&line)) {
+                if let Some(value) = text_value(pdb_record_text(line)) {
                     compound_parts.push(value);
                 }
             }
@@ -537,8 +537,8 @@ fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
                 ))));
             }
 
-            let atom_name = pdb_col(&line, 12, 16).to_string();
-            let element = pdb_col(&line, 76, 78).to_string();
+            let atom_name = pdb_col(line, 12, 16).to_string();
+            let element = pdb_col(line, 76, 78).to_string();
             let element = if element.is_empty() {
                 // Try to get element from atom name (columns 12-16)
                 if line.len() < 16 {
@@ -552,24 +552,24 @@ fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
                 element
             };
 
-            let x = parse_f32(pdb_col(&line, 30, 38), line_number, "x")?;
-            let y = parse_f32(pdb_col(&line, 38, 46), line_number, "y")?;
-            let z = parse_f32(pdb_col(&line, 46, 54), line_number, "z")?;
+            let x = parse_f32(pdb_col(line, 30, 38), line_number, "x")?;
+            let y = parse_f32(pdb_col(line, 38, 46), line_number, "y")?;
+            let z = parse_f32(pdb_col(line, 46, 54), line_number, "z")?;
 
-            let serial = parse_optional_i32(pdb_col(&line, 6, 11));
+            let serial = parse_optional_i32(pdb_col(line, 6, 11));
             let mut atom = Atom::new(atom_index, &element, glam::Vec3::new(x, y, z));
             atom.metadata = Some(AtomMetadata {
                 record_type: Some(record.to_string()),
                 serial,
                 atom_name: text_value(&atom_name),
-                alt_loc: text_value(pdb_col(&line, 16, 17)),
-                residue_name: text_value(pdb_col(&line, 17, 20)),
-                chain_id: text_value(pdb_col(&line, 21, 22)),
-                residue_sequence: parse_optional_i32(pdb_col(&line, 22, 26)),
-                insertion_code: text_value(pdb_col(&line, 26, 27)),
-                occupancy: parse_optional_f32(pdb_col(&line, 54, 60)),
-                b_factor: parse_optional_f32(pdb_col(&line, 60, 66)),
-                formal_charge: text_value(pdb_col(&line, 78, 80)),
+                alt_loc: text_value(pdb_col(line, 16, 17)),
+                residue_name: text_value(pdb_col(line, 17, 20)),
+                chain_id: text_value(pdb_col(line, 21, 22)),
+                residue_sequence: parse_optional_i32(pdb_col(line, 22, 26)),
+                insertion_code: text_value(pdb_col(line, 26, 27)),
+                occupancy: parse_optional_f32(pdb_col(line, 54, 60)),
+                b_factor: parse_optional_f32(pdb_col(line, 60, 66)),
+                formal_charge: text_value(pdb_col(line, 78, 80)),
             });
             structure.add_atom(atom);
             if let Some(serial) = serial {

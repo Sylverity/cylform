@@ -604,7 +604,7 @@ fn legacy_label_to_annotation(label: &Value) -> Value {
     let label_type = label.get("type").and_then(Value::as_str).unwrap_or("atom");
     let text = label.get("text").cloned().unwrap_or_else(|| json!(""));
     let id = label.get("id").cloned().unwrap_or_else(|| json!(""));
-    let visible = label.get("visible").cloned().unwrap_or_else(|| json!(true));
+    let visible = label.get("visible").cloned().unwrap_or(Value::Bool(true));
     let anchor = label.get("anchor").cloned().unwrap_or(Value::Null);
     let source = label.get("source").cloned().unwrap_or_else(|| json!({}));
     let atom_indices = source

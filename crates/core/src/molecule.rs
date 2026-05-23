@@ -139,9 +139,10 @@ pub enum BondOrder {
 }
 
 /// Figure/rendering style for a bond.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BondKind {
     /// Normal covalent-style tube.
+    #[default]
     Normal,
     /// Transition-state bond.
     Ts,
@@ -151,12 +152,6 @@ pub enum BondKind {
     Interaction,
     /// Thin highlighted bond.
     Thin,
-}
-
-impl Default for BondKind {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl BondOrder {
