@@ -122,7 +122,12 @@ jobs:
 
       - name: Build Windows bundles
         working-directory: desktop
-        run: src-ui\node_modules\.bin\tauri.cmd build --bundles nsis,msi
+        shell: pwsh
+        run: |
+          $version = node -e "console.log(require('./src-tauri/tauri.conf.json').version)"
+          $bundles = if ($version -match '-') { 'nsis' } else { 'nsis,msi' }
+          Write-Host "Building Windows bundles: $bundles"
+          src-ui\node_modules\.bin\tauri.cmd build --bundles $bundles
 
       - name: Stage Windows artifacts
         shell: pwsh
@@ -130,7 +135,10 @@ jobs:
           New-Item -ItemType Directory -Force dist/release | Out-Null
           Copy-Item target/release/cylform.exe dist/release/cylform.exe
           Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1) dist/release/Cylform-setup.exe
-          Copy-Item (Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1) dist/release/Cylform.msi
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) {
+            Copy-Item $msi dist/release/Cylform.msi
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -231,14 +239,22 @@ jobs:
         working-directory: desktop/src-ui
         run: pnpm install --frozen-lockfile
 
-      - name: Build macOS bundles
+      - name: Build macOS app bundle
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles app
+
+      - name: Stage macOS app artifact
+        run: |
+          mkdir -p dist/release
+          ditto -c -k --keepParent target/release/bundle/macos/Cylform.app dist/release/Cylform-macos-${{ matrix.arch }}.app.zip
+
+      - name: Build macOS DMG
         working-directory: desktop
         run: src-ui/node_modules/.bin/tauri build --bundles dmg
 
       - name: Stage macOS artifacts
         run: |
           mkdir -p dist/release
-          ditto -c -k --keepParent target/release/bundle/macos/Cylform.app dist/release/Cylform-macos-${{ matrix.arch }}.app.zip
           cp target/release/bundle/dmg/*.dmg dist/release/
 
       - name: Upload macOS artifacts
