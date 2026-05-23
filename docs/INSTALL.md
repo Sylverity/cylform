@@ -2,9 +2,7 @@
 
 Cylform is a desktop app for viewing, measuring, styling, and exporting molecular structures. Normal users should install a release build from GitHub Releases; you do not need Rust, Node.js, Tauri, WSL, or any developer tooling.
 
-Download releases here:
-
-https://github.com/Sylverity/Cylform/releases
+Download releases from the project’s GitHub Releases page. During private release preparation, this may be the personal/private repository; after publication, use the official public repository.
 
 ## Windows 10/11
 

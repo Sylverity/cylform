@@ -17,6 +17,7 @@ High-level project history for Cylform. This file intentionally summarizes user-
 
 ### V1 Prep Changed
 - Updated README, install notes, benchmarking guidance, contributing notes, and architecture documentation to describe the current rendering path, parser registry, frame model, annotation model, material presets, and saved-state schema.
+- Audited Markdown docs for clear ownership and current value; added a contributor documentation map and moved bulky local reference materials out of version control.
 - Clarified that the 25,000 atom cap is a conservative real-time viewer limit and that trajectory/computational-output workflows will use separate streaming or lazy-loading designs later.
 - Kept the README oriented toward chemists and researchers, with implementation detail moved into `docs/ARCHITECTURE.md`.
 

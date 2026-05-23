@@ -56,6 +56,8 @@ The renderer chooses bond style in this order:
 2. Backend `BondKind`.
 3. Normal bond style.
 
+Picking follows the same batch-oriented model. Each bond batch stores bond metadata in `userData.bonds`, and selection resolves `instanceId` back to the corresponding bond entry.
+
 ## Presentation State
 
 Saved presentation state is versioned so future releases can add fields without breaking old files.

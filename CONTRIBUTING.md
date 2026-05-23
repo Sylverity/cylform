@@ -1,6 +1,6 @@
 # Contributing to Cylform
 
-This guide is for contributors building from source. If you only want to use Cylform, download a Windows or Ubuntu/Debian release from GitHub Releases instead; release builds do not require Rust, Node.js, or Tauri tooling.
+This guide is for contributors building from source. If you only want to use Cylform, download a release build from GitHub Releases instead; release builds do not require Rust, Node.js, or Tauri tooling.
 
 ## Prerequisites
 
@@ -45,8 +45,11 @@ The `build:desktop` script is a developer convenience for producing a local stan
 ```bash
 pnpm --dir desktop/src-ui run build
 cargo test --workspace
-cargo check --workspace
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+These commands mirror the important local checks used by CI. Run `cargo fmt --all` without `--check` to apply Rust formatting before committing.
 
 ## Benchmarking performance
 
@@ -84,6 +87,7 @@ For the current data flow, renderer batching model, frame-ready structure model,
 
 - Rust: `cargo fmt` + `cargo clippy` before committing
 - TypeScript: `pnpm --dir desktop/src-ui run build` to check types and build the frontend
+- Changelog: update `CHANGELOG.md` for user-visible features, release-prep work, architecture changes, and packaging changes
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
   (`feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, `chore:`)
 
@@ -95,8 +99,18 @@ For the current data flow, renderer batching model, frame-ready structure model,
 4. Prefer existing extension points before adding new cross-cutting systems:
    - New molecule readers should use the `FormatParser` registry.
    - New persisted UI state should extend the versioned presentation envelope with defaults.
-   - New saved labels or measurements should extend the unified annotation model.
+   - New saved labels, measurements, or other persisted notes should extend the unified annotation model.
    - New permanent bond styles should flow through `BondKind` and the instanced bond batches.
+
+## Documentation map
+
+- `README.md` is the end-user overview: what Cylform does, supported workflows, install pointers, usage, roadmap, and the brief architecture sketch.
+- `CHANGELOG.md` is the project history at release-note level. Keep it current, but do not turn it into a commit log.
+- `docs/INSTALL.md` is the step-by-step install, uninstall, basic-use, file-safety, and troubleshooting guide for users.
+- `docs/ARCHITECTURE.md` is the contributor-facing data-flow and extension-point guide.
+- `docs/BENCHMARKING.md` is the performance benchmark guide and the source of truth for atom-capacity claim validation.
+- `SECURITY.md` and `CODE_OF_CONDUCT.md` are public project policy documents.
+- `AGENTS.md` is intentionally only a pointer back to `README.md`, so project guidance has one maintained home.
 
 ## License
 

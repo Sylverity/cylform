@@ -131,7 +131,7 @@ This keeps computational file handling in Rust and interactive presentation in t
 
 ## Download & Install
 
-For normal use, download Cylform from the project’s [GitHub Releases](https://github.com/Sylverity/Cylform/releases). You do not need Rust, Node.js, Tauri, WSL, or developer tools to run release builds.
+For normal use, download Cylform from the project’s GitHub Releases page. You do not need Rust, Node.js, Tauri, WSL, or developer tools to run release builds.
 
 ### Windows 10/11
 
@@ -343,8 +343,7 @@ Cylform/
 ├── docs/
 │   ├── ARCHITECTURE.md          # Contributor data-flow and extension-point notes
 │   ├── BENCHMARKING.md          # Desktop performance benchmark guide
-│   ├── INSTALL.md               # Install, uninstall, troubleshooting notes
-│   └── references/              # CYLview manuals, reference image, sample structures
+│   └── INSTALL.md               # Install, uninstall, troubleshooting notes
 └── scripts/
     ├── build-desktop.mjs        # Cross-platform standalone desktop build
     └── build-desktop.ps1        # Windows PowerShell wrapper retained for convenience
@@ -387,6 +386,7 @@ Cylform/
 
 ### V1 Release Target
 - [ ] Windows 11 and Ubuntu/Debian smoke test from `1.0.0-rc.1` GitHub Release artifacts
+- [ ] macOS Apple Silicon smoke test from `1.0.0-rc.1` GitHub Release artifacts
 - [ ] Promote `1.0.0-rc.1` to `1.0.0` after release-candidate smoke testing
 
 ### Post-v1 Parity

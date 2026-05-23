@@ -27,6 +27,9 @@ Thumbs.db
 *.log
 benchmark-results/
 
+# Local reference materials
+/docs/references/
+
 # Build outputs
 *.exe
 *.dll
