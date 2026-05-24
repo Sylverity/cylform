@@ -9,6 +9,24 @@ use glam::{Mat4, Vec3};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Default multiplier applied to summed covalent radii during bond perception.
+pub const DEFAULT_BOND_PERCEPTION_TOLERANCE: f32 = 1.3;
+
+/// Lower bound for configurable bond-perception tolerance.
+pub const MIN_BOND_PERCEPTION_TOLERANCE: f32 = 1.1;
+
+/// Upper bound for configurable bond-perception tolerance.
+pub const MAX_BOND_PERCEPTION_TOLERANCE: f32 = 1.5;
+
+/// Clamp a user-facing bond-perception tolerance to the supported range.
+pub fn normalize_bond_perception_tolerance(tolerance: f32) -> f32 {
+    if tolerance.is_finite() {
+        tolerance.clamp(MIN_BOND_PERCEPTION_TOLERANCE, MAX_BOND_PERCEPTION_TOLERANCE)
+    } else {
+        DEFAULT_BOND_PERCEPTION_TOLERANCE
+    }
+}
+
 /// An atom in a molecular structure
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Atom {
@@ -339,9 +357,14 @@ impl Structure {
 
     /// Auto-perceive bonds using covalent radii thresholds.
     pub fn perceive_bonds(&mut self) {
+        self.perceive_bonds_with_tolerance(DEFAULT_BOND_PERCEPTION_TOLERANCE);
+    }
+
+    /// Auto-perceive bonds using covalent radii thresholds and an explicit tolerance.
+    pub fn perceive_bonds_with_tolerance(&mut self, tolerance: f32) {
         self.static_bonds.clear();
         let indices = (0..self.atoms().len()).collect::<Vec<_>>();
-        self.perceive_bonds_for_indices(&indices);
+        self.perceive_bonds_for_indices(&indices, normalize_bond_perception_tolerance(tolerance));
     }
 
     /// Whether source metadata can identify molecule-like residue groups.
@@ -357,7 +380,15 @@ impl Structure {
 
     /// Auto-perceive bonds independently inside source metadata groups.
     pub fn perceive_bonds_within_metadata_groups(&mut self) {
+        self.perceive_bonds_within_metadata_groups_with_tolerance(
+            DEFAULT_BOND_PERCEPTION_TOLERANCE,
+        );
+    }
+
+    /// Auto-perceive bonds independently inside source metadata groups with an explicit tolerance.
+    pub fn perceive_bonds_within_metadata_groups_with_tolerance(&mut self, tolerance: f32) {
         self.static_bonds.clear();
+        let tolerance = normalize_bond_perception_tolerance(tolerance);
 
         let mut groups = HashMap::<String, Vec<usize>>::new();
         let mut ungrouped = Vec::<usize>::new();
@@ -370,14 +401,14 @@ impl Structure {
         }
 
         for indices in groups.values() {
-            self.perceive_bonds_for_indices(indices);
+            self.perceive_bonds_for_indices(indices, tolerance);
         }
         if !ungrouped.is_empty() {
-            self.perceive_bonds_for_indices(&ungrouped);
+            self.perceive_bonds_for_indices(&ungrouped, tolerance);
         }
     }
 
-    fn perceive_bonds_for_indices(&mut self, indices: &[usize]) {
+    fn perceive_bonds_for_indices(&mut self, indices: &[usize], tolerance: f32) {
         if indices.len() < 2 {
             return;
         }
@@ -407,7 +438,7 @@ impl Structure {
                             let distance = atom_i.position.distance(atom_j.position);
                             let max_bond_dist = (Atom::covalent_radius(&atom_i.element)
                                 + Atom::covalent_radius(&atom_j.element))
-                                * 1.3;
+                                * tolerance;
 
                             if distance > 0.4 && distance < max_bond_dist {
                                 self.static_bonds.push(Bond::new(
@@ -513,6 +544,19 @@ mod tests {
         assert_eq!(structure.atoms().len(), 2);
         assert_eq!(structure.bonds().len(), 1);
         assert_eq!(structure.static_bonds.len(), 1);
+    }
+
+    #[test]
+    fn test_bond_perception_tolerance_changes_threshold() {
+        let mut structure = Structure::new("test");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "C", Vec3::new(1.75, 0.0, 0.0)));
+
+        structure.perceive_bonds_with_tolerance(1.1);
+        assert_eq!(structure.bonds().len(), 0);
+
+        structure.perceive_bonds_with_tolerance(1.3);
+        assert_eq!(structure.bonds().len(), 1);
     }
 
     #[test]

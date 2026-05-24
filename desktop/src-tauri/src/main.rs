@@ -13,7 +13,7 @@ use cylform_core::{
         read_structure_with_options, supported_read_extensions, FileFormat, IoError, ReadOptions,
         MAX_ATOMS,
     },
-    molecule::{BondKind, Structure},
+    molecule::{normalize_bond_perception_tolerance, BondKind, Structure},
     CoreError,
 };
 use parking_lot::Mutex;
@@ -424,14 +424,19 @@ impl Default for PresentationStateEnvelope {
 fn load_molecule(
     path: String,
     frame_index: Option<usize>,
+    bond_perception_tolerance: Option<f32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<MoleculeData, String> {
     let frame_index = frame_index.unwrap_or(0);
     log::info!("Loading molecule from: {} (frame {})", path, frame_index);
 
-    let mut structure =
-        read_structure_with_options(&path, FileFormat::Auto, read_options_from_env())
-            .map_err(format_load_error)?;
+    let mut read_options = read_options_from_env();
+    if let Some(tolerance) = bond_perception_tolerance {
+        read_options.bond_perception_tolerance = normalize_bond_perception_tolerance(tolerance);
+    }
+
+    let mut structure = read_structure_with_options(&path, FileFormat::Auto, read_options)
+        .map_err(format_load_error)?;
     if structure.frame(frame_index).is_none() {
         return Err(format!(
             "Frame index {} is out of range for {} frame(s).",
@@ -527,7 +532,10 @@ fn read_options_from_env() -> ReadOptions {
         .filter(|value| *value > 0)
         .unwrap_or(MAX_ATOMS);
 
-    ReadOptions { max_atoms }
+    ReadOptions {
+        max_atoms,
+        ..ReadOptions::default()
+    }
 }
 
 #[tauri::command]
@@ -1260,18 +1268,22 @@ fn write_recent_files(app: &AppHandle, entries: &[RecentFileEntry]) -> Result<()
     fs::write(path, contents).map_err(|error| format!("Could not save recent files: {error}"))
 }
 
+fn normalize_recent_files_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(12).clamp(5, 50)
+}
+
 #[tauri::command]
-fn get_recent_files(app: AppHandle) -> Result<Vec<RecentFileEntry>, String> {
+fn get_recent_files(app: AppHandle, limit: Option<usize>) -> Result<Vec<RecentFileEntry>, String> {
     let entries = read_recent_files(&app)?;
     Ok(entries
         .into_iter()
         .filter(|entry| Path::new(&entry.path).is_file())
-        .take(12)
+        .take(normalize_recent_files_limit(limit))
         .collect())
 }
 
 #[tauri::command]
-fn record_recent_file(app: AppHandle, path: String) -> Result<(), String> {
+fn record_recent_file(app: AppHandle, path: String, limit: Option<usize>) -> Result<(), String> {
     let file_name = Path::new(&path)
         .file_name()
         .and_then(|name| name.to_str())
@@ -1286,7 +1298,7 @@ fn record_recent_file(app: AppHandle, path: String) -> Result<(), String> {
             name: file_name,
         },
     );
-    entries.truncate(12);
+    entries.truncate(normalize_recent_files_limit(limit));
     write_recent_files(&app, &entries)
 }
 

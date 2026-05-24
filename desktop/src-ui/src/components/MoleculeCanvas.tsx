@@ -111,6 +111,18 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes;
 }
 
+function clampPrecision(precision: number): number {
+  return Math.min(4, Math.max(1, Math.round(precision)));
+}
+
+function formatDistance(value: number, precision: number): string {
+  return `${value.toFixed(clampPrecision(precision))} A`;
+}
+
+function formatAngle(value: number, precision: number): string {
+  return `${value.toFixed(clampPrecision(precision))} deg`;
+}
+
 function perfLoggingEnabled(): boolean {
   try {
     return window.localStorage.getItem('cylformPerf') === '1';
@@ -133,6 +145,11 @@ interface Props {
   atomSizeScale: number;
   materialPreset: MaterialPresetId;
   viewOptions: ViewOptions;
+  distancePrecision: number;
+  anglePrecision: number;
+  pngExportScale: 1 | 2 | 4;
+  mouseMode: 'standard' | 'one-button';
+  invertScrollZoom: boolean;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
   onMaterialPresetChange: Dispatch<SetStateAction<MaterialPresetId>>;
   selectedBond: SelectedBondMeasurement | null;
@@ -257,9 +274,18 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function backdropColor(tone: ViewOptions['backdropTone']): number {
+function hexColorNumber(hex: string | undefined, fallback: number): number {
+  if (!hex) return fallback;
+  const normalized = hex.trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return fallback;
+  return Number.parseInt(normalized.slice(1), 16);
+}
+
+function backdropColor(tone: ViewOptions['backdropTone'], customHex?: string): number {
   if (tone === 'warm') return 0xf2eee7;
   if (tone === 'slate') return 0xdce3ea;
+  if (tone === 'black') return 0x05070a;
+  if (tone === 'custom') return hexColorNumber(customHex, 0xffffff);
   return 0xffffff;
 }
 
@@ -717,6 +743,11 @@ export function MoleculeCanvas({
   atomSizeScale,
   materialPreset,
   viewOptions,
+  distancePrecision,
+  anglePrecision,
+  pngExportScale,
+  mouseMode,
+  invertScrollZoom,
   onViewOptionsChange,
   onMaterialPresetChange,
   selectedBond,
@@ -753,6 +784,8 @@ export function MoleculeCanvas({
   const hiddenAtomIndicesRef = useRef<number[]>(hiddenAtomIndices);
   const hydrogenVisibilityRef = useRef<HydrogenVisibility>(hydrogenVisibility);
   const moleculeDataRef = useRef<MoleculeData | null>(moleculeData);
+  const distancePrecisionRef = useRef(distancePrecision);
+  const anglePrecisionRef = useRef(anglePrecision);
   const visibilityIndexRef = useRef<MoleculeVisibilityIndex | null>(null);
   const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
@@ -785,6 +818,11 @@ export function MoleculeCanvas({
   }, [moleculeData]);
 
   useEffect(() => {
+    distancePrecisionRef.current = distancePrecision;
+    anglePrecisionRef.current = anglePrecision;
+  }, [anglePrecision, distancePrecision]);
+
+  useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
   }, [visibilityIndex]);
 
@@ -796,60 +834,88 @@ export function MoleculeCanvas({
       throw new Error('Load a molecule before exporting a PNG.');
     }
 
-    ctx.renderer.render(ctx.scene, ctx.camera);
+    const renderer = ctx.renderer;
+    const sourceCanvas = renderer.domElement;
+    const originalPixelRatio = renderer.getPixelRatio();
+    const originalSize = new Vector2();
+    renderer.getSize(originalSize);
+    const cssWidth = sourceCanvas.clientWidth || originalSize.x || 800;
+    const cssHeight = sourceCanvas.clientHeight || originalSize.y || 600;
+    const exportScale = maxWidth ? 1 : Math.max(1, pngExportScale);
+    const shouldRenderScaled = !maxWidth && exportScale > 1;
 
-    const sourceCanvas = ctx.renderer.domElement;
-    const outputScale = maxWidth && sourceCanvas.width > maxWidth
-      ? maxWidth / sourceCanvas.width
-      : 1;
-    const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = Math.max(1, Math.round(sourceCanvas.width * outputScale));
-    exportCanvas.height = Math.max(1, Math.round(sourceCanvas.height * outputScale));
-    const exportCtx = exportCanvas.getContext('2d');
-    if (!exportCtx) {
-      throw new Error('Could not prepare PNG export canvas.');
-    }
+    try {
+      if (shouldRenderScaled) {
+        const renderWidth = Math.max(1, Math.round(cssWidth * exportScale));
+        const renderHeight = Math.max(1, Math.round(cssHeight * exportScale));
+        renderer.setPixelRatio(1);
+        renderer.setSize(renderWidth, renderHeight, false);
+        ctx.perspectiveCamera.aspect = renderWidth / renderHeight;
+        ctx.perspectiveCamera.updateProjectionMatrix();
+      }
 
-    exportCtx.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
-    if (host) {
-      const scaleX = exportCanvas.width / sourceCanvas.clientWidth;
-      const scaleY = exportCanvas.height / sourceCanvas.clientHeight;
-      const hostRect = host.getBoundingClientRect();
-      const labels = host.querySelectorAll<HTMLElement>(
-        '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
-      );
+      renderer.render(ctx.scene, ctx.camera);
 
-      for (const label of labels) {
-        const text = label.textContent?.trim();
-        if (!text || label.style.display === 'none') continue;
-        const rect = label.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) continue;
-        const styles = window.getComputedStyle(label);
-        const x = (rect.left - hostRect.left) * scaleX;
-        const y = (rect.top - hostRect.top) * scaleY;
-        const width = rect.width * scaleX;
-        const height = rect.height * scaleY;
-        const radius = Math.min(12 * scaleX, height / 2);
+      const outputScale = maxWidth && sourceCanvas.width > maxWidth
+        ? maxWidth / sourceCanvas.width
+        : 1;
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = Math.max(1, Math.round(sourceCanvas.width * outputScale));
+      exportCanvas.height = Math.max(1, Math.round(sourceCanvas.height * outputScale));
+      const exportCtx = exportCanvas.getContext('2d');
+      if (!exportCtx) {
+        throw new Error('Could not prepare PNG export canvas.');
+      }
 
-        exportCtx.save();
-        exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
-        exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
-        exportCtx.lineWidth = Math.max(1, scaleX);
-        exportCtx.beginPath();
-        exportCtx.roundRect(x, y, width, height, radius);
-        exportCtx.fill();
-        exportCtx.stroke();
-        exportCtx.fillStyle = styles.color || '#1f2933';
-        exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
-        exportCtx.textAlign = 'center';
-        exportCtx.textBaseline = 'middle';
-        exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
-        exportCtx.restore();
+      exportCtx.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+      if (host) {
+        const scaleX = exportCanvas.width / cssWidth;
+        const scaleY = exportCanvas.height / cssHeight;
+        const hostRect = host.getBoundingClientRect();
+        const labels = host.querySelectorAll<HTMLElement>(
+          '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
+        );
+
+        for (const label of labels) {
+          const text = label.textContent?.trim();
+          if (!text || label.style.display === 'none') continue;
+          const rect = label.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          const styles = window.getComputedStyle(label);
+          const x = (rect.left - hostRect.left) * scaleX;
+          const y = (rect.top - hostRect.top) * scaleY;
+          const width = rect.width * scaleX;
+          const height = rect.height * scaleY;
+          const radius = Math.min(12 * scaleX, height / 2);
+
+          exportCtx.save();
+          exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
+          exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
+          exportCtx.lineWidth = Math.max(1, scaleX);
+          exportCtx.beginPath();
+          exportCtx.roundRect(x, y, width, height, radius);
+          exportCtx.fill();
+          exportCtx.stroke();
+          exportCtx.fillStyle = styles.color || '#1f2933';
+          exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
+          exportCtx.textAlign = 'center';
+          exportCtx.textBaseline = 'middle';
+          exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
+          exportCtx.restore();
+        }
+      }
+
+      return exportCanvas.toDataURL('image/png');
+    } finally {
+      if (shouldRenderScaled) {
+        renderer.setPixelRatio(originalPixelRatio);
+        renderer.setSize(originalSize.x, originalSize.y, false);
+        ctx.perspectiveCamera.aspect = cssWidth / cssHeight;
+        ctx.perspectiveCamera.updateProjectionMatrix();
+        renderer.render(ctx.scene, ctx.camera);
       }
     }
-
-    return exportCanvas.toDataURL('image/png');
-  }, [moleculeData]);
+  }, [moleculeData, pngExportScale]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -900,11 +966,18 @@ export function MoleculeCanvas({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping  = true;
     controls.dampingFactor  = 0.08;
-    controls.mouseButtons   = {
-      LEFT:   MOUSE.ROTATE,
-      MIDDLE: MOUSE.DOLLY,
-      RIGHT:  MOUSE.PAN,
-    };
+    controls.mouseButtons = mouseMode === 'one-button'
+      ? {
+          LEFT: MOUSE.ROTATE,
+          MIDDLE: MOUSE.PAN,
+          RIGHT: MOUSE.PAN,
+        }
+      : {
+          LEFT: MOUSE.ROTATE,
+          MIDDLE: MOUSE.DOLLY,
+          RIGHT: MOUSE.PAN,
+        };
+    controls.zoomSpeed = invertScrollZoom ? -1 : 1;
 
     const molGroup = new Group();
     scene.add(molGroup);
@@ -965,7 +1038,7 @@ export function MoleculeCanvas({
 
         bondLabel.style.display = visible ? 'block' : 'none';
         bondLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        bondLabel.textContent = `${selectedBond.distance.toFixed(2)} A`;
+        bondLabel.textContent = formatDistance(selectedBond.distance, distancePrecisionRef.current);
       } else if (bondLabel) {
         bondLabel.style.display = 'none';
       }
@@ -981,7 +1054,7 @@ export function MoleculeCanvas({
 
         angleLabel.style.display = visible ? 'block' : 'none';
         angleLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        angleLabel.textContent = `${angleDegrees.toFixed(2)} deg`;
+        angleLabel.textContent = formatAngle(angleDegrees, anglePrecisionRef.current);
       } else if (angleLabel) {
         angleLabel.style.display = 'none';
       }
@@ -997,7 +1070,7 @@ export function MoleculeCanvas({
 
         dihedralLabel.style.display = visible ? 'block' : 'none';
         dihedralLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        dihedralLabel.textContent = `${dihedralDegrees.toFixed(2)} deg`;
+        dihedralLabel.textContent = formatAngle(dihedralDegrees, anglePrecisionRef.current);
       } else if (dihedralLabel) {
         dihedralLabel.style.display = 'none';
       }
@@ -1855,6 +1928,24 @@ export function MoleculeCanvas({
     onBenchmarkRender,
   ]);
 
+  useEffect(() => {
+    const ctx = ctxRef.current;
+    if (!ctx) return;
+
+    ctx.controls.mouseButtons = mouseMode === 'one-button'
+      ? {
+          LEFT: MOUSE.ROTATE,
+          MIDDLE: MOUSE.PAN,
+          RIGHT: MOUSE.PAN,
+        }
+      : {
+          LEFT: MOUSE.ROTATE,
+          MIDDLE: MOUSE.DOLLY,
+          RIGHT: MOUSE.PAN,
+        };
+    ctx.controls.zoomSpeed = invertScrollZoom ? -1 : 1;
+  }, [invertScrollZoom, mouseMode]);
+
   // Apply scene/view options in place so rendering controls do not rebuild meshes.
   useEffect(() => {
     const ctx = ctxRef.current;
@@ -1862,7 +1953,7 @@ export function MoleculeCanvas({
 
     setActiveCamera(ctx, viewOptions.projection);
 
-    const bg = backdropColor(viewOptions.backdropTone);
+    const bg = backdropColor(viewOptions.backdropTone, viewOptions.customBackdropHex);
     ctx.scene.background = new Color(bg);
 
     const distance = Math.max(
@@ -1916,11 +2007,11 @@ export function MoleculeCanvas({
       : selectedDihedral?.stage === 3
         ? 'Select atom 4'
         : selectedDihedral?.stage === 4
-          ? `Dihedral ${selectedDihedral.dihedralDegrees.toFixed(2)} deg`
+          ? `Dihedral ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision)}`
           : selectedAngle
-        ? `Angle ${selectedAngle.angleDegrees.toFixed(2)} deg`
+        ? `Angle ${formatAngle(selectedAngle.angleDegrees, anglePrecision)}`
         : selectedBond
-          ? `Distance ${selectedBond.distance.toFixed(2)} A`
+          ? `Distance ${formatDistance(selectedBond.distance, distancePrecision)}`
           : 'Click a bond for distance, or atoms for angle/dihedral';
 
   const helpText = !moleculeData
@@ -1988,6 +2079,8 @@ export function MoleculeCanvas({
             <option value="clean">Clean white</option>
             <option value="warm">Warm grey</option>
             <option value="slate">Slate</option>
+            <option value="black">Black</option>
+            <option value="custom">Custom</option>
           </select>
         </label>
 

@@ -6,7 +6,10 @@
 //!
 //! Future: Full chemfiles integration for 40+ formats
 
-use crate::molecule::{Atom, AtomMetadata, Bond, BondOrder, Structure};
+use crate::molecule::{
+    normalize_bond_perception_tolerance, Atom, AtomMetadata, Bond, BondOrder, Structure,
+    DEFAULT_BOND_PERCEPTION_TOLERANCE,
+};
 use crate::{CoreError, Result};
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -40,13 +43,22 @@ pub const MAX_ATOMS: usize = 25_000;
 pub struct ReadOptions {
     /// Maximum atom count accepted by this read.
     pub max_atoms: usize,
+    /// Covalent-radii multiplier used for perceived bonds.
+    pub bond_perception_tolerance: f32,
 }
 
 impl Default for ReadOptions {
     fn default() -> Self {
         Self {
             max_atoms: MAX_ATOMS,
+            bond_perception_tolerance: DEFAULT_BOND_PERCEPTION_TOLERANCE,
         }
+    }
+}
+
+impl ReadOptions {
+    fn normalized_bond_perception_tolerance(&self) -> f32 {
+        normalize_bond_perception_tolerance(self.bond_perception_tolerance)
     }
 }
 
@@ -464,7 +476,7 @@ fn read_xyz_content(content: &str, options: ReadOptions) -> Result<Structure> {
     }
 
     // Auto-perceive bonds
-    structure.perceive_bonds();
+    structure.perceive_bonds_with_tolerance(options.normalized_bond_perception_tolerance());
 
     Ok(structure)
 }
@@ -632,9 +644,11 @@ fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
 
     if structure.bonds().is_empty() {
         if structure.has_metadata_groups() {
-            structure.perceive_bonds_within_metadata_groups();
+            structure.perceive_bonds_within_metadata_groups_with_tolerance(
+                options.normalized_bond_perception_tolerance(),
+            );
         } else {
-            structure.perceive_bonds();
+            structure.perceive_bonds_with_tolerance(options.normalized_bond_perception_tolerance());
         }
     }
 
@@ -728,6 +742,40 @@ H -0.757000 0.586000 0.000000
         assert!(!structure.static_bonds.is_empty());
         assert_eq!(structure.metadata.source_format.as_deref(), Some("XYZ"));
         assert_eq!(structure.metadata.title.as_deref(), Some("Water molecule"));
+    }
+
+    #[test]
+    fn test_read_xyz_uses_bond_perception_tolerance() {
+        let xyz_content = r#"2
+Loose carbon pair
+C 0.000000 0.000000 0.000000
+C 1.750000 0.000000 0.000000
+"#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(xyz_content.as_bytes()).unwrap();
+
+        let strict = read_structure_with_options(
+            temp_file.path(),
+            FileFormat::Xyz,
+            ReadOptions {
+                bond_perception_tolerance: 1.1,
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap();
+        let permissive = read_structure_with_options(
+            temp_file.path(),
+            FileFormat::Xyz,
+            ReadOptions {
+                bond_perception_tolerance: 1.3,
+                ..ReadOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(strict.bond_count(), 0);
+        assert_eq!(permissive.bond_count(), 1);
     }
 
     #[test]

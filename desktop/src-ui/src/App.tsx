@@ -133,7 +133,7 @@ export interface Annotation {
 
 export type PersistentLabel = Annotation;
 
-export type BackdropTone = 'clean' | 'warm' | 'slate';
+export type BackdropTone = 'clean' | 'warm' | 'slate' | 'black' | 'custom';
 export type ProjectionMode = 'perspective' | 'orthographic';
 export type LightingMood = 'publication' | 'soft-studio' | 'high-contrast';
 
@@ -141,6 +141,7 @@ export interface ViewOptions {
   showFloor: boolean;
   showGrid: boolean;
   backdropTone: BackdropTone;
+  customBackdropHex?: string;
   projection: ProjectionMode;
   lightingMood: LightingMood;
   fogEnabled: boolean;
@@ -414,6 +415,28 @@ function defaultAppSettings(): AppSettings {
   };
 }
 
+function clampPrecision(precision: number): number {
+  return Math.min(4, Math.max(1, Math.round(precision)));
+}
+
+function formatDistance(value: number, precision: number): string {
+  return `${value.toFixed(clampPrecision(precision))} A`;
+}
+
+function formatAngle(value: number, precision: number): string {
+  return `${value.toFixed(clampPrecision(precision))} deg`;
+}
+
+function backdropToneFromSettings(settings: AppSettings): Pick<ViewOptions, 'backdropTone' | 'customBackdropHex'> {
+  if (settings.rendering.defaultBackground === 'black') {
+    return { backdropTone: 'black', customBackdropHex: settings.rendering.customBackgroundHex };
+  }
+  if (settings.rendering.defaultBackground === 'custom') {
+    return { backdropTone: 'custom', customBackdropHex: settings.rendering.customBackgroundHex };
+  }
+  return { backdropTone: 'clean', customBackdropHex: settings.rendering.customBackgroundHex };
+}
+
 function createTabId(): string {
   return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -429,10 +452,12 @@ function createPreviewJob(entry: PoseLibraryEntry): PosePreviewJob {
 
 function PosePreviewRenderer({
   job,
+  appSettings,
   onCaptured,
   onFailed,
 }: {
   job: PosePreviewJob | null;
+  appSettings: AppSettings;
   onCaptured: (job: PosePreviewJob, dataUrl: string) => void;
   onFailed: (job: PosePreviewJob, error: string) => void;
 }) {
@@ -455,7 +480,11 @@ function PosePreviewRenderer({
     const loadPreviewDocument = async () => {
       try {
         const [data, state] = await Promise.all([
-          invoke<MoleculeData>('load_molecule', { path: job.moleculePath, frameIndex: 0 }),
+          invoke<MoleculeData>('load_molecule', {
+            path: job.moleculePath,
+            frameIndex: 0,
+            bondPerceptionTolerance: appSettings.chemistry.bondPerceptionTolerance,
+          }),
           invoke<PresentationState | null>('load_presentation_state', { path: job.moleculePath }),
         ]);
         if (cancelled) return;
@@ -475,7 +504,7 @@ function PosePreviewRenderer({
     return () => {
       cancelled = true;
     };
-  }, [job, onFailed]);
+  }, [appSettings.chemistry.bondPerceptionTolerance, job, onFailed]);
 
   if (!job || !moleculeData) return null;
 
@@ -500,6 +529,11 @@ function PosePreviewRenderer({
           atomSizeScale={styles?.atom_size_scale ?? 1}
           materialPreset={styles?.material_preset ?? 'CYLview'}
           viewOptions={job.pose.viewOptions}
+          distancePrecision={appSettings.chemistry.distancePrecision}
+          anglePrecision={appSettings.chemistry.anglePrecision}
+          pngExportScale={appSettings.rendering.pngExportScale}
+          mouseMode={appSettings.interaction.mouseMode}
+          invertScrollZoom={appSettings.interaction.invertScrollZoom}
           onViewOptionsChange={() => undefined}
           onMaterialPresetChange={() => undefined}
           selectedBond={null}
@@ -995,8 +1029,10 @@ function App() {
   const [recentDialogOpen, setRecentDialogOpen] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
   const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
+  const appSettingsRef = useRef<AppSettings>(defaultAppSettings());
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
+  const skipNextSessionSave = useRef(false);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
   const benchmarkLoadMetrics = useRef<BenchmarkLoadMetrics | null>(null);
   const benchmarkFinished = useRef(false);
@@ -1007,6 +1043,7 @@ function App() {
     showFloor: true,
     showGrid: true,
     backdropTone: 'clean',
+    customBackdropHex: '#ffffff',
     projection: 'perspective',
     lightingMood: 'publication',
     fogEnabled: true,
@@ -1015,24 +1052,50 @@ function App() {
     autoRotateSpeed: 0.35,
   });
 
-  const defaultPresentationState = useCallback(() => ({
-    annotations: [] as Annotation[],
-    hidden_atoms: [] as number[],
-    styles: {
-      hydrogen_visibility: 'shown' as HydrogenVisibility,
-      element_color_overrides: {} as ElementColorOverrides,
-      atom_size_scale: 1,
-      atom_style_overrides: {} as Record<string, AtomStyleOverride>,
-      bond_style_overrides: {} as Record<string, BondStyleOverride>,
-      material_preset: 'CYLview' as MaterialPresetId,
-    },
-    poses: [] as SavedPose[],
-    camera: undefined as ViewOptions | undefined,
-  }), []);
+  useEffect(() => {
+    appSettingsRef.current = appSettings;
+  }, [appSettings]);
+
+  const defaultPresentationState = useCallback(() => {
+    const settings = appSettingsRef.current;
+    const defaultMaterial = settings.rendering.defaultMaterialPreset === 'last-used'
+      ? materialPreset
+      : settings.rendering.defaultMaterialPreset;
+    const showFloorGrid = settings.rendering.showFloorGridByDefault;
+    const backdrop = backdropToneFromSettings(settings);
+
+    return {
+      annotations: [] as Annotation[],
+      hidden_atoms: [] as number[],
+      styles: {
+        hydrogen_visibility: settings.chemistry.defaultHydrogenVisibility,
+        element_color_overrides: {} as ElementColorOverrides,
+        atom_size_scale: 1,
+        atom_style_overrides: {} as Record<string, AtomStyleOverride>,
+        bond_style_overrides: {} as Record<string, BondStyleOverride>,
+        material_preset: defaultMaterial,
+      },
+      poses: [] as SavedPose[],
+      camera: {
+        showFloor: showFloorGrid,
+        showGrid: showFloorGrid,
+        backdropTone: backdrop.backdropTone,
+        customBackdropHex: backdrop.customBackdropHex,
+        projection: settings.rendering.defaultProjection,
+        lightingMood: settings.rendering.defaultLighting,
+        fogEnabled: true,
+        fogIntensity: 0.45,
+        autoRotate: false,
+        autoRotateSpeed: 0.35,
+      } as ViewOptions,
+    };
+  }, [materialPreset]);
 
   const refreshRecentFiles = useCallback(async () => {
     try {
-      setRecentFiles(await invoke<RecentFileEntry[]>('get_recent_files'));
+      setRecentFiles(await invoke<RecentFileEntry[]>('get_recent_files', {
+        limit: appSettingsRef.current.files.recentFilesLimit,
+      }));
     } catch (err) {
       console.warn('Could not load recent files', err);
     }
@@ -1049,18 +1112,23 @@ function App() {
 
   const refreshAppSettings = useCallback(async () => {
     try {
-      setAppSettings(await invoke<AppSettings>('get_app_settings'));
+      const settings = await invoke<AppSettings>('get_app_settings');
+      appSettingsRef.current = settings;
+      setAppSettings(settings);
     } catch (err) {
       console.warn('Could not load app settings', err);
     }
   }, []);
 
   const saveAppSettings = useCallback(async (nextSettings: AppSettings) => {
+    appSettingsRef.current = nextSettings;
     setAppSettings(nextSettings);
     setSettingsStatus('Saving...');
     try {
       const saved = await invoke<AppSettings>('save_app_settings', { settings: nextSettings });
+      appSettingsRef.current = saved;
       setAppSettings(saved);
+      await refreshRecentFiles();
       setSettingsStatus('Saved');
       window.setTimeout(() => setSettingsStatus(null), 1400);
     } catch (err) {
@@ -1068,13 +1136,15 @@ function App() {
       setSettingsStatus('Could not save settings');
       setError(message);
     }
-  }, []);
+  }, [refreshRecentFiles]);
 
   const resetAppSettings = useCallback(async () => {
     setSettingsStatus('Resetting...');
     try {
       const reset = await invoke<AppSettings>('reset_app_settings');
+      appSettingsRef.current = reset;
       setAppSettings(reset);
+      await refreshRecentFiles();
       setSettingsStatus('Defaults restored');
       window.setTimeout(() => setSettingsStatus(null), 1400);
     } catch (err) {
@@ -1082,7 +1152,7 @@ function App() {
       setSettingsStatus('Could not reset settings');
       setError(message);
     }
-  }, []);
+  }, [refreshRecentFiles]);
 
   const refreshNearbyFiles = useCallback(async (path: string) => {
     try {
@@ -1131,17 +1201,7 @@ function App() {
     setBondStyleOverrides(state?.styles?.bond_style_overrides ?? defaults.styles.bond_style_overrides);
     setMaterialPreset(state?.styles?.material_preset ?? defaults.styles.material_preset);
     setSavedPoses(state?.poses ?? defaults.poses);
-    setViewOptions(state?.camera ?? {
-      showFloor: true,
-      showGrid: true,
-      backdropTone: 'clean',
-      projection: 'perspective',
-      lightingMood: 'publication',
-      fogEnabled: true,
-      fogIntensity: 0.45,
-      autoRotate: false,
-      autoRotateSpeed: 0.35,
-    });
+    setViewOptions(state?.camera ?? defaults.camera);
     nextLabelId.current = Math.max(
       1,
       ...(state?.annotations ?? []).map((label) => Number(label.id.replace(/^label-/, '')) + 1 || 1),
@@ -1184,7 +1244,13 @@ function App() {
           }
         : tab
     )));
-    if (persist && currentPath && state && hasLoadedPresentationState.current) {
+    if (
+      persist
+      && currentPath
+      && state
+      && hasLoadedPresentationState.current
+      && appSettingsRef.current.files.autosavePresentationState
+    ) {
       if (saveStateTimer.current) {
         window.clearTimeout(saveStateTimer.current);
         saveStateTimer.current = null;
@@ -1238,7 +1304,11 @@ function App() {
     const perfStart = performance.now();
 
     try {
-      const data = await invoke<MoleculeData>('load_molecule', { path, frameIndex: 0 });
+      const data = await invoke<MoleculeData>('load_molecule', {
+        path,
+        frameIndex: 0,
+        bondPerceptionTolerance: appSettingsRef.current.chemistry.bondPerceptionTolerance,
+      });
       const loadMs = performance.now() - perfStart;
       if (benchmarkConfig.current?.enabled) {
         benchmarkLoadMetrics.current = {
@@ -1266,7 +1336,10 @@ function App() {
         return true;
       }
       if (recordRecent) {
-        await invoke('record_recent_file', { path });
+        await invoke('record_recent_file', {
+          path,
+          limit: appSettingsRef.current.files.recentFilesLimit,
+        });
         await refreshRecentFiles();
       }
       await refreshNearbyFiles(path);
@@ -1390,19 +1463,20 @@ function App() {
     if (supportedPaths.length === 0) return;
 
     const knownPaths = new Set(moleculeTabs.map((tab) => tab.path));
-    let activeWillExist = Boolean(activeTabId);
+    const openDropsInBackground = appSettingsRef.current.files.droppedFilesOpenInBackground;
+    let activeWillExist = openDropsInBackground && Boolean(activeTabId);
     let acceptedCount = 0;
     let failedCount = 0;
 
     for (const path of supportedPaths) {
       if (knownPaths.has(path)) continue;
 
-      if (!activeWillExist) {
+      if (!activeWillExist || !appSettingsRef.current.files.droppedFilesOpenInBackground) {
         const opened = await activateMoleculePath(path, 'Opening dropped molecule');
         if (opened) {
           knownPaths.add(path);
           acceptedCount += 1;
-          activeWillExist = true;
+          activeWillExist = openDropsInBackground;
         } else {
           failedCount += 1;
         }
@@ -1410,7 +1484,11 @@ function App() {
       }
 
       try {
-        const data = await invoke<MoleculeData>('load_molecule', { path, frameIndex: 0 });
+        const data = await invoke<MoleculeData>('load_molecule', {
+          path,
+          frameIndex: 0,
+          bondPerceptionTolerance: appSettingsRef.current.chemistry.bondPerceptionTolerance,
+        });
         let loadedState: PresentationState | null = null;
         try {
           loadedState = await invoke<PresentationState | null>('load_presentation_state', { path });
@@ -1428,7 +1506,10 @@ function App() {
         setMoleculeTabs((current) => (
           current.some((candidate) => candidate.path === path) ? current : [...current, tab]
         ));
-        await invoke('record_recent_file', { path });
+        await invoke('record_recent_file', {
+          path,
+          limit: appSettingsRef.current.files.recentFilesLimit,
+        });
         knownPaths.add(path);
         acceptedCount += 1;
       } catch (err) {
@@ -1679,10 +1760,11 @@ function App() {
   }, []);
 
   const handleAddMeasurementLabel = useCallback(() => {
+    const { distancePrecision, anglePrecision } = appSettingsRef.current.chemistry;
     if (selectedDihedral?.stage === 4 && selectedDihedral.anchor) {
       handleCreatePersistentLabel({
         type: 'Dihedral',
-        text: `${selectedDihedral.atomElements.join('-')} ${selectedDihedral.dihedralDegrees.toFixed(2)} deg`,
+        text: `${selectedDihedral.atomElements.join('-')} ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision)}`,
         anchor: selectedDihedral.anchor,
         atoms: selectedDihedral.atomIndices,
         value: selectedDihedral.dihedralDegrees,
@@ -1694,7 +1776,7 @@ function App() {
     if (selectedAngle?.stage === 3 && selectedAngle.anchor) {
       handleCreatePersistentLabel({
         type: 'Angle',
-        text: `${selectedAngle.atomElements.join('-')} ${selectedAngle.angleDegrees.toFixed(2)} deg`,
+        text: `${selectedAngle.atomElements.join('-')} ${formatAngle(selectedAngle.angleDegrees, anglePrecision)}`,
         anchor: selectedAngle.anchor,
         atoms: selectedAngle.atomIndices,
         value: selectedAngle.angleDegrees,
@@ -1706,7 +1788,7 @@ function App() {
     if (selectedBond) {
       handleCreatePersistentLabel({
         type: 'Distance',
-        text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${selectedBond.distance.toFixed(2)} A`,
+        text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${formatDistance(selectedBond.distance, distancePrecision)}`,
         anchor: selectedBond.anchor,
         atoms: selectedBond.atomIndices,
         value: selectedBond.distance,
@@ -2095,6 +2177,10 @@ function App() {
   }, [refreshAppSettings, refreshPoseLibrary, refreshRecentFiles]);
 
   useEffect(() => {
+    void refreshRecentFiles();
+  }, [appSettings.files.recentFilesLimit, refreshRecentFiles]);
+
+  useEffect(() => {
     if (activePreviewJob || previewQueue.length === 0) return;
     const [nextJob, ...remainingJobs] = previewQueue;
     setActivePreviewJob(nextJob);
@@ -2103,6 +2189,10 @@ function App() {
 
   useEffect(() => {
     if (!hasLoadedSessionTabs) return;
+    if (skipNextSessionSave.current) {
+      skipNextSessionSave.current = false;
+      return;
+    }
     const session: SessionTabsEnvelope = {
       version: 1,
       activeTabId,
@@ -2120,6 +2210,7 @@ function App() {
 
   useEffect(() => {
     if (!currentPath || !hasLoadedPresentationState.current || isApplyingPresentationState.current) return;
+    if (!appSettings.files.autosavePresentationState) return;
     if (saveStateTimer.current) {
       window.clearTimeout(saveStateTimer.current);
     }
@@ -2141,6 +2232,7 @@ function App() {
     };
   }, [
     activeTabId,
+    appSettings.files.autosavePresentationState,
     buildPresentationState,
     currentPath,
     handleError,
@@ -2154,11 +2246,23 @@ function App() {
 
     const loadInitialWorkspace = async () => {
       try {
+        const settings = await invoke<AppSettings>('get_app_settings');
+        appSettingsRef.current = settings;
+        if (!cancelled) setAppSettings(settings);
+
         benchmarkConfig.current = await invoke<BenchmarkConfig>('get_benchmark_config');
         const startupPath = await invoke<string | null>('get_startup_file');
         if (startupPath) {
           setHasLoadedSessionTabs(true);
           await activateMoleculePath(startupPath, 'Opening startup molecule');
+          return;
+        }
+
+        if (!settings.files.restorePreviousSessionOnStartup) {
+          if (!cancelled) {
+            skipNextSessionSave.current = true;
+            setHasLoadedSessionTabs(true);
+          }
           return;
         }
 
@@ -2269,6 +2373,11 @@ function App() {
             atomSizeScale={atomSizeScale}
             materialPreset={materialPreset}
             viewOptions={viewOptions}
+            distancePrecision={appSettings.chemistry.distancePrecision}
+            anglePrecision={appSettings.chemistry.anglePrecision}
+            pngExportScale={appSettings.rendering.pngExportScale}
+            mouseMode={appSettings.interaction.mouseMode}
+            invertScrollZoom={appSettings.interaction.invertScrollZoom}
             onViewOptionsChange={setViewOptions}
             onMaterialPresetChange={setMaterialPreset}
             selectedBond={selectedBond}
@@ -2301,6 +2410,8 @@ function App() {
           persistentLabels={persistentLabels}
           selectionMode={selectionMode}
           selectionSummary={selectionSummary}
+          distancePrecision={appSettings.chemistry.distancePrecision}
+          anglePrecision={appSettings.chemistry.anglePrecision}
           elementColorOverrides={elementColorOverrides}
           atomStyleOverrides={atomStyleOverrides}
           bondStyleOverrides={bondStyleOverrides}
@@ -2368,6 +2479,7 @@ function App() {
       />
       <PosePreviewRenderer
         job={activePreviewJob}
+        appSettings={appSettings}
         onCaptured={handlePosePreviewCaptured}
         onFailed={handlePosePreviewFailed}
       />
