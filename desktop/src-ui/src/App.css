@@ -241,6 +241,108 @@
   }
 }
 
+/* Workspace tabs */
+.workspace-tabs {
+  min-height: 42px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(207, 215, 223, 0.95);
+  background: rgba(241, 245, 249, 0.92);
+  flex-shrink: 0;
+}
+
+.workspace-tab-list {
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+  overflow-x: auto;
+  padding-top: 8px;
+}
+
+.workspace-tabs-empty {
+  align-self: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.workspace-tab {
+  min-width: 128px;
+  max-width: 220px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border: 1px solid rgba(190, 201, 212, 0.86);
+  border-bottom-color: rgba(170, 182, 194, 0.92);
+  border-radius: 8px 8px 0 0;
+  background: rgba(248, 250, 252, 0.82);
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
+.workspace-tab.active {
+  background: var(--bg-primary);
+  border-color: rgba(4, 120, 87, 0.38);
+  border-bottom-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.workspace-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workspace-tab-close {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.workspace-tab-close:hover {
+  background: rgba(226, 232, 240, 0.92);
+  color: var(--text-primary);
+}
+
+.workspace-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.workspace-open-button,
+.workspace-recent-select {
+  height: 30px;
+  font-size: 12px;
+}
+
+.workspace-recent-select {
+  max-width: 180px;
+  border: 1px solid rgba(207, 215, 223, 0.95);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary);
+  padding: 0 8px;
+}
+
 /* Molecule Canvas */
 .molecule-canvas {
   flex: 1;
@@ -919,6 +1021,40 @@
   background: rgba(249, 251, 252, 0.95);
   color: var(--text-primary);
   font-size: 12px;
+  font-weight: 600;
+}
+
+.pose-library-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(217, 223, 229, 0.72);
+}
+
+.library-molecule-button {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border-color: rgba(207, 215, 223, 0.95);
+  background: rgba(249, 251, 252, 0.95);
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.library-molecule-button span,
+.library-molecule-button small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-molecule-button small {
+  color: var(--text-secondary);
+  font-size: 11px;
   font-weight: 600;
 }
 

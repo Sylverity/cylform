@@ -230,6 +230,41 @@ export interface RecentFileEntry {
   name: string;
 }
 
+export interface SessionTabRecord {
+  id: string;
+  path: string;
+  displayName: string;
+  lastOpenedAt: string;
+}
+
+export interface SessionTabsEnvelope {
+  version: 1;
+  activeTabId: string | null;
+  tabs: SessionTabRecord[];
+}
+
+export interface MoleculeTab extends SessionTabRecord {
+  molecule?: MoleculeData;
+  presentationState?: PresentationState | null;
+}
+
+export interface PoseLibraryEntry {
+  id: string;
+  name: string;
+  moleculePath: string;
+  moleculeDisplayName: string;
+  moleculeHash: string;
+  pose: SavedPose;
+  previewImagePath: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tags: string[];
+  notes: string;
+  atomCount?: number | null;
+  formula?: string | null;
+  sourceFormat?: string | null;
+}
+
 export interface BenchmarkConfig {
   enabled: boolean;
   outputPath?: string;
@@ -283,6 +318,100 @@ function perfLoggingEnabled(): boolean {
   }
 }
 
+function displayNameForPath(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+function createTabId(): string {
+  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function WorkspaceTabs({
+  tabs,
+  activeTabId,
+  recentFiles,
+  isLoading,
+  onOpenFile,
+  onOpenRecentFile,
+  onSelectTab,
+  onCloseTab,
+}: {
+  tabs: MoleculeTab[];
+  activeTabId: string | null;
+  recentFiles: RecentFileEntry[];
+  isLoading: boolean;
+  onOpenFile: () => void;
+  onOpenRecentFile: (path: string) => void;
+  onSelectTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
+}) {
+  return (
+    <div className="workspace-tabs" aria-label="Open molecules">
+      <div className="workspace-tab-list" role="tablist">
+        {tabs.length === 0 ? (
+          <span className="workspace-tabs-empty">No molecules open</span>
+        ) : (
+          tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeTabId}
+              className={tab.id === activeTabId ? 'workspace-tab active' : 'workspace-tab'}
+              title={tab.path}
+              onClick={() => onSelectTab(tab.id)}
+              disabled={isLoading}
+            >
+              <span className="workspace-tab-name">{tab.displayName}</span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="workspace-tab-close"
+                aria-label={`Close ${tab.displayName}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onCloseTab(tab.id);
+                  }
+                }}
+              >
+                ×
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+      <div className="workspace-tab-actions">
+        <button type="button" className="workspace-open-button" onClick={onOpenFile} disabled={isLoading}>
+          Open
+        </button>
+        <select
+          className="workspace-recent-select"
+          value=""
+          disabled={isLoading || recentFiles.length === 0}
+          onChange={(event) => {
+            const path = event.target.value;
+            if (path) onOpenRecentFile(path);
+          }}
+          aria-label="Open recent molecule"
+        >
+          <option value="">Open Recent</option>
+          {recentFiles.map((file) => (
+            <option key={file.path} value={file.path}>
+              {file.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
@@ -310,6 +439,10 @@ function App() {
   const [materialPreset, setMaterialPreset] = useState<MaterialPresetId>('CYLview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
+  const [moleculeTabs, setMoleculeTabs] = useState<MoleculeTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [hasLoadedSessionTabs, setHasLoadedSessionTabs] = useState(false);
+  const [poseLibrary, setPoseLibrary] = useState<PoseLibraryEntry[]>([]);
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -320,6 +453,7 @@ function App() {
   const benchmarkFinished = useRef(false);
   const isApplyingPresentationState = useRef(false);
   const hasLoadedPresentationState = useRef(false);
+  const hasStartedInitialLoad = useRef(false);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
     showFloor: true,
     showGrid: true,
@@ -355,6 +489,15 @@ function App() {
     }
   }, []);
 
+  const refreshPoseLibrary = useCallback(async () => {
+    try {
+      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('get_pose_library');
+      setPoseLibrary(library.entries);
+    } catch (err) {
+      console.warn('Could not load pose library', err);
+    }
+  }, []);
+
   const refreshNearbyFiles = useCallback(async (path: string) => {
     try {
       setNearbyFiles(await invoke<string[]>('list_supported_files_near', { path }));
@@ -362,6 +505,33 @@ function App() {
       setNearbyFiles([]);
     }
   }, []);
+
+  const buildPresentationState = useCallback((): PresentationState => ({
+    version: 1,
+    poses: savedPoses,
+    annotations: persistentLabels,
+    hidden_atoms: hiddenAtomIndices,
+    styles: {
+      hydrogen_visibility: hydrogenVisibility,
+      element_color_overrides: elementColorOverrides,
+      atom_size_scale: atomSizeScale,
+      atom_style_overrides: atomStyleOverrides,
+      bond_style_overrides: bondStyleOverrides,
+      material_preset: materialPreset,
+    },
+    camera: viewOptions,
+  }), [
+    atomSizeScale,
+    atomStyleOverrides,
+    bondStyleOverrides,
+    elementColorOverrides,
+    hiddenAtomIndices,
+    hydrogenVisibility,
+    materialPreset,
+    persistentLabels,
+    savedPoses,
+    viewOptions,
+  ]);
 
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
@@ -416,6 +586,43 @@ function App() {
     setError(err);
   }, []);
 
+  const snapshotActiveTab = useCallback((persist = false) => {
+    if (!activeTabId) return null;
+    const state = currentPath ? buildPresentationState() : null;
+    setMoleculeTabs((current) => current.map((tab) => (
+      tab.id === activeTabId
+        ? {
+            ...tab,
+            molecule: moleculeData ?? tab.molecule,
+            presentationState: state ?? tab.presentationState,
+          }
+        : tab
+    )));
+    if (persist && currentPath && state && hasLoadedPresentationState.current) {
+      if (saveStateTimer.current) {
+        window.clearTimeout(saveStateTimer.current);
+        saveStateTimer.current = null;
+      }
+      void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
+        handleError(err instanceof Error ? err.message : String(err));
+      });
+    }
+    return state;
+  }, [activeTabId, buildPresentationState, currentPath, handleError, moleculeData]);
+
+  const clearActiveMolecule = useCallback(() => {
+    setMoleculeData(null);
+    setCurrentPath(null);
+    setError(null);
+    setSelectedBond(null);
+    setSelectedAngle(null);
+    setSelectedDihedral(null);
+    setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
+    setNearbyFiles([]);
+    hasLoadedPresentationState.current = false;
+    applyPresentationState(null, false);
+  }, [applyPresentationState]);
+
   const addToast = useCallback((text: string, type: ToastMessage['type'] = 'info') => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, text, type }]);
@@ -425,7 +632,13 @@ function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const loadMoleculePath = useCallback(async (path: string, label?: string) => {
+  const activateMoleculePath = useCallback(async (
+    path: string,
+    label?: string,
+    tabRecord?: SessionTabRecord,
+    recordRecent = true,
+  ) => {
+    snapshotActiveTab(true);
     setIsLoading(true);
     setLoadingLabel(label ?? 'Loading molecule');
     const perfStart = performance.now();
@@ -456,18 +669,39 @@ function App() {
       }
       handleFileLoaded(data);
       if (benchmarkConfig.current?.enabled) {
-        return;
+        return true;
       }
-      await invoke('record_recent_file', { path });
-      await refreshRecentFiles();
+      if (recordRecent) {
+        await invoke('record_recent_file', { path });
+        await refreshRecentFiles();
+      }
       await refreshNearbyFiles(path);
+      let loadedState: PresentationState | null = null;
       try {
         const state = await invoke<PresentationState | null>('load_presentation_state', { path });
+        loadedState = state;
         applyPresentationState(state, true);
       } catch (err) {
         handleError(err instanceof Error ? err.message : String(err));
         applyPresentationState(null, true);
       }
+      const tab: MoleculeTab = {
+        id: tabRecord?.id ?? createTabId(),
+        path,
+        displayName: tabRecord?.displayName ?? data.name ?? displayNameForPath(path),
+        lastOpenedAt: new Date().toISOString(),
+        molecule: data,
+        presentationState: loadedState,
+      };
+      setActiveTabId(tab.id);
+      setMoleculeTabs((current) => {
+        const existingIndex = current.findIndex((candidate) => candidate.id === tab.id || candidate.path === path);
+        if (existingIndex < 0) return [...current, tab];
+        return current.map((candidate, index) => (
+          index === existingIndex ? { ...candidate, ...tab, id: candidate.id } : candidate
+        ));
+      });
+      return true;
     } catch (err) {
       if (benchmarkConfig.current?.enabled && !benchmarkFinished.current) {
         benchmarkFinished.current = true;
@@ -485,10 +719,59 @@ function App() {
         });
       }
       handleError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setIsLoading(false);
     }
-  }, [applyPresentationState, handleError, handleFileLoaded, refreshNearbyFiles, refreshRecentFiles]);
+  }, [
+    applyPresentationState,
+    handleError,
+    handleFileLoaded,
+    refreshNearbyFiles,
+    refreshRecentFiles,
+    snapshotActiveTab,
+  ]);
+
+  const focusMoleculeTab = useCallback(async (id: string) => {
+    const tab = moleculeTabs.find((candidate) => candidate.id === id);
+    if (!tab) return false;
+    if (tab.id === activeTabId) return true;
+    snapshotActiveTab(true);
+    setActiveTabId(tab.id);
+    if (tab.molecule) {
+      handleFileLoaded(tab.molecule);
+      await refreshNearbyFiles(tab.path);
+      applyPresentationState(tab.presentationState ?? null, true);
+      return true;
+    }
+    return activateMoleculePath(
+      tab.path,
+      'Restoring molecule tab',
+      {
+        id: tab.id,
+        path: tab.path,
+        displayName: tab.displayName,
+        lastOpenedAt: tab.lastOpenedAt,
+      },
+      false,
+    );
+  }, [
+    activateMoleculePath,
+    activeTabId,
+    applyPresentationState,
+    handleFileLoaded,
+    moleculeTabs,
+    refreshNearbyFiles,
+    snapshotActiveTab,
+  ]);
+
+  const loadMoleculePath = useCallback(async (path: string, label?: string) => {
+    const existing = moleculeTabs.find((tab) => tab.path === path);
+    if (existing) {
+      return focusMoleculeTab(existing.id);
+    }
+    return activateMoleculePath(path, label);
+  }, [activateMoleculePath, focusMoleculeTab, moleculeTabs]);
 
   const handleOpenFile = useCallback(async () => {
     try {
@@ -806,6 +1089,74 @@ function App() {
     setSavedPoses((current) => current.filter((pose) => pose.id !== id));
   }, []);
 
+  const handleAddPoseToLibrary = useCallback(async (pose: SavedPose) => {
+    if (!currentPath || !moleculeData) return;
+    try {
+      const entry = await invoke<PoseLibraryEntry>('save_pose_to_library', {
+        name: pose.name,
+        moleculePath: currentPath,
+        moleculeDisplayName: moleculeData.name || displayNameForPath(currentPath),
+        pose,
+        tags: [],
+        notes: '',
+        atomCount: moleculeData.atoms.length,
+        formula: null,
+        sourceFormat: moleculeData.metadata.sourceFormat ?? null,
+        previewImagePath: null,
+      });
+      setPoseLibrary((current) => [entry, ...current.filter((candidate) => candidate.id !== entry.id)]);
+      addToast(`Added ${pose.name} to Pose Library`, 'success');
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    }
+  }, [addToast, currentPath, handleError, moleculeData]);
+
+  const handleOpenPoseLibraryEntry = useCallback(async (entry: PoseLibraryEntry) => {
+    const loaded = await loadMoleculePath(entry.moleculePath, 'Opening library molecule');
+    if (!loaded) return;
+    window.setTimeout(() => handleApplyPose(entry.pose), 0);
+  }, [handleApplyPose, loadMoleculePath]);
+
+  const handleRenamePoseLibraryEntry = useCallback(async (id: string, name: string) => {
+    setPoseLibrary((current) => current.map((entry) => (
+      entry.id === id ? { ...entry, name } : entry
+    )));
+    try {
+      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('rename_pose_library_entry', { id, name });
+      setPoseLibrary(library.entries);
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+      void refreshPoseLibrary();
+    }
+  }, [handleError, refreshPoseLibrary]);
+
+  const handleDeletePoseLibraryEntry = useCallback(async (id: string) => {
+    try {
+      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('delete_pose_library_entry', { id });
+      setPoseLibrary(library.entries);
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    }
+  }, [handleError]);
+
+  const handleCloseTab = useCallback((id: string) => {
+    snapshotActiveTab(true);
+    const tabIndex = moleculeTabs.findIndex((tab) => tab.id === id);
+    if (tabIndex < 0) return;
+    const nextTabs = moleculeTabs.filter((tab) => tab.id !== id);
+    setMoleculeTabs(nextTabs);
+    if (activeTabId !== id) return;
+
+    const nextActive = nextTabs[tabIndex] ?? nextTabs[tabIndex - 1] ?? null;
+    if (nextActive) {
+      void focusMoleculeTab(nextActive.id);
+      return;
+    }
+
+    setActiveTabId(null);
+    clearActiveMolecule();
+  }, [activeTabId, clearActiveMolecule, focusMoleculeTab, moleculeTabs, snapshotActiveTab]);
+
   const handleClearSavedState = useCallback(async () => {
     if (!currentPath) return;
     try {
@@ -954,28 +1305,37 @@ function App() {
 
   useEffect(() => {
     void refreshRecentFiles();
-  }, [refreshRecentFiles]);
+    void refreshPoseLibrary();
+  }, [refreshPoseLibrary, refreshRecentFiles]);
+
+  useEffect(() => {
+    if (!hasLoadedSessionTabs) return;
+    const session: SessionTabsEnvelope = {
+      version: 1,
+      activeTabId,
+      tabs: moleculeTabs.map(({ id, path, displayName, lastOpenedAt }) => ({
+        id,
+        path,
+        displayName,
+        lastOpenedAt,
+      })),
+    };
+    void invoke('save_session_tabs', { session }).catch((err) => {
+      console.warn('Could not save session tabs', err);
+    });
+  }, [activeTabId, hasLoadedSessionTabs, moleculeTabs]);
 
   useEffect(() => {
     if (!currentPath || !hasLoadedPresentationState.current || isApplyingPresentationState.current) return;
     if (saveStateTimer.current) {
       window.clearTimeout(saveStateTimer.current);
     }
-    const state: PresentationState = {
-      version: 1,
-      poses: savedPoses,
-      annotations: persistentLabels,
-      hidden_atoms: hiddenAtomIndices,
-      styles: {
-        hydrogen_visibility: hydrogenVisibility,
-        element_color_overrides: elementColorOverrides,
-        atom_size_scale: atomSizeScale,
-        atom_style_overrides: atomStyleOverrides,
-        bond_style_overrides: bondStyleOverrides,
-        material_preset: materialPreset,
-      },
-      camera: viewOptions,
-    };
+    const state = buildPresentationState();
+    if (activeTabId) {
+      setMoleculeTabs((current) => current.map((tab) => (
+        tab.id === activeTabId ? { ...tab, molecule: moleculeData ?? tab.molecule, presentationState: state } : tab
+      )));
+    }
     saveStateTimer.current = window.setTimeout(() => {
       void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
         handleError(err instanceof Error ? err.message : String(err));
@@ -987,34 +1347,43 @@ function App() {
       }
     };
   }, [
-    atomSizeScale,
-    atomStyleOverrides,
-    bondStyleOverrides,
+    activeTabId,
+    buildPresentationState,
     currentPath,
-    elementColorOverrides,
     handleError,
-    hiddenAtomIndices,
-    hydrogenVisibility,
-    materialPreset,
-    persistentLabels,
-    savedPoses,
-    viewOptions,
+    moleculeData,
   ]);
 
   useEffect(() => {
+    if (hasStartedInitialLoad.current) return;
+    hasStartedInitialLoad.current = true;
     let cancelled = false;
 
-    const loadStartupFile = async () => {
+    const loadInitialWorkspace = async () => {
       try {
         benchmarkConfig.current = await invoke<BenchmarkConfig>('get_benchmark_config');
         const startupPath = await invoke<string | null>('get_startup_file');
-        if (!startupPath) return;
+        if (startupPath) {
+          setHasLoadedSessionTabs(true);
+          await activateMoleculePath(startupPath, 'Opening startup molecule');
+          return;
+        }
 
-        setLoadingLabel('Opening startup molecule');
-        await loadMoleculePath(startupPath, 'Opening startup molecule');
+        const session = await invoke<SessionTabsEnvelope>('get_session_tabs');
+        const restoredTabs = session.tabs.map((tab) => ({ ...tab }));
+        if (!cancelled) {
+          setMoleculeTabs(restoredTabs);
+          setActiveTabId(session.activeTabId);
+          setHasLoadedSessionTabs(true);
+        }
+        const active = restoredTabs.find((tab) => tab.id === session.activeTabId) ?? restoredTabs[0];
+        if (active) {
+          await activateMoleculePath(active.path, 'Restoring molecule tab', active, false);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
+          setHasLoadedSessionTabs(true);
         }
       } finally {
         if (!cancelled) {
@@ -1023,12 +1392,12 @@ function App() {
       }
     };
 
-    loadStartupFile();
+    loadInitialWorkspace();
 
     return () => {
       cancelled = true;
     };
-  }, [loadMoleculePath]);
+  }, [activateMoleculePath]);
 
   return (
     <div className="app">
@@ -1050,6 +1419,17 @@ function App() {
         }}
         onClearSelection={handleClearSelection}
         hasSelection={hasSelection}
+      />
+
+      <WorkspaceTabs
+        tabs={moleculeTabs}
+        activeTabId={activeTabId}
+        recentFiles={recentFiles}
+        isLoading={isLoading}
+        onOpenFile={handleOpenFile}
+        onOpenRecentFile={(path) => void loadMoleculePath(path, 'Opening recent molecule')}
+        onSelectTab={(id) => void focusMoleculeTab(id)}
+        onCloseTab={handleCloseTab}
       />
 
       <div className="main-content">
@@ -1101,8 +1481,7 @@ function App() {
           bondStyleOverrides={bondStyleOverrides}
           atomSizeScale={atomSizeScale}
           savedPoses={savedPoses}
-          recentFiles={recentFiles}
-          currentPath={currentPath}
+          poseLibrary={poseLibrary}
           onElementColorChange={(element, color) => {
             setElementColorOverrides((current) => ({ ...current, [element]: color }));
           }}
@@ -1125,12 +1504,15 @@ function App() {
           onResetSelectedAtomStyles={handleResetSelectedAtomStyles}
           onRestyleSelectedBonds={handleRestyleSelectedBonds}
           onResetSelectedBondStyles={handleResetSelectedBondStyles}
-          onOpenRecentFile={(path) => void loadMoleculePath(path, 'Opening recent molecule')}
           onSavePose={handleSavePose}
           onApplyPose={handleApplyPose}
           onUpdatePose={handleUpdatePose}
           onRenamePose={handleRenamePose}
           onDeletePose={handleDeletePose}
+          onAddPoseToLibrary={handleAddPoseToLibrary}
+          onOpenPoseLibraryEntry={(entry) => void handleOpenPoseLibraryEntry(entry)}
+          onRenamePoseLibraryEntry={handleRenamePoseLibraryEntry}
+          onDeletePoseLibraryEntry={handleDeletePoseLibraryEntry}
           onClearSavedState={handleClearSavedState}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}

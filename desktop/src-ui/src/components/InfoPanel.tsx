@@ -8,7 +8,7 @@ import type {
   BondStyleOverride,
   BondStyleType,
   MoleculeGroup,
-  RecentFileEntry,
+  PoseLibraryEntry,
   SavedPose,
   SelectionMode,
   SelectionSummary,
@@ -163,8 +163,7 @@ interface InfoPanelProps {
   bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
   savedPoses: SavedPose[];
-  recentFiles: RecentFileEntry[];
-  currentPath: string | null;
+  poseLibrary: PoseLibraryEntry[];
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
@@ -179,12 +178,15 @@ interface InfoPanelProps {
   onResetSelectedAtomStyles: () => void;
   onRestyleSelectedBonds: (type: BondStyleType) => void;
   onResetSelectedBondStyles: () => void;
-  onOpenRecentFile: (path: string) => void;
   onSavePose: () => void;
   onApplyPose: (pose: SavedPose) => void;
   onUpdatePose: (pose: SavedPose) => void;
   onRenamePose: (id: string, name: string) => void;
   onDeletePose: (id: string) => void;
+  onAddPoseToLibrary: (pose: SavedPose) => void;
+  onOpenPoseLibraryEntry: (entry: PoseLibraryEntry) => void;
+  onRenamePoseLibraryEntry: (id: string, name: string) => void;
+  onDeletePoseLibraryEntry: (id: string) => void;
   onClearSavedState: () => void;
   onAddMeasurementLabel: () => void;
   onTogglePersistentLabel: (id: string) => void;
@@ -234,8 +236,7 @@ export function InfoPanel({
   bondStyleOverrides,
   atomSizeScale,
   savedPoses,
-  recentFiles,
-  currentPath,
+  poseLibrary,
   onElementColorChange,
   onResetElementColor,
   onResetAllElementColors,
@@ -250,12 +251,15 @@ export function InfoPanel({
   onResetSelectedAtomStyles,
   onRestyleSelectedBonds,
   onResetSelectedBondStyles,
-  onOpenRecentFile,
   onSavePose,
   onApplyPose,
   onUpdatePose,
   onRenamePose,
   onDeletePose,
+  onAddPoseToLibrary,
+  onOpenPoseLibraryEntry,
+  onRenamePoseLibraryEntry,
+  onDeletePoseLibraryEntry,
   onClearSavedState,
   onAddMeasurementLabel,
   onTogglePersistentLabel,
@@ -748,6 +752,9 @@ export function InfoPanel({
                   <button type="button" className="color-reset" onClick={() => onUpdatePose(pose)}>
                     Update
                   </button>
+                  <button type="button" className="color-reset" onClick={() => onAddPoseToLibrary(pose)}>
+                    Add to Library
+                  </button>
                   <button type="button" className="color-reset" onClick={() => onDeletePose(pose.id)}>
                     Delete
                   </button>
@@ -758,24 +765,46 @@ export function InfoPanel({
         )}
       </CollapsibleSection>
 
-      <CollapsibleSection title="Files" collapsed={collapsedSections.has('Files')} onToggle={() => toggleSection('Files')}>
-        {recentFiles.length === 0 ? (
-          <p className="info-note">Recent XYZ/PDB files will appear here after opening them.</p>
+      <CollapsibleSection title="Pose Library" collapsed={collapsedSections.has('Pose Library')} onToggle={() => toggleSection('Pose Library')}>
+        {poseLibrary.length === 0 ? (
+          <p className="info-note">Promoted poses will appear here across molecule files.</p>
         ) : (
-          <div className="recent-file-list">
-            {recentFiles.slice(0, 5).map((file) => (
-              <button
-                key={file.path}
-                type="button"
-                className={file.path === currentPath ? 'recent-file active' : 'recent-file'}
-                onClick={() => onOpenRecentFile(file.path)}
-                title={file.path}
-              >
-                {file.name}
-              </button>
+          <div className="label-list">
+            {poseLibrary.map((entry) => (
+              <div key={entry.id} className="pose-library-row">
+                <input
+                  className="pose-name-input"
+                  value={entry.name}
+                  onChange={(event) => onRenamePoseLibraryEntry(entry.id, event.target.value)}
+                  aria-label="Library pose name"
+                />
+                <button
+                  type="button"
+                  className="library-molecule-button"
+                  onClick={() => onOpenPoseLibraryEntry(entry)}
+                  title={entry.moleculePath}
+                >
+                  <span>{entry.moleculeDisplayName}</span>
+                  <small>
+                    {entry.atomCount ? `${entry.atomCount} atoms` : 'Open molecule'}
+                    {entry.sourceFormat ? ` · ${entry.sourceFormat.toUpperCase()}` : ''}
+                  </small>
+                </button>
+                <div className="label-actions">
+                  <button type="button" className="color-reset" onClick={() => onOpenPoseLibraryEntry(entry)}>
+                    Load
+                  </button>
+                  <button type="button" className="color-reset" onClick={() => onDeletePoseLibraryEntry(entry.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         )}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Files" collapsed={collapsedSections.has('Files')} onToggle={() => toggleSection('Files')}>
         {hasSavedPresentationState && (
           <button
             type="button"
@@ -784,6 +813,9 @@ export function InfoPanel({
           >
             Reset Saved Presentation
           </button>
+        )}
+        {!hasSavedPresentationState && (
+          <p className="info-note">Presentation state is stored per molecule when you save poses, labels, styles, or camera changes.</p>
         )}
       </CollapsibleSection>
 

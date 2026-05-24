@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Manager, State};
 
@@ -164,6 +165,102 @@ struct BenchmarkConfig {
 struct RecentFileEntry {
     path: String,
     name: String,
+}
+
+fn session_tabs_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+struct SessionTabRecord {
+    id: String,
+    path: String,
+    #[serde(rename = "displayName")]
+    display_name: String,
+    #[serde(rename = "lastOpenedAt")]
+    last_opened_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+struct SessionTabsEnvelope {
+    #[serde(default = "session_tabs_version")]
+    version: u32,
+    #[serde(rename = "activeTabId", default)]
+    active_tab_id: Option<String>,
+    #[serde(default)]
+    tabs: Vec<SessionTabRecord>,
+}
+
+impl Default for SessionTabsEnvelope {
+    fn default() -> Self {
+        Self {
+            version: session_tabs_version(),
+            active_tab_id: None,
+            tabs: Vec::new(),
+        }
+    }
+}
+
+fn pose_library_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+struct PoseLibraryEntry {
+    id: String,
+    name: String,
+    #[serde(rename = "moleculePath")]
+    molecule_path: String,
+    #[serde(rename = "moleculeDisplayName")]
+    molecule_display_name: String,
+    #[serde(rename = "moleculeHash")]
+    molecule_hash: String,
+    pose: Value,
+    #[serde(rename = "previewImagePath")]
+    preview_image_path: Option<String>,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    #[serde(rename = "updatedAt")]
+    updated_at: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    notes: String,
+    #[serde(rename = "atomCount")]
+    atom_count: Option<usize>,
+    formula: Option<String>,
+    #[serde(rename = "sourceFormat")]
+    source_format: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+struct PoseLibraryEnvelope {
+    #[serde(default = "pose_library_version")]
+    version: u32,
+    #[serde(default)]
+    entries: Vec<PoseLibraryEntry>,
+}
+
+impl Default for PoseLibraryEnvelope {
+    fn default() -> Self {
+        Self {
+            version: pose_library_version(),
+            entries: Vec::new(),
+        }
+    }
+}
+
+struct PoseLibrarySaveRequest {
+    name: String,
+    molecule_path: String,
+    molecule_display_name: String,
+    pose: Value,
+    tags: Vec<String>,
+    notes: String,
+    atom_count: Option<usize>,
+    formula: Option<String>,
+    source_format: Option<String>,
+    preview_image_path: Option<String>,
 }
 
 fn presentation_state_version() -> u32 {
@@ -586,6 +683,99 @@ fn presentation_state_path(app: &AppHandle, path: &str) -> Result<PathBuf, Strin
     Ok(presentation_dir(app)?.join(format!("{}.json", path_key(path))))
 }
 
+fn session_tabs_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("session-tabs.json"))
+}
+
+fn pose_library_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("pose-library.json"))
+}
+
+fn now_timestamp() -> String {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    format!("{millis}")
+}
+
+fn normalize_session_tabs(mut envelope: SessionTabsEnvelope) -> SessionTabsEnvelope {
+    envelope.version = session_tabs_version();
+    envelope.tabs.retain(|tab| !tab.path.trim().is_empty());
+    let active_is_valid = envelope
+        .active_tab_id
+        .as_ref()
+        .map(|active_id| envelope.tabs.iter().any(|tab| &tab.id == active_id))
+        .unwrap_or(false);
+    if !active_is_valid {
+        envelope.active_tab_id = envelope.tabs.first().map(|tab| tab.id.clone());
+    }
+    envelope
+}
+
+fn add_pose_library_entry(
+    mut library: PoseLibraryEnvelope,
+    request: PoseLibrarySaveRequest,
+    now: String,
+) -> PoseLibraryEnvelope {
+    let id = format!(
+        "pose_lib_{}_{}",
+        path_key(&request.molecule_path),
+        now.chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .collect::<String>()
+    );
+    library.version = pose_library_version();
+    library.entries.insert(
+        0,
+        PoseLibraryEntry {
+            id,
+            name: request.name,
+            molecule_hash: path_key(&request.molecule_path),
+            molecule_path: request.molecule_path,
+            molecule_display_name: request.molecule_display_name,
+            pose: request.pose,
+            preview_image_path: request.preview_image_path,
+            created_at: now.clone(),
+            updated_at: now,
+            tags: request.tags,
+            notes: request.notes,
+            atom_count: request.atom_count,
+            formula: request.formula,
+            source_format: request.source_format,
+        },
+    );
+    library
+}
+
+fn rename_pose_library_entry_in_envelope(
+    mut library: PoseLibraryEnvelope,
+    id: &str,
+    name: String,
+    now: String,
+) -> Result<PoseLibraryEnvelope, String> {
+    let entry = library
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| "Pose library entry was not found.".to_string())?;
+    entry.name = name;
+    entry.updated_at = now;
+    Ok(library)
+}
+
+fn delete_pose_library_entry_in_envelope(
+    mut library: PoseLibraryEnvelope,
+    id: &str,
+) -> Result<PoseLibraryEnvelope, String> {
+    let original_len = library.entries.len();
+    library.entries.retain(|entry| entry.id != id);
+    if library.entries.len() == original_len {
+        return Err("Pose library entry was not found.".to_string());
+    }
+    Ok(library)
+}
+
 fn value_array(value: Option<&Value>) -> Value {
     match value {
         Some(Value::Array(items)) => Value::Array(items.clone()),
@@ -758,6 +948,36 @@ fn get_supported_read_extensions() -> Vec<&'static str> {
     supported_read_extensions()
 }
 
+fn read_session_tabs(app: &AppHandle) -> Result<SessionTabsEnvelope, String> {
+    let path = session_tabs_path(app)?;
+    if !path.exists() {
+        return Ok(SessionTabsEnvelope::default());
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read session tabs: {error}"))?;
+    let envelope = serde_json::from_str(&contents)
+        .map_err(|error| format!("Session tabs are invalid JSON: {error}"))?;
+    Ok(normalize_session_tabs(envelope))
+}
+
+fn write_session_tabs(app: &AppHandle, envelope: &SessionTabsEnvelope) -> Result<(), String> {
+    let path = session_tabs_path(app)?;
+    let envelope = normalize_session_tabs(envelope.clone());
+    let contents = serde_json::to_string_pretty(&envelope)
+        .map_err(|error| format!("Could not encode session tabs: {error}"))?;
+    fs::write(path, contents).map_err(|error| format!("Could not save session tabs: {error}"))
+}
+
+#[tauri::command]
+fn get_session_tabs(app: AppHandle) -> Result<SessionTabsEnvelope, String> {
+    read_session_tabs(&app)
+}
+
+#[tauri::command]
+fn save_session_tabs(app: AppHandle, session: SessionTabsEnvelope) -> Result<(), String> {
+    write_session_tabs(&app, &session)
+}
+
 fn recent_files_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("recent-files.json"))
 }
@@ -808,6 +1028,86 @@ fn record_recent_file(app: AppHandle, path: String) -> Result<(), String> {
     );
     entries.truncate(12);
     write_recent_files(&app, &entries)
+}
+
+fn read_pose_library(app: &AppHandle) -> Result<PoseLibraryEnvelope, String> {
+    let path = pose_library_path(app)?;
+    if !path.exists() {
+        return Ok(PoseLibraryEnvelope::default());
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read pose library: {error}"))?;
+    serde_json::from_str(&contents)
+        .map_err(|error| format!("Pose library is invalid JSON: {error}"))
+}
+
+fn write_pose_library(app: &AppHandle, library: &PoseLibraryEnvelope) -> Result<(), String> {
+    let path = pose_library_path(app)?;
+    let contents = serde_json::to_string_pretty(library)
+        .map_err(|error| format!("Could not encode pose library: {error}"))?;
+    fs::write(path, contents).map_err(|error| format!("Could not save pose library: {error}"))
+}
+
+#[tauri::command]
+fn get_pose_library(app: AppHandle) -> Result<PoseLibraryEnvelope, String> {
+    read_pose_library(&app)
+}
+
+#[tauri::command]
+fn save_pose_to_library(
+    app: AppHandle,
+    name: String,
+    molecule_path: String,
+    molecule_display_name: String,
+    pose: Value,
+    tags: Option<Vec<String>>,
+    notes: Option<String>,
+    atom_count: Option<usize>,
+    formula: Option<String>,
+    source_format: Option<String>,
+    preview_image_path: Option<String>,
+) -> Result<PoseLibraryEntry, String> {
+    let request = PoseLibrarySaveRequest {
+        name,
+        molecule_path,
+        molecule_display_name,
+        pose,
+        tags: tags.unwrap_or_default(),
+        notes: notes.unwrap_or_default(),
+        atom_count,
+        formula,
+        source_format,
+        preview_image_path,
+    };
+    let library = read_pose_library(&app)?;
+    let next = add_pose_library_entry(library, request, now_timestamp());
+    let entry = next
+        .entries
+        .first()
+        .cloned()
+        .ok_or_else(|| "Could not create pose library entry.".to_string())?;
+    write_pose_library(&app, &next)?;
+    Ok(entry)
+}
+
+#[tauri::command]
+fn rename_pose_library_entry(
+    app: AppHandle,
+    id: String,
+    name: String,
+) -> Result<PoseLibraryEnvelope, String> {
+    let library = read_pose_library(&app)?;
+    let next = rename_pose_library_entry_in_envelope(library, &id, name, now_timestamp())?;
+    write_pose_library(&app, &next)?;
+    Ok(next)
+}
+
+#[tauri::command]
+fn delete_pose_library_entry(app: AppHandle, id: String) -> Result<PoseLibraryEnvelope, String> {
+    let library = read_pose_library(&app)?;
+    let next = delete_pose_library_entry_in_envelope(library, &id)?;
+    write_pose_library(&app, &next)?;
+    Ok(next)
 }
 
 #[tauri::command]
@@ -948,8 +1248,14 @@ fn main() {
             save_presentation_state,
             clear_presentation_state,
             get_supported_read_extensions,
+            get_session_tabs,
+            save_session_tabs,
             get_recent_files,
             record_recent_file,
+            get_pose_library,
+            save_pose_to_library,
+            delete_pose_library_entry,
+            rename_pose_library_entry,
             list_supported_files_near
         ])
         .setup(|app| {
@@ -991,6 +1297,96 @@ mod tests {
         let key1 = path_key("/home/user/mol1.xyz");
         let key2 = path_key("/home/user/mol2.xyz");
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn test_session_tabs_normalizes_active_tab() {
+        let normalized = normalize_session_tabs(SessionTabsEnvelope {
+            version: 99,
+            active_tab_id: Some("missing".to_string()),
+            tabs: vec![SessionTabRecord {
+                id: "tab-1".to_string(),
+                path: "/home/user/mol.xyz".to_string(),
+                display_name: "mol.xyz".to_string(),
+                last_opened_at: "123".to_string(),
+            }],
+        });
+
+        assert_eq!(normalized.version, 1);
+        assert_eq!(normalized.active_tab_id.as_deref(), Some("tab-1"));
+        assert_eq!(normalized.tabs.len(), 1);
+    }
+
+    #[test]
+    fn test_pose_library_default_is_empty() {
+        let library = PoseLibraryEnvelope::default();
+
+        assert_eq!(library.version, 1);
+        assert!(library.entries.is_empty());
+    }
+
+    #[test]
+    fn test_add_pose_library_entry_sets_metadata_and_preserves_pose() {
+        let library = add_pose_library_entry(
+            PoseLibraryEnvelope::default(),
+            PoseLibrarySaveRequest {
+                name: "Final oblique view".to_string(),
+                molecule_path: "/home/user/mol.xyz".to_string(),
+                molecule_display_name: "mol.xyz".to_string(),
+                pose: json!({ "id": "pose-1", "name": "Pose 1" }),
+                tags: vec!["figure".to_string()],
+                notes: "paper".to_string(),
+                atom_count: Some(123),
+                formula: None,
+                source_format: Some("xyz".to_string()),
+                preview_image_path: None,
+            },
+            "12345".to_string(),
+        );
+
+        let entry = &library.entries[0];
+        assert!(entry.id.starts_with("pose_lib_"));
+        assert_eq!(entry.name, "Final oblique view");
+        assert_eq!(entry.molecule_hash, path_key("/home/user/mol.xyz"));
+        assert_eq!(entry.created_at, "12345");
+        assert_eq!(entry.updated_at, "12345");
+        assert_eq!(entry.pose["id"], json!("pose-1"));
+        assert_eq!(entry.atom_count, Some(123));
+        assert_eq!(entry.source_format.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn test_rename_and_delete_pose_library_entry_target_one_entry() {
+        let library = add_pose_library_entry(
+            PoseLibraryEnvelope::default(),
+            PoseLibrarySaveRequest {
+                name: "Original".to_string(),
+                molecule_path: "/home/user/mol.xyz".to_string(),
+                molecule_display_name: "mol.xyz".to_string(),
+                pose: json!({ "id": "pose-1" }),
+                tags: Vec::new(),
+                notes: String::new(),
+                atom_count: None,
+                formula: None,
+                source_format: None,
+                preview_image_path: None,
+            },
+            "12345".to_string(),
+        );
+        let id = library.entries[0].id.clone();
+
+        let renamed = rename_pose_library_entry_in_envelope(
+            library,
+            &id,
+            "Renamed".to_string(),
+            "67890".to_string(),
+        )
+        .unwrap();
+        assert_eq!(renamed.entries[0].name, "Renamed");
+        assert_eq!(renamed.entries[0].updated_at, "67890");
+
+        let deleted = delete_pose_library_entry_in_envelope(renamed, &id).unwrap();
+        assert!(deleted.entries.is_empty());
     }
 
     #[test]
