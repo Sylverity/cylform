@@ -1,51 +1,69 @@
 interface ShortcutsDialogProps {
   open: boolean;
+  shortcuts?: {
+    openFile: string;
+    exportPng: string;
+    resetView: string;
+    toggleHydrogen: string;
+    viewMode: string;
+    measureMode: string;
+    atomMode: string;
+    bondMode: string;
+    atomBondMode: string;
+    labelMode: string;
+    openSettings: string;
+  };
   onClose: () => void;
 }
 
-const SHORTCUT_GROUPS = [
-  {
-    title: 'File',
-    shortcuts: [
-      { keys: ['Ctrl', 'O'], action: 'Open file' },
-      { keys: ['Ctrl', 'E'], action: 'Export PNG' },
-    ],
-  },
-  {
-    title: 'Navigation',
-    shortcuts: [
-      { keys: ['L', 'drag'], action: 'Rotate' },
-      { keys: ['R', 'drag'], action: 'Pan' },
-      { keys: ['Scroll'], action: 'Zoom' },
-      { keys: ['R'], action: 'Reset view' },
-    ],
-  },
-  {
-    title: 'Selection modes',
-    shortcuts: [
-      { keys: ['V'], action: 'View mode' },
-      { keys: ['M'], action: 'Measure mode' },
-      { keys: ['A'], action: 'Atom mode' },
-      { keys: ['B'], action: 'Bond mode' },
-      { keys: ['Z'], action: 'Atom+Bond mode' },
-      { keys: ['L'], action: 'Label mode' },
-    ],
-  },
-  {
-    title: 'Visibility & style',
-    shortcuts: [
-      { keys: ['H'], action: 'Cycle hydrogen visibility' },
-      { keys: ['Esc'], action: 'Clear selection' },
-    ],
-  },
-  {
-    title: 'Help',
-    shortcuts: [{ keys: ['?'], action: 'Show this dialog' }],
-  },
-];
+function shortcutKeys(shortcut: string): string[] {
+  return shortcut.split('+').map((part) => part.trim()).filter(Boolean);
+}
 
-export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
+export function ShortcutsDialog({ open, shortcuts, onClose }: ShortcutsDialogProps) {
   if (!open) return null;
+
+  const groups = [
+    {
+      title: 'File',
+      shortcuts: [
+        { keys: shortcutKeys(shortcuts?.openFile ?? 'Ctrl+O'), action: 'Open file' },
+        { keys: shortcutKeys(shortcuts?.exportPng ?? 'Ctrl+E'), action: 'Export PNG' },
+        { keys: shortcutKeys(shortcuts?.openSettings ?? 'Ctrl+,'), action: 'Settings' },
+      ],
+    },
+    {
+      title: 'Navigation',
+      shortcuts: [
+        { keys: ['L', 'drag'], action: 'Rotate' },
+        { keys: ['R', 'drag'], action: 'Pan' },
+        { keys: ['Scroll'], action: 'Zoom' },
+        { keys: shortcutKeys(shortcuts?.resetView ?? 'R'), action: 'Reset view' },
+      ],
+    },
+    {
+      title: 'Selection modes',
+      shortcuts: [
+        { keys: shortcutKeys(shortcuts?.viewMode ?? 'V'), action: 'View mode' },
+        { keys: shortcutKeys(shortcuts?.measureMode ?? 'M'), action: 'Measure mode' },
+        { keys: shortcutKeys(shortcuts?.atomMode ?? 'A'), action: 'Atom mode' },
+        { keys: shortcutKeys(shortcuts?.bondMode ?? 'B'), action: 'Bond mode' },
+        { keys: shortcutKeys(shortcuts?.atomBondMode ?? 'Z'), action: 'Atom+Bond mode' },
+        { keys: shortcutKeys(shortcuts?.labelMode ?? 'L'), action: 'Label mode' },
+      ],
+    },
+    {
+      title: 'Visibility & style',
+      shortcuts: [
+        { keys: shortcutKeys(shortcuts?.toggleHydrogen ?? 'H'), action: 'Cycle hydrogen visibility' },
+        { keys: ['Esc'], action: 'Clear selection' },
+      ],
+    },
+    {
+      title: 'Help',
+      shortcuts: [{ keys: ['?'], action: 'Show this dialog' }],
+    },
+  ];
 
   return (
     <div
@@ -65,7 +83,7 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
           </button>
         </div>
         <div className="shortcuts-body">
-          {SHORTCUT_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.title} className="shortcuts-group">
               <h4>{group.title}</h4>
               <div className="shortcuts-list">

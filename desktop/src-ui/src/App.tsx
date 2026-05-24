@@ -184,6 +184,57 @@ export interface AppSettings {
   };
 }
 
+type ShortcutActionId =
+  | 'openFile'
+  | 'exportPng'
+  | 'resetView'
+  | 'toggleHydrogen'
+  | 'viewMode'
+  | 'measureMode'
+  | 'atomMode'
+  | 'bondMode'
+  | 'atomBondMode'
+  | 'labelMode'
+  | 'openSettings';
+
+const DEFAULT_KEYBOARD_SHORTCUTS: Record<ShortcutActionId, string> = {
+  openFile: 'Ctrl+O',
+  exportPng: 'Ctrl+E',
+  resetView: 'R',
+  toggleHydrogen: 'H',
+  viewMode: 'V',
+  measureMode: 'M',
+  atomMode: 'A',
+  bondMode: 'B',
+  atomBondMode: 'Z',
+  labelMode: 'L',
+  openSettings: 'Ctrl+,',
+};
+
+const SHORTCUT_ACTION_LABELS: Record<ShortcutActionId, string> = {
+  openFile: 'Open File',
+  exportPng: 'Export PNG',
+  resetView: 'Reset View',
+  toggleHydrogen: 'Toggle Hydrogen Mode',
+  viewMode: 'View Mode',
+  measureMode: 'Measure Mode',
+  atomMode: 'Atom Selection',
+  bondMode: 'Bond Selection',
+  atomBondMode: 'Atom+Bond Selection',
+  labelMode: 'Label Mode',
+  openSettings: 'Settings',
+};
+
+export interface AppDataPaths {
+  root: string;
+  settings: string;
+  session_tabs: string;
+  recent_files: string;
+  saved_info: string;
+  pose_library: string;
+  pose_previews: string;
+}
+
 export interface AtomMetadata {
   recordType?: string;
   serial?: number;
@@ -377,6 +428,75 @@ function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
   const extension = extensionForPath(path);
   if (!extension) return false;
   return extensions.some((candidate) => candidate.toLowerCase() === extension);
+}
+
+function normalizeShortcutText(shortcut: string): string | null {
+  const parts = shortcut
+    .split('+')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+
+  const modifiers = new Set<string>();
+  let key: string | null = null;
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (['ctrl', 'control'].includes(lower)) modifiers.add('Ctrl');
+    else if (['cmd', 'command', 'meta'].includes(lower)) modifiers.add('Meta');
+    else if (lower === 'alt' || lower === 'option') modifiers.add('Alt');
+    else if (lower === 'shift') modifiers.add('Shift');
+    else if (!key) key = part.length === 1 ? part.toUpperCase() : part;
+    else return null;
+  }
+
+  if (!key) return null;
+  return [...modifiers, key].join('+');
+}
+
+function effectiveKeyboardShortcuts(settings: AppSettings): Record<ShortcutActionId, string> {
+  const shortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS };
+  for (const action of Object.keys(DEFAULT_KEYBOARD_SHORTCUTS) as ShortcutActionId[]) {
+    const normalized = normalizeShortcutText(settings.interaction.keyboardShortcuts[action] ?? '');
+    if (normalized) shortcuts[action] = normalized;
+  }
+  return shortcuts;
+}
+
+function shortcutMatchesEvent(shortcut: string, event: KeyboardEvent): boolean {
+  const normalized = normalizeShortcutText(shortcut);
+  if (!normalized) return false;
+  const parts = normalized.split('+');
+  const key = parts[parts.length - 1]?.toLowerCase();
+  const wantsCtrl = parts.includes('Ctrl');
+  const wantsMeta = parts.includes('Meta');
+  const wantsAlt = parts.includes('Alt');
+  const wantsShift = parts.includes('Shift');
+  const eventKey = event.key.length === 1 ? event.key.toLowerCase() : event.key.toLowerCase();
+  const commandOrControlMatches = wantsMeta
+    ? event.metaKey && event.ctrlKey === wantsCtrl
+    : wantsCtrl
+      ? event.ctrlKey || event.metaKey
+      : !event.ctrlKey && !event.metaKey;
+
+  return (
+    key === eventKey &&
+    commandOrControlMatches &&
+    event.altKey === wantsAlt &&
+    event.shiftKey === wantsShift
+  );
+}
+
+function hasShortcutConflict(
+  action: ShortcutActionId,
+  shortcut: string,
+  settings: AppSettings,
+): boolean {
+  const normalized = normalizeShortcutText(shortcut);
+  if (!normalized) return true;
+  const shortcuts = effectiveKeyboardShortcuts(settings);
+  return (Object.keys(shortcuts) as ShortcutActionId[]).some((candidate) => (
+    candidate !== action && normalizeShortcutText(shortcuts[candidate]) === normalized
+  ));
 }
 
 function defaultAppSettings(): AppSettings {
@@ -712,18 +832,27 @@ function OpenRecentDialog({
 function SettingsDialog({
   open,
   settings,
+  appDataPaths,
   status,
   onChange,
   onReset,
+  onOpenAppData,
+  onClearRecentFiles,
+  onClearSessionTabs,
   onClose,
 }: {
   open: boolean;
   settings: AppSettings;
+  appDataPaths: AppDataPaths | null;
   status: string | null;
   onChange: (settings: AppSettings) => void;
   onReset: () => void;
+  onOpenAppData: () => void;
+  onClearRecentFiles: () => void;
+  onClearSessionTabs: () => void;
   onClose: () => void;
 }) {
+  const [shortcutWarning, setShortcutWarning] = useState<string | null>(null);
   if (!open) return null;
 
   const update = <Section extends keyof AppSettings>(
@@ -739,14 +868,30 @@ function SettingsDialog({
     } as AppSettings);
   };
 
-  const shortcutRows = [
-    ['Open File', settings.interaction.keyboardShortcuts.openFile ?? 'Ctrl+O'],
-    ['Export PNG', settings.interaction.keyboardShortcuts.exportPng ?? 'Ctrl+E'],
-    ['Reset View', settings.interaction.keyboardShortcuts.resetView ?? 'R'],
-    ['Toggle Hydrogen Mode', settings.interaction.keyboardShortcuts.toggleHydrogen ?? 'H'],
-    ['Settings', settings.interaction.keyboardShortcuts.openSettings ?? 'Ctrl+,'],
-    ['View / Measure / Select / Label', 'V / M / A / B / Z / L'],
-  ];
+  const shortcutRows = Object.keys(DEFAULT_KEYBOARD_SHORTCUTS) as ShortcutActionId[];
+  const shortcuts = effectiveKeyboardShortcuts(settings);
+  const updateShortcut = (action: ShortcutActionId, value: string) => {
+    const normalized = normalizeShortcutText(value);
+    if (!normalized) {
+      setShortcutWarning('Use a shortcut like Ctrl+O, Shift+R, or M.');
+      return;
+    }
+    if (hasShortcutConflict(action, normalized, settings)) {
+      setShortcutWarning(`${normalized} is already assigned.`);
+      return;
+    }
+    setShortcutWarning(null);
+    update('interaction', {
+      keyboardShortcuts: {
+        ...settings.interaction.keyboardShortcuts,
+        [action]: normalized,
+      },
+    });
+  };
+  const resetShortcuts = () => {
+    setShortcutWarning(null);
+    update('interaction', { keyboardShortcuts: {} });
+  };
 
   return (
     <div
@@ -909,14 +1054,21 @@ function SettingsDialog({
               Invert scroll zoom
             </label>
             <div className="shortcut-settings-table">
-              {shortcutRows.map(([action, keys]) => (
+              {shortcutRows.map((action) => (
                 <div key={action}>
-                  <span>{action}</span>
-                  <kbd>{keys}</kbd>
+                  <span>{SHORTCUT_ACTION_LABELS[action]}</span>
+                  <input
+                    value={shortcuts[action]}
+                    onChange={(event) => updateShortcut(action, event.target.value)}
+                    aria-label={`${SHORTCUT_ACTION_LABELS[action]} shortcut`}
+                  />
                 </div>
               ))}
             </div>
-            <p className="settings-note">Shortcut remapping will use this settings slot in a follow-up slice.</p>
+            {shortcutWarning && <p className="settings-warning">{shortcutWarning}</p>}
+            <button type="button" className="panel-action secondary compact" onClick={resetShortcuts}>
+              Reset Shortcuts
+            </button>
           </section>
 
           <section className="settings-section">
@@ -955,6 +1107,14 @@ function SettingsDialog({
                 onChange={(event) => update('files', { recentFilesLimit: Number(event.target.value) })}
               />
             </label>
+            <div className="settings-button-row">
+              <button type="button" className="panel-action secondary compact" onClick={onClearRecentFiles}>
+                Clear Recent Files
+              </button>
+              <button type="button" className="panel-action secondary compact" onClick={onClearSessionTabs}>
+                Clear Session Tabs
+              </button>
+            </div>
           </section>
 
           <section className="settings-section">
@@ -972,6 +1132,20 @@ function SettingsDialog({
               Auto-check for updates <span>Coming later</span>
             </label>
             <p className="settings-note">DevTools open from View - Open DevTools in development builds.</p>
+            <div className="settings-button-row">
+              <button type="button" className="panel-action secondary compact" onClick={onOpenAppData}>
+                Open App Data Folder
+              </button>
+            </div>
+            {appDataPaths && (
+              <div className="settings-path-list">
+                <div><span>Settings</span><code>{appDataPaths.settings}</code></div>
+                <div><span>Session</span><code>{appDataPaths.session_tabs}</code></div>
+                <div><span>SavedInfo</span><code>{appDataPaths.saved_info}</code></div>
+                <div><span>Pose Library</span><code>{appDataPaths.pose_library}</code></div>
+                <div><span>Previews</span><code>{appDataPaths.pose_previews}</code></div>
+              </div>
+            )}
           </section>
         </div>
         <div className="menu-dialog-footer">
@@ -1028,6 +1202,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentDialogOpen, setRecentDialogOpen] = useState(false);
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
+  const [appDataPaths, setAppDataPaths] = useState<AppDataPaths | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
   const appSettingsRef = useRef<AppSettings>(defaultAppSettings());
   const nextPoseId = useRef(1);
@@ -1117,6 +1292,14 @@ function App() {
       setAppSettings(settings);
     } catch (err) {
       console.warn('Could not load app settings', err);
+    }
+  }, []);
+
+  const refreshAppDataPaths = useCallback(async () => {
+    try {
+      setAppDataPaths(await invoke<AppDataPaths>('get_app_data_paths'));
+    } catch (err) {
+      console.warn('Could not load app data paths', err);
     }
   }, []);
 
@@ -1283,6 +1466,36 @@ function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const openAppDataFolder = useCallback(async () => {
+    try {
+      await invoke('open_app_data_folder');
+      addToast('Opened the Cylform app data folder.', 'success');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      addToast('Could not open the app data folder.', 'error');
+    }
+  }, [addToast]);
+
+  const clearRecentFiles = useCallback(async () => {
+    try {
+      await invoke('clear_recent_files');
+      await refreshRecentFiles();
+      addToast('Recent files cleared.', 'success');
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    }
+  }, [addToast, handleError, refreshRecentFiles]);
+
+  const clearSessionTabs = useCallback(async () => {
+    try {
+      await invoke('clear_session_tabs');
+      addToast('Saved session tabs cleared. Open tabs stay active until you close them.', 'success');
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+    }
+  }, [addToast, handleError]);
 
   const queuePosePreview = useCallback((entry: PoseLibraryEntry) => {
     setPreviewQueue((current) => [...current, createPreviewJob(entry)]);
@@ -2024,64 +2237,80 @@ function App() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target) || isLoading) return;
 
-      const key = event.key.toLowerCase();
-      const commandOrControl = event.ctrlKey || event.metaKey;
+      const shortcuts = effectiveKeyboardShortcuts(appSettingsRef.current);
 
-      if (commandOrControl && key === 'o') {
+      if (shortcutMatchesEvent(shortcuts.openFile, event)) {
         event.preventDefault();
         void handleOpenFile();
         return;
       }
 
-      if (commandOrControl && key === 'e') {
+      if (shortcutMatchesEvent(shortcuts.exportPng, event)) {
         event.preventDefault();
         handleExportPng();
         return;
       }
 
+      if (shortcutMatchesEvent(shortcuts.openSettings, event)) {
+        event.preventDefault();
+        setSettingsOpen(true);
+        return;
+      }
+
       if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const key = event.key.toLowerCase();
+
+      if (shortcutMatchesEvent(shortcuts.resetView, event)) {
+        event.preventDefault();
+        handleResetView();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.toggleHydrogen, event)) {
+        event.preventDefault();
+        cycleHydrogenVisibility();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.viewMode, event)) {
+        event.preventDefault();
+        setSelectionMode('view');
+        handleClearSelection();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.measureMode, event)) {
+        event.preventDefault();
+        setSelectionMode('measure');
+        handleClearSelection();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.atomMode, event)) {
+        event.preventDefault();
+        setSelectionMode('atom');
+        handleClearSelection();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.bondMode, event)) {
+        event.preventDefault();
+        setSelectionMode('bond');
+        handleClearSelection();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.atomBondMode, event)) {
+        event.preventDefault();
+        setSelectionMode('atom-bond');
+        handleClearSelection();
+        return;
+      }
+      if (shortcutMatchesEvent(shortcuts.labelMode, event)) {
+        event.preventDefault();
+        setSelectionMode('label');
+        handleClearSelection();
+        return;
+      }
 
       switch (key) {
         case 'escape':
           event.preventDefault();
-          handleClearSelection();
-          break;
-        case 'r':
-          event.preventDefault();
-          handleResetView();
-          break;
-        case 'h':
-          event.preventDefault();
-          cycleHydrogenVisibility();
-          break;
-        case 'v':
-          event.preventDefault();
-          setSelectionMode('view');
-          handleClearSelection();
-          break;
-        case 'm':
-          event.preventDefault();
-          setSelectionMode('measure');
-          handleClearSelection();
-          break;
-        case 'a':
-          event.preventDefault();
-          setSelectionMode('atom');
-          handleClearSelection();
-          break;
-        case 'b':
-          event.preventDefault();
-          setSelectionMode('bond');
-          handleClearSelection();
-          break;
-        case 'z':
-          event.preventDefault();
-          setSelectionMode('atom-bond');
-          handleClearSelection();
-          break;
-        case 'l':
-          event.preventDefault();
-          setSelectionMode('label');
           handleClearSelection();
           break;
         case '?':
@@ -2132,6 +2361,9 @@ function App() {
         listen('menu:devtools-unavailable', () => {
           addToast('DevTools are available in development builds.', 'info');
         }),
+        listen('menu:devtools-disabled', () => {
+          addToast('DevTools are disabled in Settings.', 'info');
+        }),
       ]);
       if (cancelled) {
         listeners.forEach((unlisten) => unlisten());
@@ -2172,9 +2404,10 @@ function App() {
 
   useEffect(() => {
     void refreshAppSettings();
+    void refreshAppDataPaths();
     void refreshRecentFiles();
     void refreshPoseLibrary();
-  }, [refreshAppSettings, refreshPoseLibrary, refreshRecentFiles]);
+  }, [refreshAppDataPaths, refreshAppSettings, refreshPoseLibrary, refreshRecentFiles]);
 
   useEffect(() => {
     void refreshRecentFiles();
@@ -2462,7 +2695,11 @@ function App() {
         />
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ShortcutsDialog
+        open={shortcutsOpen}
+        shortcuts={effectiveKeyboardShortcuts(appSettings)}
+        onClose={() => setShortcutsOpen(false)}
+      />
       <OpenRecentDialog
         open={recentDialogOpen}
         recentFiles={recentFiles}
@@ -2472,9 +2709,13 @@ function App() {
       <SettingsDialog
         open={settingsOpen}
         settings={appSettings}
+        appDataPaths={appDataPaths}
         status={settingsStatus}
         onChange={(settings) => void saveAppSettings(settings)}
         onReset={() => void resetAppSettings()}
+        onOpenAppData={() => void openAppDataFolder()}
+        onClearRecentFiles={() => void clearRecentFiles()}
+        onClearSessionTabs={() => void clearSessionTabs()}
         onClose={() => setSettingsOpen(false)}
       />
       <PosePreviewRenderer

@@ -1274,6 +1274,14 @@
   font-weight: 650;
 }
 
+.panel-action.compact {
+  width: auto;
+  min-height: 30px;
+  margin-top: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
 .panel-action:hover:not(:disabled),
 .recent-file:hover:not(:disabled),
 .color-reset:hover:not(:disabled),
@@ -1575,6 +1583,13 @@
   line-height: 1.45;
 }
 
+.settings-warning {
+  margin: 10px 0 0;
+  color: #b45309;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .shortcut-settings-table {
   display: flex;
   flex-direction: column;
@@ -1591,8 +1606,9 @@
   font-size: 12px;
 }
 
-.shortcut-settings-table kbd {
+.shortcut-settings-table input {
   flex: 0 0 auto;
+  width: 96px;
   padding: 3px 6px;
   border: 1px solid rgba(170, 182, 194, 0.65);
   border-radius: 5px;
@@ -1601,6 +1617,43 @@
   font-family: inherit;
   font-size: 11px;
   font-weight: 700;
+}
+
+.settings-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-path-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(224, 230, 236, 0.92);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.88);
+}
+
+.settings-path-list div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.settings-path-list span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.settings-path-list code {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
 }
 
 .recent-dialog-list {

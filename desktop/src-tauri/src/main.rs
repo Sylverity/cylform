@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItemBuilder, SubmenuBuilder};
@@ -41,6 +42,7 @@ const EVENT_MENU_CLOSE_CURRENT_TAB: &str = "menu:close-current-tab";
 const EVENT_MENU_EXPORT_PNG: &str = "menu:export-png";
 const EVENT_MENU_OPEN_SETTINGS: &str = "menu:open-settings";
 const EVENT_MENU_RESET_VIEW: &str = "menu:reset-view";
+const EVENT_MENU_DEVTOOLS_DISABLED: &str = "menu:devtools-disabled";
 #[cfg(not(any(debug_assertions, feature = "devtools")))]
 const EVENT_MENU_DEVTOOLS_UNAVAILABLE: &str = "menu:devtools-unavailable";
 
@@ -179,6 +181,17 @@ struct BenchmarkConfig {
 struct RecentFileEntry {
     path: String,
     name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AppDataPaths {
+    root: String,
+    settings: String,
+    session_tabs: String,
+    recent_files: String,
+    saved_info: String,
+    pose_library: String,
+    pose_previews: String,
 }
 
 fn session_tabs_version() -> u32 {
@@ -728,6 +741,21 @@ fn pose_previews_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+fn app_data_paths(app: &AppHandle) -> Result<AppDataPaths, String> {
+    let root = app_data_dir(app)?;
+    let saved_info = presentation_dir(app)?;
+    let pose_previews = pose_previews_dir(app)?;
+    Ok(AppDataPaths {
+        root: root.to_string_lossy().to_string(),
+        settings: app_settings_path(app)?.to_string_lossy().to_string(),
+        session_tabs: session_tabs_path(app)?.to_string_lossy().to_string(),
+        recent_files: recent_files_path(app)?.to_string_lossy().to_string(),
+        saved_info: saved_info.to_string_lossy().to_string(),
+        pose_library: pose_library_path(app)?.to_string_lossy().to_string(),
+        pose_previews: pose_previews.to_string_lossy().to_string(),
+    })
+}
+
 fn preview_file_name(id: &str) -> String {
     let safe_id = id
         .chars()
@@ -1155,6 +1183,19 @@ fn write_app_settings_to_path(path: &Path, settings: Value) -> Result<Value, Str
     Ok(settings)
 }
 
+fn devtools_menu_enabled(app: &AppHandle) -> bool {
+    app_settings_path(app)
+        .ok()
+        .and_then(|path| read_app_settings_from_path(&path).ok())
+        .and_then(|settings| {
+            settings
+                .get("app")
+                .and_then(|app| app.get("devtoolsMenuEnabled"))
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(true)
+}
+
 #[tauri::command]
 fn get_app_settings(app: AppHandle) -> Result<Value, String> {
     read_app_settings_from_path(&app_settings_path(&app)?)
@@ -1168,6 +1209,39 @@ fn save_app_settings(app: AppHandle, settings: Value) -> Result<Value, String> {
 #[tauri::command]
 fn reset_app_settings(app: AppHandle) -> Result<Value, String> {
     write_app_settings_to_path(&app_settings_path(&app)?, default_app_settings())
+}
+
+#[tauri::command]
+fn get_app_data_paths(app: AppHandle) -> Result<AppDataPaths, String> {
+    app_data_paths(&app)
+}
+
+#[tauri::command]
+fn open_app_data_folder(app: AppHandle) -> Result<(), String> {
+    let dir = app_data_dir(&app)?;
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("explorer");
+        command.arg(&dir);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(&dir);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(&dir);
+        command
+    };
+
+    command
+        .spawn()
+        .map_err(|error| format!("Could not open app data folder: {error}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -1300,6 +1374,18 @@ fn record_recent_file(app: AppHandle, path: String, limit: Option<usize>) -> Res
     );
     entries.truncate(normalize_recent_files_limit(limit));
     write_recent_files(&app, &entries)
+}
+
+#[tauri::command]
+fn clear_recent_files(app: AppHandle) -> Result<(), String> {
+    write_recent_files(&app, &[])
+}
+
+#[tauri::command]
+fn clear_session_tabs(app: AppHandle) -> Result<SessionTabsEnvelope, String> {
+    let session = SessionTabsEnvelope::default();
+    write_session_tabs(&app, &session)?;
+    Ok(session)
 }
 
 fn read_pose_library(app: &AppHandle) -> Result<PoseLibraryEnvelope, String> {
@@ -1585,6 +1671,11 @@ fn handle_app_menu_event(app: &AppHandle, menu_id: &str) {
     }
 
     if menu_id == MENU_VIEW_OPEN_DEVTOOLS {
+        if !devtools_menu_enabled(app) {
+            log::info!("DevTools menu action is disabled in app settings.");
+            let _ = app.emit(EVENT_MENU_DEVTOOLS_DISABLED, ());
+            return;
+        }
         #[cfg(any(debug_assertions, feature = "devtools"))]
         {
             if let Some(window) = app.get_webview_window("main") {
@@ -1640,6 +1731,8 @@ fn main() {
             get_app_settings,
             save_app_settings,
             reset_app_settings,
+            get_app_data_paths,
+            open_app_data_folder,
             load_presentation_state,
             save_presentation_state,
             clear_presentation_state,
@@ -1648,6 +1741,8 @@ fn main() {
             save_session_tabs,
             get_recent_files,
             record_recent_file,
+            clear_recent_files,
+            clear_session_tabs,
             get_pose_library,
             save_pose_to_library,
             save_pose_library_preview,
