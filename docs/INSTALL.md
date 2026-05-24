@@ -79,17 +79,17 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 
 ## Basic Use
 
-1. Click **Open File**, or drag molecule files onto the Cylform window.
+1. Click **Open File**, use **File → Open File…**, or drag molecule files onto the Cylform window.
 2. Choose or drop an `.xyz` or `.pdb` molecular structure.
 3. Rotate with left-drag, pan with right-drag, and zoom with the scroll wheel.
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
 5. Use **Style** to adjust element colours, atom visibility, selected atom styling, and visual bond styles.
-6. Use the top molecule tabs to switch between open structures, and use **Open Recent** to reopen recent files. Dropping files onto an existing session adds background tabs and keeps the current active view in place.
+6. Use the top molecule tabs to switch between open structures, and use **Open Recent** in the tab bar or **File → Open Recent…** to reopen recent files. Dropping files onto an existing session adds background tabs and keeps the current active view in place.
 7. Use **Poses** to save reusable camera views for the current molecule, then add important views to the global **Pose Library**.
 8. Use the **View** overlay to switch between CYLview and Houkmol material presets when preparing figures.
-9. Click **Export PNG** to save the current view, including visible annotations, as an image.
+9. Click **Export PNG** or use **File → Export PNG…** to save the current view, including visible annotations, as an image.
 
-The desktop app also includes a standard menu bar. Use **File** → **Quit Cylform** to close the app and **Help** → **About Cylform** for version/about details. The **Edit**, **View**, and **Window** menus are scaffolded for future commands.
+The desktop app also includes a standard menu bar. Use **File** for opening, recent files, closing the current molecule tab, export, the intentionally blank Settings placeholder, and quitting. **View → Open DevTools** is for local development builds; release builds without DevTools support report that it is unavailable. **Help → About Cylform** shows version/about details.
 
 ## File Safety
 

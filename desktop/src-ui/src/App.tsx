@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import './App.css'
@@ -543,6 +544,107 @@ function WorkspaceTabs({
   );
 }
 
+function OpenRecentDialog({
+  open,
+  recentFiles,
+  onOpenFile,
+  onClose,
+}: {
+  open: boolean;
+  recentFiles: RecentFileEntry[];
+  onOpenFile: (path: string) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="menu-dialog-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Open recent molecule"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="menu-dialog">
+        <div className="menu-dialog-header">
+          <h3>Open Recent</h3>
+          <button type="button" className="menu-dialog-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        {recentFiles.length === 0 ? (
+          <div className="menu-dialog-empty">
+            <h4>No recent molecules yet</h4>
+            <p>Opened molecule files will appear here.</p>
+          </div>
+        ) : (
+          <div className="recent-dialog-list">
+            {recentFiles.map((file) => (
+              <button
+                type="button"
+                key={file.path}
+                className="recent-dialog-item"
+                onClick={() => onOpenFile(file.path)}
+                title={file.path}
+              >
+                <span>{file.name}</span>
+                <small>{file.path}</small>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="menu-dialog-footer">
+          <button type="button" className="panel-action" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsDialog({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="menu-dialog-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="menu-dialog settings-dialog">
+        <div className="menu-dialog-header">
+          <h3>Settings</h3>
+          <button type="button" className="menu-dialog-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="menu-dialog-empty">
+          <h4>Settings are coming soon.</h4>
+          <p>This page is intentionally blank while Cylform's v1 workflow is being completed.</p>
+        </div>
+        <div className="menu-dialog-footer">
+          <button type="button" className="panel-action" onClick={onClose}>
+            Back to Workspace
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
@@ -580,6 +682,8 @@ function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [recentDialogOpen, setRecentDialogOpen] = useState(false);
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
@@ -1091,8 +1195,14 @@ function App() {
   }, []);
 
   const handleExportPng = useCallback(() => {
+    if (!moleculeData) {
+      const message = 'Load a molecule before exporting a PNG.';
+      handleError(message);
+      addToast(message, 'info');
+      return;
+    }
     window.dispatchEvent(new CustomEvent('export-png'));
-  }, []);
+  }, [addToast, handleError, moleculeData]);
 
   const handleClearSelection = useCallback(() => {
     window.dispatchEvent(new CustomEvent('clear-selection'));
@@ -1418,6 +1528,14 @@ function App() {
     clearActiveMolecule();
   }, [activeTabId, clearActiveMolecule, focusMoleculeTab, moleculeTabs, snapshotActiveTab]);
 
+  const handleCloseCurrentTab = useCallback(() => {
+    if (!activeTabId) {
+      addToast('No molecule tab is open.', 'info');
+      return;
+    }
+    handleCloseTab(activeTabId);
+  }, [activeTabId, addToast, handleCloseTab]);
+
   const handleClearSavedState = useCallback(async () => {
     if (!currentPath) return;
     try {
@@ -1437,6 +1555,11 @@ function App() {
     if (nextIndex < 0 || nextIndex >= nearbyFiles.length) return;
     await loadMoleculePath(nearbyFiles[nextIndex], 'Opening nearby molecule');
   }, [currentPath, loadMoleculePath, nearbyFiles]);
+
+  const handleOpenRecentFile = useCallback((path: string) => {
+    setRecentDialogOpen(false);
+    void loadMoleculePath(path, 'Opening recent molecule');
+  }, [loadMoleculePath]);
 
   const hasSelection = Boolean(
     selectedBond
@@ -1549,6 +1672,59 @@ function App() {
     handleResetView,
     isLoading,
     cycleHydrogenVisibility,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unlisteners: Array<() => void> = [];
+
+    const registerMenuListeners = async () => {
+      const listeners = await Promise.all([
+        listen('menu:open-file', () => {
+          void handleOpenFile();
+        }),
+        listen('menu:open-recent', () => {
+          void refreshRecentFiles();
+          setRecentDialogOpen(true);
+        }),
+        listen('menu:close-current-tab', () => {
+          handleCloseCurrentTab();
+        }),
+        listen('menu:export-png', () => {
+          handleExportPng();
+        }),
+        listen('menu:open-settings', () => {
+          setSettingsOpen(true);
+        }),
+        listen('menu:reset-view', () => {
+          handleResetView();
+        }),
+        listen('menu:devtools-unavailable', () => {
+          addToast('DevTools are available in development builds.', 'info');
+        }),
+      ]);
+      if (cancelled) {
+        listeners.forEach((unlisten) => unlisten());
+        return;
+      }
+      unlisteners.push(...listeners);
+    };
+
+    void registerMenuListeners().catch((err) => {
+      console.warn('Could not register native menu listeners', err);
+    });
+
+    return () => {
+      cancelled = true;
+      unlisteners.forEach((unlisten) => unlisten());
+    };
+  }, [
+    addToast,
+    handleCloseCurrentTab,
+    handleExportPng,
+    handleOpenFile,
+    handleResetView,
+    refreshRecentFiles,
   ]);
 
   useEffect(() => {
@@ -1727,7 +1903,7 @@ function App() {
         recentFiles={recentFiles}
         isLoading={isLoading}
         onOpenFile={handleOpenFile}
-        onOpenRecentFile={(path) => void loadMoleculePath(path, 'Opening recent molecule')}
+        onOpenRecentFile={handleOpenRecentFile}
         onSelectTab={(id) => void focusMoleculeTab(id)}
         onCloseTab={handleCloseTab}
       />
@@ -1827,6 +2003,13 @@ function App() {
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <OpenRecentDialog
+        open={recentDialogOpen}
+        recentFiles={recentFiles}
+        onOpenFile={handleOpenRecentFile}
+        onClose={() => setRecentDialogOpen(false)}
+      />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <PosePreviewRenderer
         job={activePreviewJob}
         onCaptured={handlePosePreviewCaptured}
