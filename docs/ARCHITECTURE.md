@@ -36,6 +36,8 @@ Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not b
 - `load_molecule` accepts a path and optional `frameIndex`, defaults to frame 0, and returns the existing frontend `MoleculeData` shape.
 - `get_supported_read_extensions` exposes the parser registry to the frontend so the native open dialog does not hardcode supported formats.
 - Per-file presentation state is stored under app data in a versioned JSON envelope.
+- `session-tabs.json` stores the visible workspace tab list, while `recent-files.json` remains the global open history.
+- `pose-library.json` stores global Pose Library entries, and `PosePreviews/` stores generated thumbnail PNGs by library-entry id.
 - Legacy saved keys such as `labels`, `hiddenAtomIndices`, `savedPoses`, and older style maps are normalized into the v1 envelope when loaded.
 
 The saved-state envelope is intentionally presentation-focused. It belongs to the desktop app, not `cylform-core`.
@@ -45,6 +47,8 @@ The saved-state envelope is intentionally presentation-focused. It belongs to th
 The React app owns interaction state and the Three.js scene.
 
 - `App.tsx` coordinates file loading, saved state, annotations, material preset selection, visibility, style overrides, measurements, and exports.
+- Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
+- Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
 - `MoleculeCanvas.tsx` builds the WebGL scene and keeps normal molecule topology rendering batched.
 - Atoms are rendered with instanced sphere geometry.
 - Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
@@ -76,6 +80,12 @@ Saved presentation state is versioned so future releases can add fields without 
 ```
 
 Every field has defaults on the Rust side and the TypeScript side. Persisted annotations use one model for atom labels, distances, angles, and dihedrals. Active measurement picking remains transient UI state until the user chooses to save an annotation.
+
+## Pose Library Previews
+
+The global Pose Library indexes important saved poses across molecule files. It stores pose metadata and the saved `SavedPose` payload, not molecule geometry. The source molecule path and per-file `SavedInfo` state remain the authority for reopening and rendering a library pose.
+
+Thumbnail generation reuses the WebView renderer. The frontend mounts a hidden internal preview document at fixed preview dimensions, loads the target molecule and presentation state through the same commands as normal tabs, applies the target pose, captures a small PNG from `MoleculeCanvas`, and then tears the preview document down. This is intentionally not a headless renderer and is not persisted as a user-visible tab.
 
 ## Material Presets
 

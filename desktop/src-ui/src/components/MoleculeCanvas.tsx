@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
@@ -152,6 +152,11 @@ interface Props {
   onToast: (text: string, type?: ToastMessage['type']) => void;
   benchmarkConfig?: BenchmarkConfig;
   onBenchmarkRender?: (metrics: BenchmarkRenderMetrics) => void;
+  previewMode?: boolean;
+  previewPose?: SavedPose | null;
+  previewCaptureToken?: string | null;
+  onPreviewCaptured?: (token: string, dataUrl: string) => void;
+  onPreviewError?: (token: string, error: string) => void;
 }
 
 interface BondSelectionData {
@@ -273,6 +278,16 @@ function syncOrthographicCamera(ctx: SceneCtx): void {
   orthographicCamera.near = Math.max(distance / 120, 0.01);
   orthographicCamera.far = distance * 120;
   orthographicCamera.updateProjectionMatrix();
+}
+
+function applySavedPoseToContext(current: SceneCtx, pose: SavedPose) {
+  current.camera.position.set(pose.cameraPosition.x, pose.cameraPosition.y, pose.cameraPosition.z);
+  current.controls.target.set(pose.target.x, pose.target.y, pose.target.z);
+  current.camera.lookAt(current.controls.target);
+  current.controls.update();
+  current.controls.saveState();
+  current.lastCameraDistance = current.camera.position.distanceTo(current.controls.target);
+  if (current.camera instanceof OrthographicCamera) syncOrthographicCamera(current);
 }
 
 function setActiveCamera(ctx: SceneCtx, projection: ViewOptions['projection']): void {
@@ -721,6 +736,11 @@ export function MoleculeCanvas({
   onToast,
   benchmarkConfig,
   onBenchmarkRender,
+  previewMode = false,
+  previewPose = null,
+  previewCaptureToken = null,
+  onPreviewCaptured,
+  onPreviewError,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<SceneCtx | null>(null);
@@ -767,6 +787,69 @@ export function MoleculeCanvas({
   useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
   }, [visibilityIndex]);
+
+  const renderCurrentViewDataUrl = useCallback((maxWidth?: number) => {
+    const ctx = ctxRef.current;
+    const host = containerRef.current;
+    if (!ctx) throw new Error('Molecule canvas is not ready.');
+    if (!moleculeData) {
+      throw new Error('Load a molecule before exporting a PNG.');
+    }
+
+    ctx.renderer.render(ctx.scene, ctx.camera);
+
+    const sourceCanvas = ctx.renderer.domElement;
+    const outputScale = maxWidth && sourceCanvas.width > maxWidth
+      ? maxWidth / sourceCanvas.width
+      : 1;
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = Math.max(1, Math.round(sourceCanvas.width * outputScale));
+    exportCanvas.height = Math.max(1, Math.round(sourceCanvas.height * outputScale));
+    const exportCtx = exportCanvas.getContext('2d');
+    if (!exportCtx) {
+      throw new Error('Could not prepare PNG export canvas.');
+    }
+
+    exportCtx.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
+    if (host) {
+      const scaleX = exportCanvas.width / sourceCanvas.clientWidth;
+      const scaleY = exportCanvas.height / sourceCanvas.clientHeight;
+      const hostRect = host.getBoundingClientRect();
+      const labels = host.querySelectorAll<HTMLElement>(
+        '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
+      );
+
+      for (const label of labels) {
+        const text = label.textContent?.trim();
+        if (!text || label.style.display === 'none') continue;
+        const rect = label.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const styles = window.getComputedStyle(label);
+        const x = (rect.left - hostRect.left) * scaleX;
+        const y = (rect.top - hostRect.top) * scaleY;
+        const width = rect.width * scaleX;
+        const height = rect.height * scaleY;
+        const radius = Math.min(12 * scaleX, height / 2);
+
+        exportCtx.save();
+        exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
+        exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
+        exportCtx.lineWidth = Math.max(1, scaleX);
+        exportCtx.beginPath();
+        exportCtx.roundRect(x, y, width, height, radius);
+        exportCtx.fill();
+        exportCtx.stroke();
+        exportCtx.fillStyle = styles.color || '#1f2933';
+        exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
+        exportCtx.textAlign = 'center';
+        exportCtx.textBaseline = 'middle';
+        exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
+        exportCtx.restore();
+      }
+    }
+
+    return exportCanvas.toDataURL('image/png');
+  }, [moleculeData]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -983,7 +1066,6 @@ export function MoleculeCanvas({
 
     // Toolbar button and global keyboard shortcut
     const onReset = () => ctxRef.current?.controls.reset();
-    window.addEventListener('reset-camera', onReset);
 
     const onCaptureCameraPose = (event: Event) => {
       const current = ctxRef.current;
@@ -1012,15 +1094,13 @@ export function MoleculeCanvas({
       const current = ctxRef.current;
       const pose = (event as CustomEvent<SavedPose>).detail;
       if (!current || !pose) return;
-      current.camera.position.set(pose.cameraPosition.x, pose.cameraPosition.y, pose.cameraPosition.z);
-      current.controls.target.set(pose.target.x, pose.target.y, pose.target.z);
-      current.camera.lookAt(current.controls.target);
-      current.controls.update();
-      current.controls.saveState();
-      current.lastCameraDistance = current.camera.position.distanceTo(current.controls.target);
-      if (current.camera instanceof OrthographicCamera) syncOrthographicCamera(current);
+      applySavedPoseToContext(current, pose);
     };
-    window.addEventListener('apply-camera-pose', onApplyCameraPose);
+    if (!previewMode) {
+      window.addEventListener('reset-camera', onReset);
+      window.addEventListener('capture-camera-pose', onCaptureCameraPose);
+      window.addEventListener('apply-camera-pose', onApplyCameraPose);
+    }
 
     let pointerDown = { x: 0, y: 0 };
     const onPointerDown = (event: PointerEvent) => {
@@ -1369,9 +1449,6 @@ export function MoleculeCanvas({
 
     // PNG export
     const onExport = async () => {
-      const ctx = ctxRef.current;
-      const host = containerRef.current;
-      if (!ctx) return;
       if (!moleculeData) {
         onError('Load a molecule before exporting a PNG.');
         return;
@@ -1390,66 +1467,21 @@ export function MoleculeCanvas({
 
         if (!targetPath) return;
 
-        ctx.renderer.render(ctx.scene, ctx.camera);
-
-        const sourceCanvas = ctx.renderer.domElement;
-        const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = sourceCanvas.width;
-        exportCanvas.height = sourceCanvas.height;
-        const exportCtx = exportCanvas.getContext('2d');
-        if (!exportCtx) {
-          throw new Error('Could not prepare PNG export canvas.');
-        }
-
-        exportCtx.drawImage(sourceCanvas, 0, 0);
-        if (host) {
-          const scaleX = exportCanvas.width / sourceCanvas.clientWidth;
-          const scaleY = exportCanvas.height / sourceCanvas.clientHeight;
-          const hostRect = host.getBoundingClientRect();
-          const labels = host.querySelectorAll<HTMLElement>(
-            '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
-          );
-
-          for (const label of labels) {
-            const text = label.textContent?.trim();
-            if (!text || label.style.display === 'none') continue;
-            const rect = label.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) continue;
-            const styles = window.getComputedStyle(label);
-            const x = (rect.left - hostRect.left) * scaleX;
-            const y = (rect.top - hostRect.top) * scaleY;
-            const width = rect.width * scaleX;
-            const height = rect.height * scaleY;
-            const radius = Math.min(12 * scaleX, height / 2);
-
-            exportCtx.save();
-            exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
-            exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
-            exportCtx.lineWidth = Math.max(1, scaleX);
-            exportCtx.beginPath();
-            exportCtx.roundRect(x, y, width, height, radius);
-            exportCtx.fill();
-            exportCtx.stroke();
-            exportCtx.fillStyle = styles.color || '#1f2933';
-            exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
-            exportCtx.textAlign = 'center';
-            exportCtx.textBaseline = 'middle';
-            exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
-            exportCtx.restore();
-          }
-        }
-
-        const pngBytes = dataUrlToBytes(exportCanvas.toDataURL('image/png'));
+        const pngBytes = dataUrlToBytes(renderCurrentViewDataUrl());
         await writeFile(targetPath, pngBytes);
         onToast(`Exported PNG to ${targetPath.split(/[\\/]/).pop() ?? 'file'}`, 'success');
       } catch (error) {
         onError(error instanceof Error ? error.message : String(error));
       }
     };
-    window.addEventListener('export-png', onExport);
+    if (!previewMode) {
+      window.addEventListener('export-png', onExport);
+    }
 
     const onClearSelection = () => clearSelection();
-    window.addEventListener('clear-selection', onClearSelection);
+    if (!previewMode) {
+      window.addEventListener('clear-selection', onClearSelection);
+    }
 
     return () => {
       ro.disconnect();
@@ -1481,6 +1513,52 @@ export function MoleculeCanvas({
     onError,
     onPersistentLabelCreate,
     onSelectionSummaryChange,
+    onToast,
+    previewMode,
+    renderCurrentViewDataUrl,
+  ]);
+
+  useEffect(() => {
+    if (!previewMode || !previewCaptureToken || !previewPose) return;
+    let cancelled = false;
+
+    const waitFrame = () => new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+
+    const capture = async () => {
+      try {
+        await waitFrame();
+        await waitFrame();
+        if (cancelled) return;
+        const ctx = ctxRef.current;
+        if (!ctx) throw new Error('Preview renderer is not ready.');
+        applySavedPoseToContext(ctx, previewPose);
+        await waitFrame();
+        await waitFrame();
+        if (cancelled) return;
+        onPreviewCaptured?.(previewCaptureToken, renderCurrentViewDataUrl(400));
+      } catch (error) {
+        if (cancelled) return;
+        onPreviewError?.(
+          previewCaptureToken,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
+
+    void capture();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    onPreviewCaptured,
+    onPreviewError,
+    previewCaptureToken,
+    previewMode,
+    previewPose,
+    renderCurrentViewDataUrl,
   ]);
 
   useEffect(() => {
@@ -1870,14 +1948,15 @@ export function MoleculeCanvas({
   };
 
   return (
-    <div ref={containerRef} className="molecule-canvas">
-      <aside
-        className="view-options-panel"
-        aria-label="View options"
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerUp={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div ref={containerRef} className={previewMode ? 'molecule-canvas preview-render-canvas' : 'molecule-canvas'}>
+      {!previewMode && (
+        <aside
+          className="view-options-panel"
+          aria-label="View options"
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
         <div className="view-panel-header">
           <span>View</span>
           <span className="view-panel-status">Session</span>
@@ -1996,8 +2075,9 @@ export function MoleculeCanvas({
           <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('right')}>Right</button>
           <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('iso')}>Iso</button>
         </div>
-      </aside>
-      <div className="canvas-help-strip">{helpText}</div>
+        </aside>
+      )}
+      {!previewMode && <div className="canvas-help-strip">{helpText}</div>}
       <div ref={bondLabelRef} className="bond-distance-label" />
       <div ref={angleLabelRef} className="angle-measure-label" />
       <div ref={dihedralLabelRef} className="dihedral-measure-label" />
@@ -2017,7 +2097,7 @@ export function MoleculeCanvas({
           {label.text}
         </div>
       ))}
-      {!moleculeData && (
+      {!previewMode && !moleculeData && (
         <div className="canvas-placeholder">
           <div className="placeholder-mark" aria-hidden="true">
             <span />
@@ -2045,7 +2125,7 @@ export function MoleculeCanvas({
           </div>
         </div>
       )}
-      {isLoading && (
+      {!previewMode && isLoading && (
         <LoadingSpinner title={loadingLabel} subtitle="Parsing atoms, perceiving bonds, and preparing the 3-D workspace." />
       )}
     </div>

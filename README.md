@@ -37,7 +37,7 @@ Rust (`cylform-core`) reads molecule files, detects the parser by extension, sto
 ## Current State
 
 - Standalone Windows and Linux desktop builds
-- XYZ and PDB file loading via native dialog
+- XYZ and PDB file loading via native dialog and desktop drag-and-drop
 - Three.js scene: instanced cylinder bonds, instanced CPK atom spheres, material presets, and 4-point lighting
 - OrbitControls: rotate / pan / zoom / reset
 - In-canvas View overlay for floor/grid, backdrop, projection, lighting, material preset, fog, auto-rotate, and camera presets
@@ -49,6 +49,7 @@ Rust (`cylform-core`) reads molecule files, detects the parser by extension, sto
 - Session-persistent atom and measurement annotations with show/hide/delete controls
 - Session atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
 - Versioned per-file presentation state for annotations, hidden atoms, styles, material preset, camera choices, and saved poses
+- Browser-style molecule tabs, recent-file history, and a global Pose Library with generated pose thumbnails
 - Native desktop menu scaffold for File / Edit / View / Window / Help
 
 ## Feature Parity Philosophy
@@ -65,12 +66,13 @@ Cylform v1 targets the original CYLview family's core publication workflow: fast
 - **View controls overlay** — floor/grid reference plane, backdrop tones, projection mode, lighting moods, material preset, fog, auto-rotate, and camera presets
 - **Accurate bond perception** — covalent-radius thresholds, no phantom long-range bonds
 - **Source metadata disclosure** — preserves common XYZ/PDB titles, energies, PDB atom/residue fields, frame/model counts, parser notes, and explicit PDB `CONECT` bonds
-- **Native file dialogs** — open supported molecule files through the OS file picker; current builds support `.xyz` and `.pdb`
+- **Native file dialogs and drag-and-drop** — open supported molecule files through the OS file picker or drop them onto the window; current builds support `.xyz` and `.pdb`
 - **Atom visibility controls** — hide selected atoms, show all atoms, hide all hydrogens, or hide only C-H hydrogens for cleaner figures
 - **Selection modes** — switch between view-only, measurement, atom selection, bond selection, and atom+bond selection
 - **Annotations** — add persistent atom, distance, angle, and dihedral annotations for the current molecule session
 - **Saved presentation state** — annotations, visibility, styles, material preset, poses, and view choices are stored in app data per file
-- **Saved poses and recent files** — recall publication camera views and move between supported files in a folder
+- **Workspace tabs and Pose Library** — keep multiple molecules open, promote important saved poses into a global visual library, and reopen library poses from their source files
+- **Saved poses and recent files** — recall current-molecule camera views and move between supported files in a folder
 - **Atom style controls** — adjust per-element atom colours and global atom size for the current molecule view
 - **Selected styling** — apply local atom colours/sizes and normal, transition-state, dative, interaction, or thin bond styles for selected regions
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
@@ -282,7 +284,8 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 
 | Action | Control |
 |---|---|
-| Open file | Click **Open File** → pick a supported `.xyz` or `.pdb` file |
+| Open file | Click **Open File** → pick a supported `.xyz` or `.pdb` file, or drag supported files onto the window |
+| Add background tabs | Drop molecule files while another tab is active; Cylform adds tabs and keeps the current view unchanged |
 | Rotate | Left-click + drag |
 | Pan | Right-click + drag |
 | Zoom | Scroll wheel |
@@ -306,7 +309,7 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 | Add measurement annotation | Measure a distance/angle/dihedral, then click **Add Label** in the side panel |
 | Manage annotations | Use **Annotations** in the side panel to show, hide, delete, or clear saved annotations |
 | Save a pose | Use **Poses** → **Save pose** in the side panel |
-| Reopen recent file | Use **Files** in the side panel |
+| Reopen recent file | Use **Open Recent** in the top tab bar |
 | Export PNG | Click **Export PNG**, or press **Ctrl+E** |
 | Quit | Use **File → Quit Cylform** |
 | About | Use **Help → About Cylform** |
@@ -380,6 +383,8 @@ Cylform/
 - [x] Selected atom styling and normal/TS/dative/interaction/thin bond restyling
 - [x] Saved poses for reusable publication viewpoints
 - [x] Recent files plus previous/next navigation within the current structure directory
+- [x] Browser-style molecule tabs and session restoration
+- [x] Global Pose Library with generated thumbnails stored in app data
 - [x] Versioned per-file presentation state for annotations, styles, hidden atoms, material preset, custom bonds, and poses
 - [x] PNG export with native save dialog
 - [x] PNG export includes visible annotations

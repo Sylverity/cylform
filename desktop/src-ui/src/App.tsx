@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { open } from '@tauri-apps/plugin-dialog';
 import './App.css'
 import { Toolbar } from './components/Toolbar'
@@ -265,6 +266,13 @@ export interface PoseLibraryEntry {
   sourceFormat?: string | null;
 }
 
+interface PosePreviewJob {
+  jobId: string;
+  entryId: string;
+  moleculePath: string;
+  pose: SavedPose;
+}
+
 export interface BenchmarkConfig {
   enabled: boolean;
   outputPath?: string;
@@ -322,8 +330,131 @@ function displayNameForPath(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
 
+function extensionForPath(path: string): string {
+  const fileName = displayNameForPath(path);
+  const dotIndex = fileName.lastIndexOf('.');
+  if (dotIndex < 0 || dotIndex === fileName.length - 1) return '';
+  return fileName.slice(dotIndex + 1).toLowerCase();
+}
+
+function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
+  const extension = extensionForPath(path);
+  if (!extension) return false;
+  return extensions.some((candidate) => candidate.toLowerCase() === extension);
+}
+
 function createTabId(): string {
   return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createPreviewJob(entry: PoseLibraryEntry): PosePreviewJob {
+  return {
+    jobId: `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    entryId: entry.id,
+    moleculePath: entry.moleculePath,
+    pose: entry.pose,
+  };
+}
+
+function PosePreviewRenderer({
+  job,
+  onCaptured,
+  onFailed,
+}: {
+  job: PosePreviewJob | null;
+  onCaptured: (job: PosePreviewJob, dataUrl: string) => void;
+  onFailed: (job: PosePreviewJob, error: string) => void;
+}) {
+  const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
+  const [presentationState, setPresentationState] = useState<PresentationState | null>(null);
+  const [captureToken, setCaptureToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!job) {
+      setMoleculeData(null);
+      setPresentationState(null);
+      setCaptureToken(null);
+      return;
+    }
+    let cancelled = false;
+    setMoleculeData(null);
+    setPresentationState(null);
+    setCaptureToken(null);
+
+    const loadPreviewDocument = async () => {
+      try {
+        const [data, state] = await Promise.all([
+          invoke<MoleculeData>('load_molecule', { path: job.moleculePath, frameIndex: 0 }),
+          invoke<PresentationState | null>('load_presentation_state', { path: job.moleculePath }),
+        ]);
+        if (cancelled) return;
+        setMoleculeData(data);
+        setPresentationState(state);
+        window.setTimeout(() => {
+          if (!cancelled) setCaptureToken(job.jobId);
+        }, 0);
+      } catch (error) {
+        if (cancelled) return;
+        onFailed(job, error instanceof Error ? error.message : String(error));
+      }
+    };
+
+    void loadPreviewDocument();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job, onFailed]);
+
+  if (!job || !moleculeData) return null;
+
+  const styles = presentationState?.styles;
+  const handlePreviewCaptured = (token: string, dataUrl: string) => {
+    if (token === job.jobId) onCaptured(job, dataUrl);
+  };
+  const handlePreviewError = (token: string, error: string) => {
+    if (token === job.jobId) onFailed(job, error);
+  };
+
+  return (
+    <div className="pose-preview-render-host" aria-hidden="true">
+      <Suspense fallback={null}>
+        <MoleculeCanvas
+          moleculeData={moleculeData}
+          hydrogenVisibility={styles?.hydrogen_visibility ?? 'shown'}
+          hiddenAtomIndices={presentationState?.hidden_atoms ?? []}
+          elementColorOverrides={styles?.element_color_overrides ?? {}}
+          atomStyleOverrides={styles?.atom_style_overrides ?? {}}
+          bondStyleOverrides={styles?.bond_style_overrides ?? {}}
+          atomSizeScale={styles?.atom_size_scale ?? 1}
+          materialPreset={styles?.material_preset ?? 'CYLview'}
+          viewOptions={job.pose.viewOptions}
+          onViewOptionsChange={() => undefined}
+          onMaterialPresetChange={() => undefined}
+          selectedBond={null}
+          selectedAngle={null}
+          selectedDihedral={null}
+          persistentLabels={presentationState?.annotations ?? []}
+          selectionMode="view"
+          onBondSelected={() => undefined}
+          onAngleSelected={() => undefined}
+          onDihedralSelected={() => undefined}
+          onPersistentLabelCreate={() => undefined}
+          onSelectionSummaryChange={() => undefined}
+          isLoading={false}
+          loadingLabel=""
+          onOpenFile={() => undefined}
+          onError={(message) => onFailed(job, message)}
+          onToast={() => undefined}
+          previewMode
+          previewPose={job.pose}
+          previewCaptureToken={captureToken}
+          onPreviewCaptured={handlePreviewCaptured}
+          onPreviewError={handlePreviewError}
+        />
+      </Suspense>
+    </div>
+  );
 }
 
 function WorkspaceTabs({
@@ -443,8 +574,11 @@ function App() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [hasLoadedSessionTabs, setHasLoadedSessionTabs] = useState(false);
   const [poseLibrary, setPoseLibrary] = useState<PoseLibraryEntry[]>([]);
+  const [previewQueue, setPreviewQueue] = useState<PosePreviewJob[]>([]);
+  const [activePreviewJob, setActivePreviewJob] = useState<PosePreviewJob | null>(null);
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
@@ -632,6 +766,14 @@ function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const queuePosePreview = useCallback((entry: PoseLibraryEntry) => {
+    setPreviewQueue((current) => [...current, createPreviewJob(entry)]);
+  }, []);
+
+  const finishActivePreviewJob = useCallback(() => {
+    setActivePreviewJob(null);
+  }, []);
+
   const activateMoleculePath = useCallback(async (
     path: string,
     label?: string,
@@ -772,6 +914,97 @@ function App() {
     }
     return activateMoleculePath(path, label);
   }, [activateMoleculePath, focusMoleculeTab, moleculeTabs]);
+
+  const addDroppedMoleculeTabs = useCallback(async (paths: string[]) => {
+    const uniquePaths = Array.from(new Set(paths)).filter(Boolean);
+    if (uniquePaths.length === 0) return;
+
+    let supportedExtensions: string[] = [];
+    try {
+      supportedExtensions = await invoke<string[]>('get_supported_read_extensions');
+    } catch (err) {
+      handleError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    const supportedPaths = uniquePaths.filter((path) => isSupportedMoleculePath(path, supportedExtensions));
+    const unsupportedPaths = uniquePaths.filter((path) => !isSupportedMoleculePath(path, supportedExtensions));
+    if (unsupportedPaths.length === 1) {
+      addToast(`Unsupported file type: ${displayNameForPath(unsupportedPaths[0])}`, 'error');
+    } else if (unsupportedPaths.length > 1) {
+      addToast(`${unsupportedPaths.length} unsupported files were ignored.`, 'error');
+    }
+
+    if (supportedPaths.length === 0) return;
+
+    const knownPaths = new Set(moleculeTabs.map((tab) => tab.path));
+    let activeWillExist = Boolean(activeTabId);
+    let acceptedCount = 0;
+    let failedCount = 0;
+
+    for (const path of supportedPaths) {
+      if (knownPaths.has(path)) continue;
+
+      if (!activeWillExist) {
+        const opened = await activateMoleculePath(path, 'Opening dropped molecule');
+        if (opened) {
+          knownPaths.add(path);
+          acceptedCount += 1;
+          activeWillExist = true;
+        } else {
+          failedCount += 1;
+        }
+        continue;
+      }
+
+      try {
+        const data = await invoke<MoleculeData>('load_molecule', { path, frameIndex: 0 });
+        let loadedState: PresentationState | null = null;
+        try {
+          loadedState = await invoke<PresentationState | null>('load_presentation_state', { path });
+        } catch (err) {
+          console.warn('Could not load presentation state for dropped molecule', err);
+        }
+        const tab: MoleculeTab = {
+          id: createTabId(),
+          path,
+          displayName: data.name ?? displayNameForPath(path),
+          lastOpenedAt: new Date().toISOString(),
+          molecule: data,
+          presentationState: loadedState,
+        };
+        setMoleculeTabs((current) => (
+          current.some((candidate) => candidate.path === path) ? current : [...current, tab]
+        ));
+        await invoke('record_recent_file', { path });
+        knownPaths.add(path);
+        acceptedCount += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failedCount += 1;
+        handleError(message);
+        addToast(`Could not open ${displayNameForPath(path)}.`, 'error');
+      }
+    }
+
+    if (acceptedCount > 0) {
+      await refreshRecentFiles();
+      addToast(
+        acceptedCount === 1 ? 'Added 1 molecule tab.' : `Added ${acceptedCount} molecule tabs.`,
+        'success',
+      );
+    }
+    if (failedCount > 1) {
+      addToast(`${failedCount} dropped molecule files could not be opened.`, 'error');
+    }
+  }, [
+    activateMoleculePath,
+    activeTabId,
+    addToast,
+    handleError,
+    moleculeTabs,
+    refreshRecentFiles,
+  ]);
 
   const handleOpenFile = useCallback(async () => {
     try {
@@ -1105,11 +1338,12 @@ function App() {
         previewImagePath: null,
       });
       setPoseLibrary((current) => [entry, ...current.filter((candidate) => candidate.id !== entry.id)]);
+      queuePosePreview(entry);
       addToast(`Added ${pose.name} to Pose Library`, 'success');
     } catch (err) {
       handleError(err instanceof Error ? err.message : String(err));
     }
-  }, [addToast, currentPath, handleError, moleculeData]);
+  }, [addToast, currentPath, handleError, moleculeData, queuePosePreview]);
 
   const handleOpenPoseLibraryEntry = useCallback(async (entry: PoseLibraryEntry) => {
     const loaded = await loadMoleculePath(entry.moleculePath, 'Opening library molecule');
@@ -1138,6 +1372,33 @@ function App() {
       handleError(err instanceof Error ? err.message : String(err));
     }
   }, [handleError]);
+
+  const handleGeneratePosePreview = useCallback((entry: PoseLibraryEntry) => {
+    queuePosePreview(entry);
+  }, [queuePosePreview]);
+
+  const handlePosePreviewCaptured = useCallback(async (job: PosePreviewJob, dataUrl: string) => {
+    try {
+      const updatedEntry = await invoke<PoseLibraryEntry>('save_pose_library_preview', {
+        id: job.entryId,
+        dataUrl,
+      });
+      setPoseLibrary((current) => current.map((entry) => (
+        entry.id === updatedEntry.id ? updatedEntry : entry
+      )));
+    } catch (err) {
+      console.warn('Could not save pose preview', err);
+      addToast('Saved the pose, but could not generate its preview yet.', 'info');
+    } finally {
+      finishActivePreviewJob();
+    }
+  }, [addToast, finishActivePreviewJob]);
+
+  const handlePosePreviewFailed = useCallback((job: PosePreviewJob, error: string) => {
+    console.warn('Could not generate pose preview', job.entryId, error);
+    addToast('Saved the pose, but could not generate its preview yet.', 'info');
+    finishActivePreviewJob();
+  }, [addToast, finishActivePreviewJob]);
 
   const handleCloseTab = useCallback((id: string) => {
     snapshotActiveTab(true);
@@ -1309,6 +1570,13 @@ function App() {
   }, [refreshPoseLibrary, refreshRecentFiles]);
 
   useEffect(() => {
+    if (activePreviewJob || previewQueue.length === 0) return;
+    const [nextJob, ...remainingJobs] = previewQueue;
+    setActivePreviewJob(nextJob);
+    setPreviewQueue(remainingJobs);
+  }, [activePreviewJob, previewQueue]);
+
+  useEffect(() => {
     if (!hasLoadedSessionTabs) return;
     const session: SessionTabsEnvelope = {
       version: 1,
@@ -1398,6 +1666,38 @@ function App() {
       cancelled = true;
     };
   }, [activateMoleculePath]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === 'enter' || payload.type === 'over') {
+        setIsDraggingFiles(true);
+        return;
+      }
+      if (payload.type === 'leave') {
+        setIsDraggingFiles(false);
+        return;
+      }
+      setIsDraggingFiles(false);
+      void addDroppedMoleculeTabs(payload.paths);
+    }).then((listener) => {
+      if (cancelled) {
+        listener();
+        return;
+      }
+      unlisten = listener;
+    }).catch((err) => {
+      console.warn('Could not register drag/drop listener', err);
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [addDroppedMoleculeTabs]);
 
   return (
     <div className="app">
@@ -1513,6 +1813,7 @@ function App() {
           onOpenPoseLibraryEntry={(entry) => void handleOpenPoseLibraryEntry(entry)}
           onRenamePoseLibraryEntry={handleRenamePoseLibraryEntry}
           onDeletePoseLibraryEntry={handleDeletePoseLibraryEntry}
+          onGeneratePosePreview={handleGeneratePosePreview}
           onClearSavedState={handleClearSavedState}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}
@@ -1526,6 +1827,16 @@ function App() {
       </div>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <PosePreviewRenderer
+        job={activePreviewJob}
+        onCaptured={handlePosePreviewCaptured}
+        onFailed={handlePosePreviewFailed}
+      />
+      {isDraggingFiles && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-card">Drop molecule files to add tabs</div>
+        </div>
+      )}
     </div>
   );
 }

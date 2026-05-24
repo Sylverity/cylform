@@ -343,6 +343,47 @@
   padding: 0 8px;
 }
 
+.pose-preview-render-host {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 400px;
+  height: 300px;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.pose-preview-render-host .molecule-canvas,
+.preview-render-canvas {
+  width: 400px;
+  height: 300px;
+  flex: 0 0 auto;
+}
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(2px);
+}
+
+.drop-overlay-card {
+  padding: 18px 26px;
+  border: 1px solid rgba(4, 120, 87, 0.38);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 24px 70px rgba(30, 41, 59, 0.22);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
 /* Molecule Canvas */
 .molecule-canvas {
   flex: 1;
@@ -1030,6 +1071,29 @@
   gap: 7px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(217, 223, 229, 0.72);
+}
+
+.pose-library-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid rgba(207, 215, 223, 0.95);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(235, 239, 243, 0.92));
+}
+
+.pose-library-preview.placeholder::before {
+  content: '';
+  display: block;
+  width: 46%;
+  height: 4px;
+  margin: calc(28.125% - 2px) auto 0;
+  border-radius: 999px;
+  background: rgba(141, 148, 156, 0.34);
+  box-shadow:
+    -18px -12px 0 rgba(4, 120, 87, 0.22),
+    18px 12px 0 rgba(75, 132, 216, 0.22);
 }
 
 .library-molecule-button {

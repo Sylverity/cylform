@@ -698,6 +698,7 @@ dependencies = [
 name = "cylform-desktop"
 version = "1.0.0-rc.1"
 dependencies = [
+ "base64 0.22.1",
  "cylform-core",
  "env_logger",
  "glam",

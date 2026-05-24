@@ -7,6 +7,7 @@
     windows_subsystem = "windows"
 )]
 
+use base64::{engine::general_purpose, Engine as _};
 use cylform_core::{
     io::{
         read_structure_with_options, supported_read_extensions, FileFormat, IoError, ReadOptions,
@@ -691,6 +692,52 @@ fn pose_library_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("pose-library.json"))
 }
 
+fn pose_previews_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app_data_dir(app)?.join("PosePreviews");
+    fs::create_dir_all(&dir)
+        .map_err(|error| format!("Could not create pose-preview directory: {error}"))?;
+    Ok(dir)
+}
+
+fn preview_file_name(id: &str) -> String {
+    let safe_id = id
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+        .collect::<String>();
+    format!("{}.png", if safe_id.is_empty() { "pose" } else { &safe_id })
+}
+
+fn preview_path_in_dir(dir: &Path, reference: &str) -> Result<PathBuf, String> {
+    let path = Path::new(reference);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Preview image path is invalid.".to_string())?;
+    if file_name != reference || file_name.is_empty() || !file_name.ends_with(".png") {
+        return Err("Preview image path must be a PosePreviews PNG reference.".to_string());
+    }
+    Ok(dir.join(file_name))
+}
+
+fn decode_png_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let (header, payload) = data_url
+        .split_once(',')
+        .ok_or_else(|| "Preview image data is malformed.".to_string())?;
+    if !header.starts_with("data:image/png") || !header.contains(";base64") {
+        return Err("Preview image must be a base64 PNG data URL.".to_string());
+    }
+    general_purpose::STANDARD
+        .decode(payload)
+        .map_err(|error| format!("Could not decode pose preview: {error}"))
+}
+
+fn encode_png_data_url(bytes: &[u8]) -> String {
+    format!(
+        "data:image/png;base64,{}",
+        general_purpose::STANDARD.encode(bytes)
+    )
+}
+
 fn now_timestamp() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -774,6 +821,24 @@ fn delete_pose_library_entry_in_envelope(
         return Err("Pose library entry was not found.".to_string());
     }
     Ok(library)
+}
+
+fn attach_pose_preview_in_envelope(
+    mut library: PoseLibraryEnvelope,
+    id: &str,
+    preview_image_path: String,
+    now: String,
+) -> Result<(PoseLibraryEnvelope, PoseLibraryEntry), String> {
+    let entry_index = library
+        .entries
+        .iter()
+        .position(|entry| entry.id == id)
+        .ok_or_else(|| "Pose library entry was not found.".to_string())?;
+    let entry = &mut library.entries[entry_index];
+    entry.preview_image_path = Some(preview_image_path);
+    entry.updated_at = now;
+    let entry = entry.clone();
+    Ok((library, entry))
 }
 
 fn value_array(value: Option<&Value>) -> Value {
@@ -1105,9 +1170,57 @@ fn rename_pose_library_entry(
 #[tauri::command]
 fn delete_pose_library_entry(app: AppHandle, id: String) -> Result<PoseLibraryEnvelope, String> {
     let library = read_pose_library(&app)?;
+    let preview_reference = library
+        .entries
+        .iter()
+        .find(|entry| entry.id == id)
+        .and_then(|entry| entry.preview_image_path.clone());
     let next = delete_pose_library_entry_in_envelope(library, &id)?;
+    if let Some(reference) = preview_reference {
+        if let Ok(dir) = pose_previews_dir(&app) {
+            if let Ok(path) = preview_path_in_dir(&dir, &reference) {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
     write_pose_library(&app, &next)?;
     Ok(next)
+}
+
+#[tauri::command]
+fn save_pose_library_preview(
+    app: AppHandle,
+    id: String,
+    data_url: String,
+) -> Result<PoseLibraryEntry, String> {
+    let bytes = decode_png_data_url(&data_url)?;
+    let library = read_pose_library(&app)?;
+    if !library.entries.iter().any(|entry| entry.id == id) {
+        return Err("Pose library entry was not found.".to_string());
+    }
+    let preview_reference = preview_file_name(&id);
+    let preview_path = preview_path_in_dir(&pose_previews_dir(&app)?, &preview_reference)?;
+    fs::write(&preview_path, bytes)
+        .map_err(|error| format!("Could not save pose preview: {error}"))?;
+
+    let (next, entry) =
+        attach_pose_preview_in_envelope(library, &id, preview_reference, now_timestamp())?;
+    write_pose_library(&app, &next)?;
+    Ok(entry)
+}
+
+#[tauri::command]
+fn get_pose_preview_data_url(
+    app: AppHandle,
+    preview_image_path: String,
+) -> Result<Option<String>, String> {
+    let preview_path = preview_path_in_dir(&pose_previews_dir(&app)?, &preview_image_path)?;
+    if !preview_path.exists() {
+        return Ok(None);
+    }
+    let bytes =
+        fs::read(preview_path).map_err(|error| format!("Could not read pose preview: {error}"))?;
+    Ok(Some(encode_png_data_url(&bytes)))
 }
 
 #[tauri::command]
@@ -1254,6 +1367,8 @@ fn main() {
             record_recent_file,
             get_pose_library,
             save_pose_to_library,
+            save_pose_library_preview,
+            get_pose_preview_data_url,
             delete_pose_library_entry,
             rename_pose_library_entry,
             list_supported_files_near
@@ -1353,6 +1468,73 @@ mod tests {
         assert_eq!(entry.pose["id"], json!("pose-1"));
         assert_eq!(entry.atom_count, Some(123));
         assert_eq!(entry.source_format.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn test_decode_png_data_url_accepts_base64_png() {
+        let bytes = decode_png_data_url("data:image/png;base64,aGVsbG8=").unwrap();
+
+        assert_eq!(bytes, b"hello");
+    }
+
+    #[test]
+    fn test_preview_file_name_sanitizes_entry_id() {
+        assert_eq!(preview_file_name("../bad/pose"), "badpose.png");
+        assert_eq!(
+            preview_file_name("pose_lib_123-abc"),
+            "pose_lib_123-abc.png"
+        );
+    }
+
+    #[test]
+    fn test_preview_path_in_dir_rejects_traversal() {
+        let dir = Path::new("/tmp/PosePreviews");
+
+        assert!(preview_path_in_dir(dir, "pose.png")
+            .unwrap()
+            .starts_with(dir));
+        assert!(preview_path_in_dir(dir, "../pose.png").is_err());
+        assert!(preview_path_in_dir(dir, "/tmp/pose.png").is_err());
+        assert!(preview_path_in_dir(dir, "pose.jpg").is_err());
+    }
+
+    #[test]
+    fn test_attach_pose_preview_updates_entry() {
+        let library = add_pose_library_entry(
+            PoseLibraryEnvelope::default(),
+            PoseLibrarySaveRequest {
+                name: "Original".to_string(),
+                molecule_path: "/home/user/mol.xyz".to_string(),
+                molecule_display_name: "mol.xyz".to_string(),
+                pose: json!({ "id": "pose-1" }),
+                tags: Vec::new(),
+                notes: String::new(),
+                atom_count: None,
+                formula: None,
+                source_format: None,
+                preview_image_path: None,
+            },
+            "12345".to_string(),
+        );
+        let id = library.entries[0].id.clone();
+
+        let (library, entry) = attach_pose_preview_in_envelope(
+            library,
+            &id,
+            "/tmp/preview.png".to_string(),
+            "67890".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            entry.preview_image_path.as_deref(),
+            Some("/tmp/preview.png")
+        );
+        assert_eq!(entry.updated_at, "67890");
+        assert_eq!(
+            library.entries[0].preview_image_path.as_deref(),
+            Some("/tmp/preview.png")
+        );
     }
 
     #[test]

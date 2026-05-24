@@ -79,14 +79,15 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 
 ## Basic Use
 
-1. Click **Open File**.
-2. Choose an `.xyz` or `.pdb` molecular structure.
+1. Click **Open File**, or drag molecule files onto the Cylform window.
+2. Choose or drop an `.xyz` or `.pdb` molecular structure.
 3. Rotate with left-drag, pan with right-drag, and zoom with the scroll wheel.
 4. Use **Measure** mode to click a bond for distance, three atoms for angle, or four atoms for dihedral.
 5. Use **Style** to adjust element colours, atom visibility, selected atom styling, and visual bond styles.
-6. Use **Poses** to save reusable camera views and **Files** to reopen recent files.
-7. Use the **View** overlay to switch between CYLview and Houkmol material presets when preparing figures.
-8. Click **Export PNG** to save the current view, including visible annotations, as an image.
+6. Use the top molecule tabs to switch between open structures, and use **Open Recent** to reopen recent files. Dropping files onto an existing session adds background tabs and keeps the current active view in place.
+7. Use **Poses** to save reusable camera views for the current molecule, then add important views to the global **Pose Library**.
+8. Use the **View** overlay to switch between CYLview and Houkmol material presets when preparing figures.
+9. Click **Export PNG** to save the current view, including visible annotations, as an image.
 
 The desktop app also includes a standard menu bar. Use **File** → **Quit Cylform** to close the app and **Help** → **About Cylform** for version/about details. The **Edit**, **View**, and **Window** menus are scaffolded for future commands.
 
@@ -102,5 +103,5 @@ The current app supports XYZ and PDB files for normal opening. It may display in
 - **Linux says the file is not executable:** run `chmod +x` on AppImage or standalone binary downloads.
 - **Ubuntu/Debian cannot install the `.deb`:** run `sudo apt update`, then try the `sudo apt install ./Cylform_..._amd64.deb` command again so apt can resolve dependencies.
 - **The app does not open on Linux:** install system WebView/runtime packages for Tauri apps, then retry. On Ubuntu/Debian, the contributor dependency list in `CONTRIBUTING.md` includes the relevant GTK/WebKit packages.
-- **A molecule file does not appear in the picker:** Cylform advertises the extensions supported by its built-in parser registry. Current release builds support `.xyz` and `.pdb`. Use **All Files** only if you know the file is one of those supported formats with a non-standard extension.
+- **A molecule file does not appear in the picker or is ignored on drop:** Cylform advertises and accepts the extensions supported by its built-in parser registry. Current release builds support `.xyz` and `.pdb`. Use **All Files** only if you know the file is one of those supported formats with a non-standard extension.
 - **A file is rejected as too large:** reduce the structure size or split trajectories into individual structures. Large trajectory workflows are planned separately.

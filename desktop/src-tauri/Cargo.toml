@@ -10,6 +10,7 @@ description = "Desktop application for Cylform"
 
 [dependencies]
 cylform-core = { path = "../../crates/core" }
+base64 = "0.22"
 tauri = { workspace = true }
 tauri-plugin-dialog = "2.0"
 tauri-plugin-fs = "2.0"

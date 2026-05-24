@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type {
   ElementColorOverrides,
   HydrogenVisibility,
@@ -187,6 +188,7 @@ interface InfoPanelProps {
   onOpenPoseLibraryEntry: (entry: PoseLibraryEntry) => void;
   onRenamePoseLibraryEntry: (id: string, name: string) => void;
   onDeletePoseLibraryEntry: (id: string) => void;
+  onGeneratePosePreview: (entry: PoseLibraryEntry) => void;
   onClearSavedState: () => void;
   onAddMeasurementLabel: () => void;
   onTogglePersistentLabel: (id: string) => void;
@@ -218,6 +220,53 @@ function CollapsibleSection({
       </button>
       {!collapsed && children}
     </div>
+  );
+}
+
+function PosePreviewImage({ previewImagePath }: { previewImagePath: string | null }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!previewImagePath) {
+      setDataUrl(null);
+      setFailed(false);
+      return;
+    }
+    let cancelled = false;
+    setFailed(false);
+
+    const loadPreview = async () => {
+      try {
+        const loaded = await invoke<string | null>('get_pose_preview_data_url', { previewImagePath });
+        if (!cancelled) setDataUrl(loaded);
+      } catch {
+        if (!cancelled) {
+          setDataUrl(null);
+          setFailed(true);
+        }
+      }
+    };
+
+    void loadPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewImagePath]);
+
+  if (!previewImagePath || !dataUrl || failed) {
+    return <div className="pose-library-preview placeholder" aria-hidden="true" />;
+  }
+
+  return (
+    <img
+      className="pose-library-preview"
+      src={dataUrl}
+      alt=""
+      aria-hidden="true"
+      onError={() => setFailed(true)}
+    />
   );
 }
 
@@ -260,6 +309,7 @@ export function InfoPanel({
   onOpenPoseLibraryEntry,
   onRenamePoseLibraryEntry,
   onDeletePoseLibraryEntry,
+  onGeneratePosePreview,
   onClearSavedState,
   onAddMeasurementLabel,
   onTogglePersistentLabel,
@@ -772,6 +822,7 @@ export function InfoPanel({
           <div className="label-list">
             {poseLibrary.map((entry) => (
               <div key={entry.id} className="pose-library-row">
+                <PosePreviewImage previewImagePath={entry.previewImagePath} />
                 <input
                   className="pose-name-input"
                   value={entry.name}
@@ -793,6 +844,9 @@ export function InfoPanel({
                 <div className="label-actions">
                   <button type="button" className="color-reset" onClick={() => onOpenPoseLibraryEntry(entry)}>
                     Load
+                  </button>
+                  <button type="button" className="color-reset" onClick={() => onGeneratePosePreview(entry)}>
+                    {entry.previewImagePath ? 'Refresh Preview' : 'Generate Preview'}
                   </button>
                   <button type="button" className="color-reset" onClick={() => onDeletePoseLibraryEntry(entry.id)}>
                     Delete
