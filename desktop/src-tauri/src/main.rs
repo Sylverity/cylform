@@ -281,6 +281,10 @@ fn presentation_state_version() -> u32 {
     1
 }
 
+fn app_settings_version() -> u32 {
+    1
+}
+
 fn default_material_preset() -> String {
     "CYLview".to_string()
 }
@@ -701,6 +705,10 @@ fn session_tabs_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("session-tabs.json"))
 }
 
+fn app_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir(app)?.join("settings.json"))
+}
+
 fn pose_library_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join("pose-library.json"))
 }
@@ -749,6 +757,146 @@ fn encode_png_data_url(bytes: &[u8]) -> String {
         "data:image/png;base64,{}",
         general_purpose::STANDARD.encode(bytes)
     )
+}
+
+fn setting_section<'a>(value: &'a Value, key: &str) -> Option<&'a serde_json::Map<String, Value>> {
+    value.get(key).and_then(Value::as_object)
+}
+
+fn setting_bool(
+    section: Option<&serde_json::Map<String, Value>>,
+    key: &str,
+    default: bool,
+) -> bool {
+    section
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_bool)
+        .unwrap_or(default)
+}
+
+fn setting_string(
+    section: Option<&serde_json::Map<String, Value>>,
+    key: &str,
+    default: &str,
+    allowed: &[&str],
+) -> String {
+    let value = section
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_str)
+        .unwrap_or(default);
+    if allowed.contains(&value) {
+        value.to_string()
+    } else {
+        default.to_string()
+    }
+}
+
+fn setting_u8_range(
+    section: Option<&serde_json::Map<String, Value>>,
+    key: &str,
+    default: u8,
+    min: u8,
+    max: u8,
+) -> u8 {
+    section
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_u64)
+        .map(|value| value.clamp(u64::from(min), u64::from(max)) as u8)
+        .unwrap_or(default)
+}
+
+fn setting_f64_range(
+    section: Option<&serde_json::Map<String, Value>>,
+    key: &str,
+    default: f64,
+    min: f64,
+    max: f64,
+) -> f64 {
+    section
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_f64)
+        .map(|value| value.clamp(min, max))
+        .unwrap_or(default)
+}
+
+fn setting_object(section: Option<&serde_json::Map<String, Value>>, key: &str) -> Value {
+    section
+        .and_then(|object| object.get(key))
+        .and_then(Value::as_object)
+        .map(|object| Value::Object(object.clone()))
+        .unwrap_or_else(|| json!({}))
+}
+
+fn normalize_hex_color(value: Option<&Value>, default: &str) -> String {
+    let Some(candidate) = value.and_then(Value::as_str) else {
+        return default.to_string();
+    };
+    let hex = candidate.trim();
+    let Some(digits) = hex.strip_prefix('#') else {
+        return default.to_string();
+    };
+    if digits.len() == 6
+        && digits
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        format!("#{digits}").to_ascii_lowercase()
+    } else {
+        default.to_string()
+    }
+}
+
+fn default_app_settings() -> Value {
+    normalize_app_settings(json!({}))
+}
+
+fn normalize_app_settings(value: Value) -> Value {
+    let rendering = setting_section(&value, "rendering");
+    let chemistry = setting_section(&value, "chemistry");
+    let interaction = setting_section(&value, "interaction");
+    let files = setting_section(&value, "files");
+    let app = setting_section(&value, "app");
+
+    let png_export_scale = match setting_u8_range(rendering, "pngExportScale", 2, 1, 4) {
+        1 => 1,
+        4 => 4,
+        _ => 2,
+    };
+    let recent_files_limit = setting_u8_range(files, "recentFilesLimit", 12, 5, 50);
+
+    json!({
+        "version": app_settings_version(),
+        "rendering": {
+            "pngExportScale": png_export_scale,
+            "defaultBackground": setting_string(rendering, "defaultBackground", "white", &["white", "black", "custom"]),
+            "customBackgroundHex": normalize_hex_color(rendering.and_then(|section| section.get("customBackgroundHex")), "#ffffff"),
+            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLview", &["CYLview", "Houkmol", "last-used"]),
+            "defaultProjection": setting_string(rendering, "defaultProjection", "perspective", &["perspective", "orthographic"]),
+            "defaultLighting": setting_string(rendering, "defaultLighting", "publication", &["publication", "soft-studio", "high-contrast"]),
+            "showFloorGridByDefault": setting_bool(rendering, "showFloorGridByDefault", false),
+        },
+        "chemistry": {
+            "defaultHydrogenVisibility": setting_string(chemistry, "defaultHydrogenVisibility", "shown", &["shown", "hidden", "hide-c-h"]),
+            "distancePrecision": setting_u8_range(chemistry, "distancePrecision", 2, 1, 4),
+            "anglePrecision": setting_u8_range(chemistry, "anglePrecision", 1, 1, 4),
+            "bondPerceptionTolerance": setting_f64_range(chemistry, "bondPerceptionTolerance", 1.3, 1.1, 1.5),
+        },
+        "interaction": {
+            "mouseMode": setting_string(interaction, "mouseMode", "standard", &["standard", "one-button"]),
+            "invertScrollZoom": setting_bool(interaction, "invertScrollZoom", false),
+            "keyboardShortcuts": setting_object(interaction, "keyboardShortcuts"),
+        },
+        "files": {
+            "autosavePresentationState": setting_bool(files, "autosavePresentationState", true),
+            "restorePreviousSessionOnStartup": setting_bool(files, "restorePreviousSessionOnStartup", true),
+            "droppedFilesOpenInBackground": setting_bool(files, "droppedFilesOpenInBackground", true),
+            "recentFilesLimit": recent_files_limit,
+        },
+        "app": {
+            "autoCheckForUpdates": setting_bool(app, "autoCheckForUpdates", false),
+            "devtoolsMenuEnabled": setting_bool(app, "devtoolsMenuEnabled", true),
+        },
+    })
 }
 
 fn now_timestamp() -> String {
@@ -978,6 +1126,40 @@ fn normalize_presentation_state(value: Value) -> Result<Value, String> {
         .map_err(|error| format!("Saved presentation state is invalid: {error}"))?;
     serde_json::to_value(envelope)
         .map_err(|error| format!("Could not normalize presentation state: {error}"))
+}
+
+fn read_app_settings_from_path(path: &Path) -> Result<Value, String> {
+    if !path.exists() {
+        return Ok(default_app_settings());
+    }
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("Could not read app settings: {error}"))?;
+    let value = serde_json::from_str(&contents)
+        .map_err(|error| format!("App settings are invalid JSON: {error}"))?;
+    Ok(normalize_app_settings(value))
+}
+
+fn write_app_settings_to_path(path: &Path, settings: Value) -> Result<Value, String> {
+    let settings = normalize_app_settings(settings);
+    let contents = serde_json::to_string_pretty(&settings)
+        .map_err(|error| format!("Could not encode app settings: {error}"))?;
+    fs::write(path, contents).map_err(|error| format!("Could not save app settings: {error}"))?;
+    Ok(settings)
+}
+
+#[tauri::command]
+fn get_app_settings(app: AppHandle) -> Result<Value, String> {
+    read_app_settings_from_path(&app_settings_path(&app)?)
+}
+
+#[tauri::command]
+fn save_app_settings(app: AppHandle, settings: Value) -> Result<Value, String> {
+    write_app_settings_to_path(&app_settings_path(&app)?, settings)
+}
+
+#[tauri::command]
+fn reset_app_settings(app: AppHandle) -> Result<Value, String> {
+    write_app_settings_to_path(&app_settings_path(&app)?, default_app_settings())
 }
 
 #[tauri::command]
@@ -1443,6 +1625,9 @@ fn main() {
             get_benchmark_config,
             write_benchmark_result,
             get_startup_file,
+            get_app_settings,
+            save_app_settings,
+            reset_app_settings,
             load_presentation_state,
             save_presentation_state,
             clear_presentation_state,
@@ -1519,6 +1704,106 @@ mod tests {
         assert_eq!(menu_event_name(MENU_FILE_QUIT), None);
         assert_eq!(menu_event_name(MENU_VIEW_OPEN_DEVTOOLS), None);
         assert_eq!(menu_event_name("unknown"), None);
+    }
+
+    #[test]
+    fn test_app_settings_defaults_and_normalization() {
+        let normalized = normalize_app_settings(json!({
+            "version": 99,
+            "rendering": {
+                "pngExportScale": 3,
+                "defaultBackground": "transparent",
+                "customBackgroundHex": "not-a-color",
+                "defaultMaterialPreset": "Unknown",
+                "showFloorGridByDefault": true
+            },
+            "chemistry": {
+                "defaultHydrogenVisibility": "hidden",
+                "distancePrecision": 99,
+                "anglePrecision": 0,
+                "bondPerceptionTolerance": 2.0
+            },
+            "interaction": {
+                "mouseMode": "one-button",
+                "invertScrollZoom": true,
+                "keyboardShortcuts": { "openFile": "Ctrl+O" }
+            },
+            "files": {
+                "autosavePresentationState": false,
+                "recentFilesLimit": 500
+            },
+            "app": {
+                "autoCheckForUpdates": true
+            }
+        }));
+
+        assert_eq!(normalized["version"], json!(1));
+        assert_eq!(normalized["rendering"]["pngExportScale"], json!(2));
+        assert_eq!(normalized["rendering"]["defaultBackground"], json!("white"));
+        assert_eq!(
+            normalized["rendering"]["customBackgroundHex"],
+            json!("#ffffff")
+        );
+        assert_eq!(
+            normalized["rendering"]["defaultMaterialPreset"],
+            json!("CYLview")
+        );
+        assert_eq!(
+            normalized["rendering"]["showFloorGridByDefault"],
+            json!(true)
+        );
+        assert_eq!(
+            normalized["chemistry"]["defaultHydrogenVisibility"],
+            json!("hidden")
+        );
+        assert_eq!(normalized["chemistry"]["distancePrecision"], json!(4));
+        assert_eq!(normalized["chemistry"]["anglePrecision"], json!(1));
+        assert_eq!(
+            normalized["chemistry"]["bondPerceptionTolerance"],
+            json!(1.5)
+        );
+        assert_eq!(normalized["interaction"]["mouseMode"], json!("one-button"));
+        assert_eq!(normalized["interaction"]["invertScrollZoom"], json!(true));
+        assert_eq!(
+            normalized["interaction"]["keyboardShortcuts"]["openFile"],
+            json!("Ctrl+O")
+        );
+        assert_eq!(
+            normalized["files"]["autosavePresentationState"],
+            json!(false)
+        );
+        assert_eq!(normalized["files"]["recentFilesLimit"], json!(50));
+        assert_eq!(normalized["app"]["autoCheckForUpdates"], json!(true));
+        assert_eq!(normalized["app"]["devtoolsMenuEnabled"], json!(true));
+    }
+
+    #[test]
+    fn test_app_settings_round_trip_and_reset_helpers() {
+        let path =
+            std::env::temp_dir().join(format!("cylform-settings-test-{}.json", now_timestamp()));
+
+        let default_settings = read_app_settings_from_path(&path).unwrap();
+        assert_eq!(default_settings, default_app_settings());
+
+        let saved = write_app_settings_to_path(
+            &path,
+            json!({
+                "rendering": { "pngExportScale": 4, "customBackgroundHex": "#ABCDEF" },
+                "files": { "recentFilesLimit": 8 }
+            }),
+        )
+        .unwrap();
+        assert_eq!(saved["rendering"]["pngExportScale"], json!(4));
+        assert_eq!(saved["rendering"]["customBackgroundHex"], json!("#abcdef"));
+        assert_eq!(saved["files"]["recentFilesLimit"], json!(8));
+
+        let round_tripped = read_app_settings_from_path(&path).unwrap();
+        assert_eq!(round_tripped, saved);
+
+        let reset = write_app_settings_to_path(&path, default_app_settings()).unwrap();
+        assert_eq!(reset, default_app_settings());
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

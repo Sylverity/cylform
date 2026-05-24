@@ -149,6 +149,40 @@ export interface ViewOptions {
   autoRotateSpeed: number;
 }
 
+export interface AppSettings {
+  version: 1;
+  rendering: {
+    pngExportScale: 1 | 2 | 4;
+    defaultBackground: 'white' | 'black' | 'custom';
+    customBackgroundHex: string;
+    defaultMaterialPreset: MaterialPresetId | 'last-used';
+    defaultProjection: ProjectionMode;
+    defaultLighting: LightingMood;
+    showFloorGridByDefault: boolean;
+  };
+  chemistry: {
+    defaultHydrogenVisibility: HydrogenVisibility;
+    distancePrecision: number;
+    anglePrecision: number;
+    bondPerceptionTolerance: number;
+  };
+  interaction: {
+    mouseMode: 'standard' | 'one-button';
+    invertScrollZoom: boolean;
+    keyboardShortcuts: Record<string, string>;
+  };
+  files: {
+    autosavePresentationState: boolean;
+    restorePreviousSessionOnStartup: boolean;
+    droppedFilesOpenInBackground: boolean;
+    recentFilesLimit: number;
+  };
+  app: {
+    autoCheckForUpdates: boolean;
+    devtoolsMenuEnabled: boolean;
+  };
+}
+
 export interface AtomMetadata {
   recordType?: string;
   serial?: number;
@@ -342,6 +376,42 @@ function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
   const extension = extensionForPath(path);
   if (!extension) return false;
   return extensions.some((candidate) => candidate.toLowerCase() === extension);
+}
+
+function defaultAppSettings(): AppSettings {
+  return {
+    version: 1,
+    rendering: {
+      pngExportScale: 2,
+      defaultBackground: 'white',
+      customBackgroundHex: '#ffffff',
+      defaultMaterialPreset: 'CYLview',
+      defaultProjection: 'perspective',
+      defaultLighting: 'publication',
+      showFloorGridByDefault: false,
+    },
+    chemistry: {
+      defaultHydrogenVisibility: 'shown',
+      distancePrecision: 2,
+      anglePrecision: 1,
+      bondPerceptionTolerance: 1.3,
+    },
+    interaction: {
+      mouseMode: 'standard',
+      invertScrollZoom: false,
+      keyboardShortcuts: {},
+    },
+    files: {
+      autosavePresentationState: true,
+      restorePreviousSessionOnStartup: true,
+      droppedFilesOpenInBackground: true,
+      recentFilesLimit: 12,
+    },
+    app: {
+      autoCheckForUpdates: false,
+      devtoolsMenuEnabled: true,
+    },
+  };
 }
 
 function createTabId(): string {
@@ -607,12 +677,42 @@ function OpenRecentDialog({
 
 function SettingsDialog({
   open,
+  settings,
+  status,
+  onChange,
+  onReset,
   onClose,
 }: {
   open: boolean;
+  settings: AppSettings;
+  status: string | null;
+  onChange: (settings: AppSettings) => void;
+  onReset: () => void;
   onClose: () => void;
 }) {
   if (!open) return null;
+
+  const update = <Section extends keyof AppSettings>(
+    section: Section,
+    patch: Partial<AppSettings[Section]>,
+  ) => {
+    onChange({
+      ...settings,
+      [section]: {
+        ...(settings[section] as object),
+        ...patch,
+      },
+    } as AppSettings);
+  };
+
+  const shortcutRows = [
+    ['Open File', settings.interaction.keyboardShortcuts.openFile ?? 'Ctrl+O'],
+    ['Export PNG', settings.interaction.keyboardShortcuts.exportPng ?? 'Ctrl+E'],
+    ['Reset View', settings.interaction.keyboardShortcuts.resetView ?? 'R'],
+    ['Toggle Hydrogen Mode', settings.interaction.keyboardShortcuts.toggleHydrogen ?? 'H'],
+    ['Settings', settings.interaction.keyboardShortcuts.openSettings ?? 'Ctrl+,'],
+    ['View / Measure / Select / Label', 'V / M / A / B / Z / L'],
+  ];
 
   return (
     <div
@@ -631,11 +731,220 @@ function SettingsDialog({
             ×
           </button>
         </div>
-        <div className="menu-dialog-empty">
-          <h4>Settings are coming soon.</h4>
-          <p>This page is intentionally blank while Cylform's v1 workflow is being completed.</p>
+        <div className="settings-body">
+          <section className="settings-section">
+            <h4>Rendering & Export</h4>
+            <label className="settings-row">
+              <span>PNG export scale</span>
+              <select
+                value={settings.rendering.pngExportScale}
+                onChange={(event) => update('rendering', { pngExportScale: Number(event.target.value) as 1 | 2 | 4 })}
+              >
+                <option value={1}>1x</option>
+                <option value={2}>2x</option>
+                <option value={4}>4x</option>
+              </select>
+            </label>
+            <label className="settings-row">
+              <span>Default background</span>
+              <select
+                value={settings.rendering.defaultBackground}
+                onChange={(event) => update('rendering', { defaultBackground: event.target.value as AppSettings['rendering']['defaultBackground'] })}
+              >
+                <option value="white">White</option>
+                <option value="black">Black</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label className="settings-row">
+              <span>Custom background</span>
+              <input
+                type="color"
+                value={settings.rendering.customBackgroundHex}
+                onChange={(event) => update('rendering', { customBackgroundHex: event.target.value })}
+                disabled={settings.rendering.defaultBackground !== 'custom'}
+              />
+            </label>
+            <label className="settings-row">
+              <span>Default material</span>
+              <select
+                value={settings.rendering.defaultMaterialPreset}
+                onChange={(event) => update('rendering', { defaultMaterialPreset: event.target.value as AppSettings['rendering']['defaultMaterialPreset'] })}
+              >
+                <option value="CYLview">CYLview</option>
+                <option value="Houkmol">Houkmol</option>
+                <option value="last-used">Last used</option>
+              </select>
+            </label>
+            <label className="settings-row">
+              <span>Default projection</span>
+              <select
+                value={settings.rendering.defaultProjection}
+                onChange={(event) => update('rendering', { defaultProjection: event.target.value as ProjectionMode })}
+              >
+                <option value="perspective">Perspective</option>
+                <option value="orthographic">Orthographic</option>
+              </select>
+            </label>
+            <label className="settings-row">
+              <span>Default lighting</span>
+              <select
+                value={settings.rendering.defaultLighting}
+                onChange={(event) => update('rendering', { defaultLighting: event.target.value as LightingMood })}
+              >
+                <option value="publication">Publication</option>
+                <option value="soft-studio">Soft studio</option>
+                <option value="high-contrast">High contrast</option>
+              </select>
+            </label>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.rendering.showFloorGridByDefault}
+                onChange={(event) => update('rendering', { showFloorGridByDefault: event.target.checked })}
+              />
+              Show floor/grid for new molecules
+            </label>
+          </section>
+
+          <section className="settings-section">
+            <h4>Chemistry & Measurements</h4>
+            <label className="settings-row">
+              <span>Default hydrogens</span>
+              <select
+                value={settings.chemistry.defaultHydrogenVisibility}
+                onChange={(event) => update('chemistry', { defaultHydrogenVisibility: event.target.value as HydrogenVisibility })}
+              >
+                <option value="shown">Show all</option>
+                <option value="hidden">Hide H</option>
+                <option value="hide-c-h">Hide C-H</option>
+              </select>
+            </label>
+            <label className="settings-row">
+              <span>Distance decimals</span>
+              <input
+                type="number"
+                min={1}
+                max={4}
+                value={settings.chemistry.distancePrecision}
+                onChange={(event) => update('chemistry', { distancePrecision: Number(event.target.value) })}
+              />
+            </label>
+            <label className="settings-row">
+              <span>Angle decimals</span>
+              <input
+                type="number"
+                min={1}
+                max={4}
+                value={settings.chemistry.anglePrecision}
+                onChange={(event) => update('chemistry', { anglePrecision: Number(event.target.value) })}
+              />
+            </label>
+            <label className="settings-row">
+              <span>Bond tolerance</span>
+              <select
+                value={settings.chemistry.bondPerceptionTolerance}
+                onChange={(event) => update('chemistry', { bondPerceptionTolerance: Number(event.target.value) })}
+              >
+                <option value={1.1}>1.1x</option>
+                <option value={1.3}>1.3x</option>
+                <option value={1.5}>1.5x</option>
+              </select>
+            </label>
+            <p className="settings-note">Bond tolerance applies to newly loaded or reloaded molecules.</p>
+          </section>
+
+          <section className="settings-section">
+            <h4>Interaction & Accessibility</h4>
+            <label className="settings-row">
+              <span>Mouse mode</span>
+              <select
+                value={settings.interaction.mouseMode}
+                onChange={(event) => update('interaction', { mouseMode: event.target.value as AppSettings['interaction']['mouseMode'] })}
+              >
+                <option value="standard">Standard</option>
+                <option value="one-button">One-button / trackpad</option>
+              </select>
+            </label>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.interaction.invertScrollZoom}
+                onChange={(event) => update('interaction', { invertScrollZoom: event.target.checked })}
+              />
+              Invert scroll zoom
+            </label>
+            <div className="shortcut-settings-table">
+              {shortcutRows.map(([action, keys]) => (
+                <div key={action}>
+                  <span>{action}</span>
+                  <kbd>{keys}</kbd>
+                </div>
+              ))}
+            </div>
+            <p className="settings-note">Shortcut remapping will use this settings slot in a follow-up slice.</p>
+          </section>
+
+          <section className="settings-section">
+            <h4>Files & Session</h4>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.files.autosavePresentationState}
+                onChange={(event) => update('files', { autosavePresentationState: event.target.checked })}
+              />
+              Auto-save presentation state
+            </label>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.files.restorePreviousSessionOnStartup}
+                onChange={(event) => update('files', { restorePreviousSessionOnStartup: event.target.checked })}
+              />
+              Restore previous session on startup
+            </label>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.files.droppedFilesOpenInBackground}
+                onChange={(event) => update('files', { droppedFilesOpenInBackground: event.target.checked })}
+              />
+              Dropped files open in background
+            </label>
+            <label className="settings-row">
+              <span>Recent files limit</span>
+              <input
+                type="number"
+                min={5}
+                max={50}
+                value={settings.files.recentFilesLimit}
+                onChange={(event) => update('files', { recentFilesLimit: Number(event.target.value) })}
+              />
+            </label>
+          </section>
+
+          <section className="settings-section">
+            <h4>App & Diagnostics</h4>
+            <label className="settings-check">
+              <input
+                type="checkbox"
+                checked={settings.app.devtoolsMenuEnabled}
+                onChange={(event) => update('app', { devtoolsMenuEnabled: event.target.checked })}
+              />
+              DevTools menu action enabled
+            </label>
+            <label className="settings-check disabled">
+              <input type="checkbox" checked={false} disabled />
+              Auto-check for updates <span>Coming later</span>
+            </label>
+            <p className="settings-note">DevTools open from View - Open DevTools in development builds.</p>
+          </section>
         </div>
         <div className="menu-dialog-footer">
+          {status && <span className="settings-status">{status}</span>}
+          <button type="button" className="panel-action secondary" onClick={onReset}>
+            Reset Settings
+          </button>
           <button type="button" className="panel-action" onClick={onClose}>
             Back to Workspace
           </button>
@@ -684,6 +993,8 @@ function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentDialogOpen, setRecentDialogOpen] = useState(false);
+  const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
+  const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
   const nextPoseId = useRef(1);
   const saveStateTimer = useRef<number | null>(null);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
@@ -733,6 +1044,43 @@ function App() {
       setPoseLibrary(library.entries);
     } catch (err) {
       console.warn('Could not load pose library', err);
+    }
+  }, []);
+
+  const refreshAppSettings = useCallback(async () => {
+    try {
+      setAppSettings(await invoke<AppSettings>('get_app_settings'));
+    } catch (err) {
+      console.warn('Could not load app settings', err);
+    }
+  }, []);
+
+  const saveAppSettings = useCallback(async (nextSettings: AppSettings) => {
+    setAppSettings(nextSettings);
+    setSettingsStatus('Saving...');
+    try {
+      const saved = await invoke<AppSettings>('save_app_settings', { settings: nextSettings });
+      setAppSettings(saved);
+      setSettingsStatus('Saved');
+      window.setTimeout(() => setSettingsStatus(null), 1400);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setSettingsStatus('Could not save settings');
+      setError(message);
+    }
+  }, []);
+
+  const resetAppSettings = useCallback(async () => {
+    setSettingsStatus('Resetting...');
+    try {
+      const reset = await invoke<AppSettings>('reset_app_settings');
+      setAppSettings(reset);
+      setSettingsStatus('Defaults restored');
+      window.setTimeout(() => setSettingsStatus(null), 1400);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setSettingsStatus('Could not reset settings');
+      setError(message);
     }
   }, []);
 
@@ -1741,9 +2089,10 @@ function App() {
   }, [handlePoseCaptured, handlePoseUpdated]);
 
   useEffect(() => {
+    void refreshAppSettings();
     void refreshRecentFiles();
     void refreshPoseLibrary();
-  }, [refreshPoseLibrary, refreshRecentFiles]);
+  }, [refreshAppSettings, refreshPoseLibrary, refreshRecentFiles]);
 
   useEffect(() => {
     if (activePreviewJob || previewQueue.length === 0) return;
@@ -2009,7 +2358,14 @@ function App() {
         onOpenFile={handleOpenRecentFile}
         onClose={() => setRecentDialogOpen(false)}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        settings={appSettings}
+        status={settingsStatus}
+        onChange={(settings) => void saveAppSettings(settings)}
+        onReset={() => void resetAppSettings()}
+        onClose={() => setSettingsOpen(false)}
+      />
       <PosePreviewRenderer
         job={activePreviewJob}
         onCaptured={handlePosePreviewCaptured}

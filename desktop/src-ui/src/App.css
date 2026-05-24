@@ -1428,7 +1428,7 @@
 }
 
 .settings-dialog {
-  max-width: 500px;
+  max-width: 760px;
 }
 
 .menu-dialog-header {
@@ -1485,6 +1485,124 @@
   line-height: 1.5;
 }
 
+.settings-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  .settings-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-section {
+  padding: 14px;
+  border: 1px solid rgba(217, 223, 229, 0.9);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.settings-section h4 {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.settings-row,
+.settings-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  margin-top: 9px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-row span {
+  min-width: 0;
+}
+
+.settings-row select,
+.settings-row input[type='number'],
+.settings-row input[type='color'] {
+  width: 146px;
+  min-height: 30px;
+  border: 1px solid rgba(207, 215, 223, 0.95);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.settings-row input[type='number'] {
+  padding: 0 8px;
+}
+
+.settings-row input[type='color'] {
+  padding: 3px;
+}
+
+.settings-check {
+  justify-content: flex-start;
+  color: var(--text-secondary);
+}
+
+.settings-check input {
+  margin: 0;
+}
+
+.settings-check.disabled {
+  opacity: 0.62;
+}
+
+.settings-check span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.settings-note {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.shortcut-settings-table {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.shortcut-settings-table div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.shortcut-settings-table kbd {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid rgba(170, 182, 194, 0.65);
+  border-radius: 5px;
+  background: #ffffff;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .recent-dialog-list {
   padding: 12px;
   overflow-y: auto;
@@ -1529,14 +1647,24 @@
 
 .menu-dialog-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   padding: 14px 22px 18px;
   border-top: 1px solid rgba(217, 223, 229, 0.72);
+}
+
+.settings-status {
+  margin-right: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .menu-dialog-footer .panel-action {
   width: auto;
   min-width: 90px;
+  margin-top: 0;
 }
 
 /* ---------------------------------------------------------------------------
