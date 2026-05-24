@@ -1412,6 +1412,7 @@ fn get_pose_library(app: AppHandle) -> Result<PoseLibraryEnvelope, String> {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn save_pose_to_library(
     app: AppHandle,
     name: String,
