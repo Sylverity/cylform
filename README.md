@@ -50,6 +50,7 @@ Rust (`cylform-core`) reads molecule files, detects the parser by extension, sto
 - Session atom visibility workflows for hiding selected atoms, showing all atoms, hiding all hydrogens, and hiding C-H hydrogens
 - Versioned per-file presentation state for annotations, hidden atoms, styles, material preset, camera choices, and saved poses
 - Browser-style molecule tabs, recent-file history, and a global Pose Library with generated pose thumbnails
+- Persisted app settings for rendering/export quality, chemistry defaults, interaction shortcuts, file/session behavior, and diagnostics
 - Native desktop menus for file actions, standard editing, view/window controls, Settings, DevTools, and About
 
 ## Feature Parity Philosophy
@@ -77,7 +78,8 @@ Cylform v1 targets the original CYLview family's core publication workflow: fast
 - **Selected styling** — apply local atom colours/sizes and normal, transition-state, dative, interaction, or thin bond styles for selected regions
 - **Interactive measurements** — click a bond for distance, three atoms for angle, or four atoms for dihedral
 - **PNG export** — save the current view to a chosen `.png` path with a native desktop save dialog
-- **Native desktop menus** — File actions, Open Recent, Close Current Molecule, Export PNG, Settings placeholder, standard Edit/Window roles, and development DevTools access
+- **Settings** — configure PNG export scale, default visual appearance, measurement precision, bond-perception tolerance, mouse/zoom behavior, keyboard shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and diagnostics
+- **Native desktop menus** — File actions, Open Recent, Close Current Molecule, Export PNG, Settings, standard Edit/Window roles, and development DevTools access
 - **Rust file I/O** — fast, reliable parsing with a built-in parser registry for supported formats
 
 ---
@@ -310,9 +312,9 @@ See [docs/BENCHMARKING.md](docs/BENCHMARKING.md) for WSLg/GPU setup notes, resul
 | Manage annotations | Use **Annotations** in the side panel to show, hide, delete, or clear saved annotations |
 | Save a pose | Use **Poses** → **Save pose** in the side panel |
 | Reopen recent file | Use **Open Recent** in the top tab bar, or **File → Open Recent…** |
-| Export PNG | Click **Export PNG**, use **File → Export PNG…**, or press **Ctrl+E** |
+| Export PNG | Click **Export PNG**, use **File → Export PNG…**, or use the configured export shortcut; Settings controls 1x/2x/4x export scale |
 | Close current molecule | Use the tab close button, or **File → Close Current Molecule** |
-| Settings | Use **File → Settings…** to open the intentionally blank v1 placeholder |
+| Settings | Use **File → Settings…** or the configured shortcut to edit persisted app settings |
 | DevTools | Use **View → Open DevTools** in local development builds |
 | Quit | Use **File → Quit Cylform** |
 | About | Use **Help → About Cylform** |
@@ -388,7 +390,8 @@ Cylform/
 - [x] Recent files plus previous/next navigation within the current structure directory
 - [x] Browser-style molecule tabs and session restoration
 - [x] Global Pose Library with generated thumbnails stored in app data
-- [x] Native desktop menu actions for opening, recent files, tab closing, export, Settings placeholder, DevTools, and standard edit/window roles
+- [x] Native desktop menu actions for opening, recent files, tab closing, export, Settings, DevTools, and standard edit/window roles
+- [x] Versioned persisted app settings for rendering/export, chemistry defaults, shortcuts, file/session behavior, and diagnostics
 - [x] Versioned per-file presentation state for annotations, styles, hidden atoms, material preset, custom bonds, and poses
 - [x] PNG export with native save dialog
 - [x] PNG export includes visible annotations

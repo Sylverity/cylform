@@ -13,7 +13,8 @@ High-level project history for Cylform. This file intentionally summarizes user-
 - Replaced persisted labels with a unified persisted annotation model for atom labels, distances, angles, and dihedrals while keeping in-progress measurement selection transient.
 - Added browser-style molecule tabs, `session-tabs.json`, a global Pose Library, and generated Pose Library thumbnails stored under app data in `PosePreviews/`.
 - Added desktop drag-and-drop for supported molecule files; dropped files open as tabs, and existing active views stay active while new tabs load in the background.
-- Added richer native desktop menu actions for opening files, recent files, closing the current molecule tab, exporting PNGs, a Settings placeholder, standard edit/window roles, and debug-build DevTools.
+- Added richer native desktop menu actions for opening files, recent files, closing the current molecule tab, exporting PNGs, Settings, standard edit/window roles, and debug-build DevTools.
+- Added versioned persisted app settings in `settings.json`, including rendering/export defaults, chemistry and measurement defaults, mouse/zoom preferences, keyboard shortcut remapping, autosave/session/drop behavior, recent-file limits, and app-data diagnostics.
 - Added a `FormatParser` registry in `cylform-core`, built-in XYZ/PDB parser implementations, and frontend/native-dialog extension discovery from the backend.
 - Added serializable material presets, starting with `CYLview` and `Houkmol`, and stored the active preset in per-file state.
 - Added `BondKind` to the core data model for normal, transition-state, dative, interaction, and thin figure bonds, with frontend style overrides layered on top.

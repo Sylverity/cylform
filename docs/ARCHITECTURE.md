@@ -37,6 +37,7 @@ Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not b
 - `get_supported_read_extensions` exposes the parser registry to the frontend so the native open dialog does not hardcode supported formats.
 - The native menu stays thin: custom menu items emit `menu:*` events to the WebView for workspace actions, while Rust handles native window actions and debug-build DevTools.
 - Per-file presentation state is stored under app data in a versioned JSON envelope.
+- `settings.json` stores versioned global app settings for defaults and preferences. These are app-level defaults, not molecule data.
 - `session-tabs.json` stores the visible workspace tab list, while `recent-files.json` remains the global open history.
 - `pose-library.json` stores global Pose Library entries, and `PosePreviews/` stores generated thumbnail PNGs by library-entry id.
 - Legacy saved keys such as `labels`, `hiddenAtomIndices`, `savedPoses`, and older style maps are normalized into the v1 envelope when loaded.
@@ -48,7 +49,7 @@ The saved-state envelope is intentionally presentation-focused. It belongs to th
 The React app owns interaction state and the Three.js scene.
 
 - `App.tsx` coordinates file loading, saved state, annotations, material preset selection, visibility, style overrides, measurements, and exports.
-- Menu-triggered workspace actions reuse the same frontend handlers as toolbar buttons and tab controls. The Settings view is an explicit placeholder and does not persist preferences yet.
+- Menu-triggered workspace actions reuse the same frontend handlers as toolbar buttons and tab controls. The Settings view persists preferences through the Rust app-data settings commands.
 - Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
 - Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
 - `MoleculeCanvas.tsx` builds the WebGL scene and keeps normal molecule topology rendering batched.
@@ -82,6 +83,24 @@ Saved presentation state is versioned so future releases can add fields without 
 ```
 
 Every field has defaults on the Rust side and the TypeScript side. Persisted annotations use one model for atom labels, distances, angles, and dihedrals. Active measurement picking remains transient UI state until the user chooses to save an annotation.
+
+Global settings follow a separate precedence rule:
+
+1. Explicit current user action in the visible document.
+2. Per-file `SavedInfo/<hash>.json` presentation state for that molecule.
+3. Global `settings.json` defaults.
+4. Built-in defaults.
+
+That means global visual and chemistry defaults initialize newly opened molecules when no per-file presentation state exists. Existing `SavedInfo` values continue to win for molecule-specific background, material preset, hydrogen visibility, annotations, hidden atoms, styles, camera, and saved poses. Global export scale, measurement precision, mouse/zoom behavior, keyboard shortcuts, autosave, session restore, drag/drop background behavior, and recent-file limit apply as app preferences.
+
+The app-data layout currently includes:
+
+- `settings.json` for global app settings.
+- `SavedInfo/<hash>.json` for per-molecule presentation state.
+- `session-tabs.json` for the visible workspace tabs restored on startup when enabled.
+- `recent-files.json` for global recent molecule history.
+- `pose-library.json` for promoted Pose Library entries.
+- `PosePreviews/<entry-id>.png` for Pose Library thumbnails.
 
 ## Pose Library Previews
 
