@@ -1,0 +1,43 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Tauri
+dist/
+dist-js/
+/cylform
+/Cylform.app/
+
+# Node
+node_modules/
+yarn.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+*.tmp
+*.log
+benchmark-results/
+
+# Local reference materials
+/docs/references/
+
+# Build outputs
+*.exe
+*.msi
+*.deb
+*.dmg
+*.AppImage
+*.dll
+*.so
+*.dylib
+Agents.md

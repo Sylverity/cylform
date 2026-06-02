@@ -1,0 +1,93 @@
+/* ============================================================================
+   Cylform Dark Mode
+   ============================================================================ */
+
+[data-theme="dark"] {
+  /* Backgrounds — deep slate, never pure black */
+  --c-bg-primary: oklch(18% 0.02 248);
+  --c-bg-secondary: oklch(22% 0.02 248);
+  --c-bg-elevated: oklch(24% 0.02 248);
+  --c-bg-panel: rgba(30, 34, 40, 0.88);
+  --c-bg-panel-solid: #1e2228;
+  --c-bg-input: oklch(26% 0.02 248);
+  --c-bg-hover: rgba(255, 255, 255, 0.06);
+  --c-bg-active: rgba(4, 120, 87, 0.18);
+  --c-bg-danger: rgba(127, 29, 29, 0.25);
+  --c-bg-warning: rgba(120, 90, 20, 0.25);
+  --c-bg-success: rgba(20, 83, 45, 0.25);
+
+  /* Text — high contrast but not harsh */
+  --c-text-primary: oklch(94% 0.01 248);
+  --c-text-secondary: oklch(72% 0.015 248);
+  --c-text-muted: oklch(58% 0.01 248);
+  --c-text-on-accent: oklch(99% 0.003 248);
+  --c-text-danger: #fca5a5;
+  --c-text-warning: #fcd34d;
+  --c-text-success: #86efac;
+
+  /* Accent — same green-teal, slightly brighter for dark bg */
+  --c-accent: oklch(52% 0.14 158);
+  --c-accent-strong: oklch(58% 0.15 158);
+  --c-accent-subtle: rgba(4, 120, 87, 0.15);
+  --c-accent-border: rgba(4, 120, 87, 0.45);
+
+  /* Borders — slightly more visible in dark */
+  --c-border: rgba(255, 255, 255, 0.10);
+  --c-border-subtle: rgba(255, 255, 255, 0.06);
+  --c-border-hover: rgba(255, 255, 255, 0.16);
+  --c-border-danger: rgba(248, 113, 113, 0.35);
+  --c-border-warning: rgba(251, 191, 36, 0.30);
+
+  --c-focus-ring: oklch(58% 0.13 158 / 0.50);
+
+  /* Shadows — softer, less visible in dark */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Auto-detect system preference when no explicit data-theme is set */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg-primary: oklch(18% 0.02 248);
+    --c-bg-secondary: oklch(22% 0.02 248);
+    --c-bg-elevated: oklch(24% 0.02 248);
+    --c-bg-panel: rgba(30, 34, 40, 0.88);
+    --c-bg-panel-solid: #1e2228;
+    --c-bg-input: oklch(26% 0.02 248);
+    --c-bg-hover: rgba(255, 255, 255, 0.06);
+    --c-bg-active: rgba(4, 120, 87, 0.18);
+    --c-bg-danger: rgba(127, 29, 29, 0.25);
+    --c-bg-warning: rgba(120, 90, 20, 0.25);
+    --c-bg-success: rgba(20, 83, 45, 0.25);
+
+    --c-text-primary: oklch(94% 0.01 248);
+    --c-text-secondary: oklch(72% 0.015 248);
+    --c-text-muted: oklch(58% 0.01 248);
+    --c-text-on-accent: oklch(99% 0.003 248);
+    --c-text-danger: #fca5a5;
+    --c-text-warning: #fcd34d;
+    --c-text-success: #86efac;
+
+    --c-accent: oklch(52% 0.14 158);
+    --c-accent-strong: oklch(58% 0.15 158);
+    --c-accent-subtle: rgba(4, 120, 87, 0.15);
+    --c-accent-border: rgba(4, 120, 87, 0.45);
+
+    --c-border: rgba(255, 255, 255, 0.10);
+    --c-border-subtle: rgba(255, 255, 255, 0.06);
+    --c-border-hover: rgba(255, 255, 255, 0.16);
+    --c-border-danger: rgba(248, 113, 113, 0.35);
+    --c-border-warning: rgba(251, 191, 36, 0.30);
+
+    --c-focus-ring: oklch(58% 0.13 158 / 0.50);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+    --shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.55);
+    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+}

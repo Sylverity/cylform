@@ -1,0 +1,263 @@
+/* ============================================================================
+   Toolbar
+   ============================================================================ */
+
+.toolbar {
+  min-height: var(--toolbar-height);
+  height: var(--toolbar-height);
+  background:
+    linear-gradient(
+      180deg,
+      var(--toolbar-bg-start, rgba(255, 255, 255, 0.86)),
+      var(--toolbar-bg-end, rgba(247, 249, 251, 0.96))
+    ),
+    var(--c-bg-secondary);
+  border-bottom: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-3-5);
+  gap: var(--space-2);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+[data-theme="dark"] .toolbar {
+  --toolbar-bg-start: oklch(26% 0.02 248);
+  --toolbar-bg-end: oklch(22% 0.02 248);
+  border-bottom-color: var(--c-border);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .toolbar {
+    --toolbar-bg-start: oklch(26% 0.02 248);
+    --toolbar-bg-end: oklch(22% 0.02 248);
+  }
+}
+
+/* Logo / title */
+.toolbar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--c-text-primary);
+  flex: 0 0 auto;
+  letter-spacing: var(--tracking-normal);
+  user-select: none;
+}
+
+.toolbar-title-mark {
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  object-fit: contain;
+}
+
+/* Toolbar sections */
+.toolbar-section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-2-5);
+  border-left: 1px solid var(--c-border);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.toolbar-section:first-of-type {
+  border-left: none;
+  padding-left: 0;
+}
+
+.mode-toolbar-section {
+  flex: 0 1 auto;
+}
+
+.action-toolbar-section {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.status-toolbar-section {
+  flex: 0 0 auto;
+  border-left: none;
+  padding-left: var(--space-1);
+}
+
+/* Mode selector pill */
+.mode-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-full);
+  background: var(--c-bg-secondary);
+  box-shadow: var(--shadow-inset);
+}
+
+.mode-selector button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: auto;
+  padding: 5px 10px;
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--c-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.mode-selector button:hover:not(:disabled) {
+  background: var(--c-bg-elevated);
+  color: var(--c-text-primary);
+}
+
+.mode-selector button.mode-active {
+  background: var(--c-bg-elevated);
+  border-color: var(--c-accent-border);
+  color: var(--c-accent-strong);
+  box-shadow: 0 2px 8px var(--c-accent-subtle);
+}
+
+.mode-selector button:disabled {
+  opacity: 0.46;
+  cursor: not-allowed;
+}
+
+/* Toolbar buttons */
+.toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--c-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: var(--c-bg-hover);
+  border-color: var(--c-border-hover);
+  color: var(--c-text-primary);
+}
+
+.toolbar button.primary {
+  background: var(--c-accent);
+  color: var(--c-text-on-accent);
+  border-color: var(--c-accent);
+  padding: 6px 12px;
+}
+
+.toolbar button.primary:hover:not(:disabled) {
+  background: var(--c-accent-strong);
+  border-color: var(--c-accent-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.toolbar button.toggle-active {
+  background: var(--c-accent-subtle);
+  border-color: var(--c-accent-border);
+  color: var(--c-accent-strong);
+}
+
+.toolbar button.toggle-active:hover:not(:disabled) {
+  background: var(--c-accent-subtle);
+  border-color: var(--c-accent-border);
+}
+
+.toolbar button:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+/* Icon-only toolbar buttons */
+.toolbar button.icon-only {
+  padding: 6px;
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+}
+
+/* Keyboard shortcut hints in toolbar */
+.toolbar kbd {
+  min-width: 18px;
+  padding: 1px 5px 2px;
+  border: 1px solid var(--c-border-hover);
+  border-bottom-color: var(--c-border-hover);
+  border-radius: 5px;
+  background: var(--c-bg-secondary);
+  color: var(--c-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  line-height: 1.15;
+}
+
+.toolbar button.primary kbd,
+.toolbar button.toggle-active kbd {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: currentColor;
+}
+
+/* Loading indicator */
+.toolbar .loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--c-text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Responsive: hide kbd shortcuts on medium screens */
+@media (max-width: 1100px) {
+  .action-toolbar-section kbd {
+    display: none;
+  }
+}
+
+/* Responsive: compact mode selector */
+@media (max-width: 900px) {
+  .mode-selector button {
+    padding: 5px 7px;
+  }
+  .mode-selector button span:first-child {
+    display: none;
+  }
+}
+
+/* Responsive: collapse action buttons to icons */
+@media (max-width: 760px) {
+  .action-toolbar-section button:not(.primary):not(.icon-only) span {
+    display: none;
+  }
+  .action-toolbar-section button:not(.primary) {
+    padding: 6px;
+    width: 30px;
+    height: 30px;
+    justify-content: center;
+  }
+}
+
+/* Very narrow: hide mode selector labels entirely */
+@media (max-width: 640px) {
+  .mode-selector button {
+    padding: 5px 6px;
+  }
+  .mode-selector button span:first-child {
+    display: none;
+  }
+}

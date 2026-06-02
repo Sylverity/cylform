@@ -1,0 +1,82 @@
+/* ============================================================================
+   Cylform Global Styles
+   ============================================================================ */
+
+@import './styles/variables.css';
+@import './styles/dark-mode.css';
+@import './styles/components/toolbar.css';
+@import './styles/components/tabs.css';
+@import './styles/components/panels.css';
+@import './styles/components/dialogs.css';
+@import './styles/components/canvas.css';
+@import './styles/components/toast.css';
+@import './styles/components/misc.css';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--c-bg-primary);
+  color: var(--c-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--c-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--c-border-hover);
+}
+
+/* App shell layout */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: var(--c-bg-primary);
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Browser banner (fallback) */
+.browser-banner {
+  background: #fff3cd;
+  border-bottom: 2px solid #ffc107;
+  color: #856404;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.browser-banner strong {
+  color: #533f03;
+}

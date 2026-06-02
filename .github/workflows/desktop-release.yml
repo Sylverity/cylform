@@ -1,0 +1,331 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_windows:
+        description: "Build Windows artifacts"
+        type: boolean
+        default: true
+      build_linux:
+        description: "Build Linux artifacts"
+        type: boolean
+        default: true
+      build_macos:
+        description: "Build macOS artifacts"
+        type: boolean
+        default: true
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    name: Verify release inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: desktop/src-ui/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit production frontend dependencies
+        working-directory: desktop/src-ui
+        continue-on-error: true
+        run: pnpm audit --prod
+
+      - name: Audit Rust dependencies
+        continue-on-error: true
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
+      - name: Check release version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cargo_version="$(cargo metadata --no-deps --format-version 1 | node -e "let data=''; process.stdin.on('data', c => data += c); process.stdin.on('end', () => console.log(JSON.parse(data).packages.find(pkg => pkg.name === 'cylform-desktop').version));")"
+          tauri_version="$(node -e "console.log(require('./desktop/src-tauri/tauri.conf.json').version)")"
+          ui_version="$(node -e "console.log(require('./desktop/src-ui/package.json').version)")"
+
+          if [[ "$cargo_version" != "$tauri_version" || "$cargo_version" != "$ui_version" ]]; then
+            echo "Version mismatch: cargo=$cargo_version tauri=$tauri_version ui=$ui_version" >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "$tag_version" != "$cargo_version" ]]; then
+              echo "Tag v$tag_version does not match package version $cargo_version" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Build frontend
+        working-directory: desktop/src-ui
+        run: pnpm run build
+
+      - name: Test frontend persistence helpers
+        working-directory: desktop/src-ui
+        run: pnpm run test
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --verbose
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  build-windows:
+    name: Build Windows installers
+    needs: verify-release
+    if: ${{ github.event_name == 'push' || inputs.build_windows }}
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: desktop/src-ui/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Windows bundles
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $version = node -e "console.log(require('./src-tauri/tauri.conf.json').version)"
+          $bundles = if ($version -match '-') { 'nsis' } else { 'nsis,msi' }
+          Write-Host "Building Windows bundles: $bundles"
+          src-ui\node_modules\.bin\tauri.cmd build --bundles $bundles
+
+      - name: Stage Windows artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/release | Out-Null
+          Copy-Item target/release/cylform.exe dist/release/cylform.exe
+          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1) dist/release/Cylform-setup.exe
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($msi) {
+            Copy-Item $msi dist/release/Cylform.msi
+          }
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cylform-windows
+          path: dist/release/*
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Ubuntu/Debian package
+    needs: verify-release
+    if: ${{ github.event_name == 'push' || inputs.build_linux }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libglib2.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: desktop/src-ui/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Debian package
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles deb
+
+      - name: Stage Linux artifacts
+        run: |
+          mkdir -p dist/release
+          cp target/release/cylform dist/release/cylform
+          cp target/release/bundle/deb/*.deb dist/release/
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cylform-linux
+          path: dist/release/*
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS bundle (${{ matrix.arch }})
+    needs: verify-release
+    if: ${{ github.event_name == 'push' || inputs.build_macos }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: desktop/src-ui/pnpm-lock.yaml
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: desktop/src-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build macOS app bundle
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles app
+
+      - name: Stage macOS app artifact
+        run: |
+          mkdir -p dist/release
+          ditto -c -k --keepParent target/release/bundle/macos/Cylform.app dist/release/Cylform-macos-${{ matrix.arch }}.app.zip
+
+      - name: Build macOS DMG
+        working-directory: desktop
+        run: src-ui/node_modules/.bin/tauri build --bundles dmg
+
+      - name: Stage macOS artifacts
+        run: |
+          mkdir -p dist/release
+          cp target/release/bundle/dmg/*.dmg dist/release/
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cylform-macos-${{ matrix.arch }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Cylform-*
+          merge-multiple: true
+          path: release-artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+          generate_release_notes: true
+          draft: false

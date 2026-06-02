@@ -1,0 +1,33 @@
+[package]
+name = "cylform-desktop"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Desktop application for Cylform"
+
+[dependencies]
+cylform-core = { path = "../../crates/core" }
+base64 = "0.22"
+tauri = { workspace = true }
+tauri-plugin-dialog = "2.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
+glam = { workspace = true }
+log = { workspace = true }
+env_logger = "0.11"
+parking_lot = "0.12"
+tauri-plugin-single-instance = "2.0"
+
+[features]
+default = []
+devtools = ["tauri/devtools"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[[bin]]
+name = "cylform"
+path = "src/main.rs"

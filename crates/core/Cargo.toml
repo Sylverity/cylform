@@ -1,0 +1,26 @@
+[package]
+name = "cylform-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core molecular visualization library for Cylform"
+
+[dependencies]
+# Math
+glam = { workspace = true }
+
+# Logging & errors
+log = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }
+tempfile = "3.9"

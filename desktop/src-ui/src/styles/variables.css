@@ -1,0 +1,134 @@
+/* ============================================================================
+   Cylform Design Tokens
+   ============================================================================ */
+
+:root {
+  /* --------------------------------------------------------------------------
+     Color primitives — oklch for perceptual uniformity, rgba for overlays
+     -------------------------------------------------------------------------- */
+  --c-bg-primary: oklch(96.1% 0.006 248);
+  --c-bg-secondary: oklch(98.8% 0.004 248);
+  --c-bg-elevated: #ffffff;
+  --c-bg-panel: rgba(248, 250, 252, 0.88);
+  --c-bg-panel-solid: #f8fafc;
+  --c-bg-input: #ffffff;
+  --c-bg-hover: rgba(239, 243, 247, 0.95);
+  --c-bg-active: rgba(4, 120, 87, 0.10);
+  --c-bg-danger: rgba(254, 242, 242, 0.95);
+  --c-bg-warning: rgba(255, 249, 235, 0.72);
+  --c-bg-success: rgba(240, 253, 244, 0.97);
+
+  --c-text-primary: oklch(24.5% 0.018 248);
+  --c-text-secondary: oklch(51.5% 0.02 248);
+  --c-text-muted: oklch(60% 0.01 248);
+  --c-text-on-accent: oklch(99% 0.003 248);
+  --c-text-danger: #991b1b;
+  --c-text-warning: #795916;
+  --c-text-success: #166534;
+
+  --c-accent: oklch(43% 0.13 158);
+  --c-accent-strong: oklch(36% 0.12 158);
+  --c-accent-subtle: rgba(4, 120, 87, 0.08);
+  --c-accent-border: rgba(4, 120, 87, 0.34);
+
+  --c-border: rgba(207, 215, 223, 0.85);
+  --c-border-subtle: rgba(217, 223, 229, 0.6);
+  --c-border-hover: rgba(202, 211, 220, 0.95);
+  --c-border-danger: rgba(248, 172, 172, 0.82);
+  --c-border-warning: rgba(217, 179, 92, 0.45);
+
+  --c-focus-ring: oklch(58% 0.13 158 / 0.36);
+
+  /* --------------------------------------------------------------------------
+     Shadows — layered, subtle, never harsh
+     -------------------------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 40px rgba(41, 51, 62, 0.14);
+  --shadow-xl: 0 24px 80px rgba(41, 51, 62, 0.18);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+
+  /* --------------------------------------------------------------------------
+     Spacing — 4px base grid
+     -------------------------------------------------------------------------- */
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-2-5: 10px;
+  --space-3: 12px;
+  --space-3-5: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* --------------------------------------------------------------------------
+     Typography
+     -------------------------------------------------------------------------- */
+  --font-sans: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 20px;
+  --text-3xl: 25px;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 750;
+  --weight-black: 800;
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.35;
+  --leading-relaxed: 1.55;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0.01em;
+  --tracking-wide: 0.08em;
+  --tracking-wider: 0.1em;
+  --tracking-widest: 0.12em;
+
+  /* --------------------------------------------------------------------------
+     Layout
+     -------------------------------------------------------------------------- */
+  --toolbar-height: 44px;
+  --panel-width: 260px;
+  --panel-width-narrow: 220px;
+  --tab-height: 32px;
+
+  /* --------------------------------------------------------------------------
+     Radii
+     -------------------------------------------------------------------------- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-full: 999px;
+
+  /* --------------------------------------------------------------------------
+     Transitions
+     -------------------------------------------------------------------------- */
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-spring: 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --------------------------------------------------------------------------
+     Z-index scale
+     -------------------------------------------------------------------------- */
+  --z-canvas: 1;
+  --z-overlay: 3;
+  --z-dropdown: 10;
+  --z-dialog: 90;
+  --z-toast: 100;
+}

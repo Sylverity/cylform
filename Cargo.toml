@@ -1,0 +1,35 @@
+[workspace]
+members = ["crates/core", "desktop/src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.5.0"
+edition = "2021"
+authors = ["Cylform Contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/Sylverity/Cylform"
+rust-version = "1.70"
+
+[workspace.dependencies]
+# Math
+glam = { version = "0.32", features = ["serde"] }
+
+# Logging & errors
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Tauri (desktop only)
+tauri = { version = "2.0", features = ["wry"] }
+tauri-build = { version = "2.0" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

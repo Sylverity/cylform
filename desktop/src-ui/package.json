@@ -1,0 +1,34 @@
+{
+  "name": "cylform-ui",
+  "private": true,
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri-build": "tauri build",
+    "build:desktop": "node ../../scripts/build-desktop.mjs",
+    "build:desktop:fast": "node ../../scripts/build-desktop.mjs --skip-frontend-install",
+    "benchmark:atoms": "node ../../scripts/benchmark-atom-capacity.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@types/three": "^0.184.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "three": "^0.184.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.0.14"
+  }
+}
