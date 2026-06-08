@@ -1608,7 +1608,6 @@ export function MoleculeCanvas({
       };
       window.dispatchEvent(new CustomEvent('camera-pose-captured', { detail: payload }));
     };
-    window.addEventListener('capture-camera-pose', onCaptureCameraPose);
 
     const onApplyCameraPose = (event: Event) => {
       const current = ctxRef.current;
@@ -2457,6 +2456,7 @@ export function MoleculeCanvas({
     onSelectionSummaryChange,
     benchmarkConfig,
     onBenchmarkRender,
+    viewOptions.bondSizeScale,
   ]);
 
   useEffect(() => {
