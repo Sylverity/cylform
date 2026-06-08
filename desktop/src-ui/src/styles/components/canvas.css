@@ -92,7 +92,7 @@
   border-radius: var(--radius-full);
   background: rgba(255, 250, 243, 0.96);
   color: #8b4d17;
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--label-font-scale, 1));
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-normal);
   box-shadow: 0 6px 18px rgba(94, 67, 38, 0.12);
@@ -111,7 +111,7 @@
   border-radius: var(--radius-full);
   background: rgba(255, 247, 236, 0.97);
   color: #8a5420;
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--label-font-scale, 1));
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-normal);
   box-shadow: 0 6px 18px rgba(99, 70, 35, 0.14);
@@ -130,7 +130,7 @@
   border-radius: var(--radius-full);
   background: rgba(239, 246, 255, 0.97);
   color: #25517d;
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--label-font-scale, 1));
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-normal);
   box-shadow: 0 6px 18px rgba(46, 72, 108, 0.14);
@@ -150,7 +150,7 @@
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.94);
   color: #263241;
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--label-font-scale, 1));
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-normal);
   box-shadow: 0 8px 24px rgba(40, 52, 66, 0.14);
@@ -324,7 +324,7 @@
 .loading-card p {
   margin: 0;
   color: var(--c-text-muted);
-  font-size: var(--text-sm);
+  font-size: calc(var(--text-sm) * var(--label-font-scale, 1));
   line-height: var(--leading-relaxed);
 }
 
@@ -416,4 +416,14 @@
   width: 400px;
   height: 300px;
   flex: 0 0 auto;
+}
+
+.label-link-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: var(--z-overlay);
 }

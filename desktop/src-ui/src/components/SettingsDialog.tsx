@@ -325,6 +325,14 @@ export function SettingsDialog({
                   <option value={1.5}>1.5x</option>
                 </select>
               </label>
+              <label className="settings-check">
+                <input
+                  type="checkbox"
+                  checked={settings.chemistry.useSymbolUnits}
+                  onChange={(event) => update('chemistry', { useSymbolUnits: event.target.checked })}
+                />
+                Use symbol units (Å, °)
+              </label>
               <p className="settings-note">Bond tolerance applies to newly loaded or reloaded molecules.</p>
             </section>
 

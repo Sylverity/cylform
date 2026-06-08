@@ -81,6 +81,8 @@ interface AppearancePanelProps {
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
+  labelFontScale: number;
+  bondSizeScale: number;
   materialPreset: MaterialPresetId;
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
@@ -88,6 +90,8 @@ interface AppearancePanelProps {
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
   onAtomSizeScaleChange: (scale: number) => void;
+  onLabelFontScaleChange: (scale: number) => void;
+  onBondSizeScaleChange: (scale: number) => void;
   onStyleSelectedAtoms: (color: string) => void;
   onSizeSelectedAtoms: () => void;
   onResetSelectedAtomStyles: () => void;
@@ -103,6 +107,8 @@ export function AppearancePanel({
   atomStyleOverrides,
   bondStyleOverrides,
   atomSizeScale,
+  labelFontScale,
+  bondSizeScale,
   materialPreset,
   selectionMode,
   selectionSummary,
@@ -110,6 +116,8 @@ export function AppearancePanel({
   onResetElementColor,
   onResetAllElementColors,
   onAtomSizeScaleChange,
+  onLabelFontScaleChange,
+  onBondSizeScaleChange,
   onStyleSelectedAtoms,
   onSizeSelectedAtoms,
   onResetSelectedAtomStyles,
@@ -160,6 +168,36 @@ export function AppearancePanel({
         value={atomSizeScale}
         aria-label="Atom size"
         onChange={(event) => onAtomSizeScaleChange(Number(event.target.value))}
+      />
+
+      <div className="view-split-row">
+        <span>Label size</span>
+        <span>{labelFontScale.toFixed(2)}x</span>
+      </div>
+      <input
+        className="view-range"
+        type="range"
+        min="0.75"
+        max="1.5"
+        step="0.05"
+        value={labelFontScale}
+        aria-label="Label font size"
+        onChange={(event) => onLabelFontScaleChange(Number(event.target.value))}
+      />
+
+      <div className="view-split-row">
+        <span>Bond size</span>
+        <span>{bondSizeScale.toFixed(2)}x</span>
+      </div>
+      <input
+        className="view-range"
+        type="range"
+        min="0.5"
+        max="1.5"
+        step="0.05"
+        value={bondSizeScale}
+        aria-label="Bond size"
+        onChange={(event) => onBondSizeScaleChange(Number(event.target.value))}
       />
 
       <section className="appearance-section">

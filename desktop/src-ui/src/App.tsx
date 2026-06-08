@@ -167,6 +167,9 @@ export interface ViewOptions {
   fogIntensity: number;
   autoRotate: boolean;
   autoRotateSpeed: number;
+  labelFontScale: number;
+  bondSizeScale: number;
+  showLabelLinkLines: boolean;
 }
 
 export interface AppSettings {
@@ -185,6 +188,7 @@ export interface AppSettings {
     distancePrecision: number;
     anglePrecision: number;
     bondPerceptionTolerance: number;
+    useSymbolUnits: boolean;
   };
   interaction: {
     mouseMode: 'standard' | 'one-button';
@@ -553,6 +557,7 @@ function defaultAppSettings(): AppSettings {
       distancePrecision: 2,
       anglePrecision: 1,
       bondPerceptionTolerance: 1.3,
+      useSymbolUnits: true,
     },
     interaction: {
       mouseMode: 'standard',
@@ -577,12 +582,14 @@ function clampPrecision(precision: number): number {
   return Math.min(4, Math.max(1, Math.round(precision)));
 }
 
-function formatDistance(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} A`;
+function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? 'Å' : 'A';
+  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
 }
 
-function formatAngle(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} deg`;
+function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? '°' : 'deg';
+  return `${value.toFixed(clampPrecision(precision))}${unit}`;
 }
 
 function createTabId(): string {
@@ -679,7 +686,9 @@ function PosePreviewRenderer({
           viewOptions={job.pose.viewOptions}
           distancePrecision={appSettings.chemistry.distancePrecision}
           anglePrecision={appSettings.chemistry.anglePrecision}
+          useSymbolUnits={appSettings.chemistry.useSymbolUnits}
           pngExportScale={appSettings.rendering.pngExportScale}
+          onPngExportScaleChange={() => undefined}
           mouseMode={appSettings.interaction.mouseMode}
           invertScrollZoom={appSettings.interaction.invertScrollZoom}
           onViewOptionsChange={() => undefined}
@@ -915,6 +924,9 @@ function App() {
     fogIntensity: 0.45,
     autoRotate: false,
     autoRotateSpeed: 0.35,
+    labelFontScale: 1.0,
+    bondSizeScale: 1.0,
+    showLabelLinkLines: false,
   });
 
   useEffect(() => {
@@ -1512,6 +1524,10 @@ function App() {
     window.dispatchEvent(new CustomEvent('clear-selection'));
   }, []);
 
+  const handlePngExportScaleChange = useCallback((scale: 1 | 2 | 4) => {
+    setAppSettings((current) => ({ ...current, rendering: { ...current.rendering, pngExportScale: scale } }));
+  }, []);
+
   const cycleHydrogenVisibility = useCallback(() => {
     setHydrogenVisibility((current) => {
       if (current === 'shown') return 'hidden';
@@ -1626,11 +1642,11 @@ function App() {
   }, []);
 
   const handleAddMeasurementLabel = useCallback(() => {
-    const { distancePrecision, anglePrecision } = appSettingsRef.current.chemistry;
+    const { distancePrecision, anglePrecision, useSymbolUnits } = appSettingsRef.current.chemistry;
     if (selectedDihedral?.stage === 4 && selectedDihedral.anchor) {
       handleCreatePersistentLabel({
         type: 'Dihedral',
-        text: `${selectedDihedral.atomElements.join('-')} ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision)}`,
+        text: `${selectedDihedral.atomElements.join('-')} ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision, useSymbolUnits)}`,
         anchor: selectedDihedral.anchor,
         atoms: selectedDihedral.atomIndices,
         value: selectedDihedral.dihedralDegrees,
@@ -1642,7 +1658,7 @@ function App() {
     if (selectedAngle?.stage === 3 && selectedAngle.anchor) {
       handleCreatePersistentLabel({
         type: 'Angle',
-        text: `${selectedAngle.atomElements.join('-')} ${formatAngle(selectedAngle.angleDegrees, anglePrecision)}`,
+        text: `${selectedAngle.atomElements.join('-')} ${formatAngle(selectedAngle.angleDegrees, anglePrecision, useSymbolUnits)}`,
         anchor: selectedAngle.anchor,
         atoms: selectedAngle.atomIndices,
         value: selectedAngle.angleDegrees,
@@ -1654,7 +1670,7 @@ function App() {
     if (selectedBond) {
       handleCreatePersistentLabel({
         type: 'Distance',
-        text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${formatDistance(selectedBond.distance, distancePrecision)}`,
+        text: `${selectedBond.atom1Element}-${selectedBond.atom2Element} ${formatDistance(selectedBond.distance, distancePrecision, useSymbolUnits)}`,
         anchor: selectedBond.anchor,
         atoms: selectedBond.atomIndices,
         value: selectedBond.distance,
@@ -2261,7 +2277,9 @@ function App() {
             viewOptions={viewOptions}
             distancePrecision={appSettings.chemistry.distancePrecision}
             anglePrecision={appSettings.chemistry.anglePrecision}
+            useSymbolUnits={appSettings.chemistry.useSymbolUnits}
             pngExportScale={appSettings.rendering.pngExportScale}
+            onPngExportScaleChange={handlePngExportScaleChange}
             mouseMode={appSettings.interaction.mouseMode}
             invertScrollZoom={appSettings.interaction.invertScrollZoom}
             onViewOptionsChange={setViewOptions}
@@ -2317,6 +2335,7 @@ function App() {
           selectionSummary={selectionSummary}
           distancePrecision={appSettings.chemistry.distancePrecision}
           anglePrecision={appSettings.chemistry.anglePrecision}
+          useSymbolUnits={appSettings.chemistry.useSymbolUnits}
           savedPoses={savedPoses}
           poseLibrary={poseLibrary}
           onHideSelectedAtoms={handleHideSelectedAtoms}

@@ -10,6 +10,29 @@ High-level project history for Cylform.
 
 ---
 
+## [0.5.2] - 2026-06-08
+
+CYLview parity milestone — annotations, rendering refinements, and frontend architecture cleanup.
+
+### Added
+- **Label font scale slider** (0.75–1.5×) in the Appearance panel.
+- **Å / ° symbol units** toggle in Settings → Chemistry, persisted in the Rust backend.
+- **Subscript / superscript** support in persistent labels (`<sub>`, `<sup>`) with rich canvas text for PNG export.
+- **Label link lines** — dashed canvas overlay connecting persistent labels to their atom/bond anchors.
+- **Bond size scale slider** (0.5–1.5×) in the Appearance panel.
+- **Angle arc mesh** — orange 3D arc appears when 3 atoms are selected for angle measurement.
+- **Houkmol quadrant shading** — view-space quadrant tinting via shader patch when the Houkmol preset is active.
+- **PNG export scale quick-access** dropdown in the View panel (1× / 2× / 4×).
+
+### Changed
+- Refactored `MoleculeCanvas.tsx` (2820 → ~1790 lines) into focused domain modules under `components/molecule-canvas/`:
+  `types.ts`, `labels.ts`, `visualStyle.ts`, `camera.ts`, `visibility.ts`, `benchmark.ts`, `geometry.ts`, `picking.ts`, `exportPng.ts`.
+- `renderCurrentViewDataUrl` converted from a long `useCallback` closure to a pure exported function.
+- Fixed duplicate `capture-camera-pose` listener registration.
+- Fixed missing `bondSizeScale` dependency in the mesh rebuild effect.
+
+---
+
 ## [0.5.1] - 2026-06-08
 
 UI polish and quality-of-life improvements.

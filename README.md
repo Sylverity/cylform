@@ -26,12 +26,13 @@ Open a structure, set the view, measure, annotate, export a PNG.
 
 ## What's Included
 
-- **CYLView Legacy rendering** — colored cylindrical-stick default with cyan carbon framework, orange oxygen endpoints, and pale gray hydrogens; CYLform Glossy and Houkmol alternatives for print
-- **3-D navigation** — orbit, pan, zoom with damping
-- **Measurements** — distance, angle, dihedral with persistent labels
+- **CYLView Legacy rendering** — colored cylindrical-stick default with cyan carbon framework, orange oxygen endpoints, and pale gray hydrogens; CYLform Glossy and Houkmol (with quadrant shading) alternatives for print
+- **3-D navigation** — orbit, pan, zoom with damping; camera presets (front, top, right, iso)
+- **Measurements** — distance, angle, dihedral with persistent labels, angle arcs, and Å / ° symbol units
+- **Annotations** — persistent atom/bond labels with subscript / superscript support and adjustable font scale
 - **Session state** — saved views, annotations, styles per file
 - **Tabs** — multiple structures open simultaneously
-- **PNG export** — label-aware, high resolution
+- **PNG export** — label-aware, high resolution, with quick-access export scale
 
 See [ROADMAP.md](ROADMAP.md) for completed milestones and upcoming features.
 
