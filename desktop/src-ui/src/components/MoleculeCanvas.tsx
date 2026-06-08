@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
-  BufferGeometry,
-  CatmullRomCurve3,
   Color,
   CylinderGeometry,
   DirectionalLight,
@@ -22,15 +20,12 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
   PlaneGeometry,
-  Quaternion,
   Raycaster,
   Scene,
   SphereGeometry,
-  TubeGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
-  type Intersection,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { invoke } from '@tauri-apps/api/core';
@@ -45,7 +40,6 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   BondStyleType,
-  BondKind,
   MaterialPresetId,
   BenchmarkConfig,
   BenchmarkRenderMetrics,
@@ -58,205 +52,72 @@ import type {
   ViewOptions,
 } from '../App';
 import type { ToastMessage } from './Toast';
-
-// ---------------------------------------------------------------------------
-// Visual style — matches CYLview reference image
-// ---------------------------------------------------------------------------
-
-// Atom colours: keep the palette restrained so the cylindrical bonds dominate.
-const ATOM_COLORS: Record<string, number> = {
-  H:  0xcfd3d7,
-  C:  0x8d949c,
-  N:  0x4b84d8,
-  O:  0xea6a1a,
-  F:  0x33CC55,
-  P:  0xFF8800,
-  S:  0xDDAA00,
-  Cl: 0x22BB44,
-  Br: 0xAA2200,
-  I:  0x770088,
-};
-
-const LEGACY_ELEMENT_COLORS: Record<string, number> = {
-  H:  0xc8ccd0,
-  C:  0x129bdd,
-  N:  0x3f7fd6,
-  O:  0xe86a1a,
-  F:  0x6fcf80,
-  P:  0xf6a23a,
-  S:  0xd8a21e,
-  Cl: 0x45b86b,
-  Br: 0xa9492e,
-  I:  0x7f4a96,
-};
-
-// Keep spheres understated so the render reads as a CYLview-style tube drawing.
-const ATOM_DISPLAY_RADIUS: Record<string, number> = {
-  H:  0.075,
-  C:  0.078,
-  N:  0.095,
-  O:  0.118,
-  F:  0.09,
-  P:  0.118,
-  S:  0.118,
-  Cl: 0.108,
-  Br: 0.13,
-  I:  0.145,
-};
-
-function atomColor(element: string): number {
-  return ATOM_COLORS[element] ?? 0x888888;
-}
-
-function atomColorHex(element: string): string {
-  return `#${atomColor(element).toString(16).padStart(6, '0')}`;
-}
-
-function legacyElementColorHex(element: string): string {
-  return `#${(LEGACY_ELEMENT_COLORS[element] ?? 0x8d949c).toString(16).padStart(6, '0')}`;
-}
-
-function atomDisplayRadius(element: string): number {
-  return ATOM_DISPLAY_RADIUS[element] ?? 0.12;
-}
-
-function dataUrlToBytes(dataUrl: string): Uint8Array {
-  const base64 = dataUrl.split(',')[1] ?? '';
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-
-  return bytes;
-}
-
-function clampPrecision(precision: number): number {
-  return Math.min(4, Math.max(1, Math.round(precision)));
-}
-
-function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? 'Å' : 'A';
-  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
-}
-
-function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? '°' : 'deg';
-  return `${value.toFixed(clampPrecision(precision))}${unit}`;
-}
-
-function sanitizeLabelText(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/&lt;sub&gt;(.*?)&lt;\/sub&gt;/g, '<sub>$1</sub>')
-    .replace(/&lt;sup&gt;(.*?)&lt;\/sup&gt;/g, '<sup>$1</sup>');
-}
-
-function drawRichLabelText(
-  ctx: CanvasRenderingContext2D,
-  html: string,
-  cx: number,
-  cy: number,
-  baseFontSize: number,
-  fontWeight: string,
-  fontFamily: string,
-) {
-  const segments: Array<{ text: string; offsetY: number; scale: number }> = [];
-  const regex = /(?:<sub>(.*?)<\/sub>)|(?:<sup>(.*?)<\/sup>)|([^<]+)/g;
-  let match;
-  while ((match = regex.exec(html)) !== null) {
-    if (match[1] !== undefined) {
-      segments.push({ text: match[1], offsetY: baseFontSize * 0.22, scale: 0.75 });
-    } else if (match[2] !== undefined) {
-      segments.push({ text: match[2], offsetY: -baseFontSize * 0.22, scale: 0.75 });
-    } else if (match[3] !== undefined) {
-      segments.push({ text: match[3], offsetY: 0, scale: 1 });
-    }
-  }
-
-  let totalWidth = 0;
-  const segmentWidths: number[] = [];
-  for (const seg of segments) {
-    ctx.font = `${fontWeight} ${baseFontSize * seg.scale}px ${fontFamily}`;
-    const w = ctx.measureText(seg.text).width;
-    segmentWidths.push(w);
-    totalWidth += w;
-  }
-
-  let currentX = cx - totalWidth / 2;
-  ctx.textBaseline = 'middle';
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
-    ctx.font = `${fontWeight} ${baseFontSize * seg.scale}px ${fontFamily}`;
-    ctx.fillText(seg.text, currentX + segmentWidths[i] / 2, cy + seg.offsetY);
-    currentX += segmentWidths[i];
-  }
-}
-
-function createAngleArcMesh(
-  vertex: Vector3,
-  armA: Vector3,
-  armC: Vector3,
-  scene: Scene,
-): Mesh {
-  const ba = new Vector3().subVectors(armA, vertex);
-  const bc = new Vector3().subVectors(armC, vertex);
-  const baLen = ba.length();
-  const bcLen = bc.length();
-  const radius = Math.min(baLen, bcLen) * 0.35;
-  if (radius < 0.01) {
-    return new Mesh(new BufferGeometry(), new MeshBasicMaterial());
-  }
-
-  const u = ba.clone().normalize();
-  const normal = new Vector3().crossVectors(ba, bc).normalize();
-  const v = new Vector3().crossVectors(normal, u).normalize();
-
-  const angleRad = Math.acos(clamp(ba.normalize().dot(bc.normalize()), -1, 1));
-  const segments = Math.max(8, Math.round(angleRad * 20));
-  const points: Vector3[] = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = (i / segments) * angleRad;
-    points.push(
-      vertex.clone().add(
-        u.clone().multiplyScalar(Math.cos(t) * radius).add(
-          v.clone().multiplyScalar(Math.sin(t) * radius),
-        ),
-      ),
-    );
-  }
-
-  const curve = new CatmullRomCurve3(points);
-  const geometry = new TubeGeometry(curve, segments, 0.018, 8, false);
-  const material = new MeshBasicMaterial({ color: 0xffa24c, transparent: true, opacity: 0.85 });
-  const mesh = new Mesh(geometry, material);
-  scene.add(mesh);
-  return mesh;
-}
-
-function removeAngleArcMesh(ctx: SceneCtx) {
-  if (ctx.angleArcMesh) {
-    ctx.scene.remove(ctx.angleArcMesh);
-    ctx.angleArcMesh.geometry.dispose();
-    (ctx.angleArcMesh.material as MeshBasicMaterial).dispose();
-    ctx.angleArcMesh = null;
-  }
-}
-
-function perfLoggingEnabled(): boolean {
-  try {
-    return window.localStorage.getItem('cylformPerf') === '1';
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+import {
+  BondSelectionData,
+  AtomSelectionData,
+  MoleculeVisibilityIndex,
+  BondRenderInstance,
+  SceneCtx,
+} from './molecule-canvas/types';
+import {
+  formatDistance,
+  formatAngle,
+  sanitizeLabelText,
+} from './molecule-canvas/labels';
+import {
+  atomColorHex,
+  atomDisplayRadius,
+  backdropColor,
+  MATERIAL_PRESETS,
+  applyMaterialPreset,
+  bondMaterialForType,
+  bondKindToStyleType,
+  atomMaterial,
+  legacyBondMaterial,
+  legacyAtomColorHex,
+  legacyBondSplit,
+  segmentTransform,
+  bondTransform,
+  bondKey,
+  applyRenderPixelRatio,
+  moleculeBatchGeometries,
+  clamp,
+  updateAngleSelection,
+  dataUrlToBytes,
+} from './molecule-canvas/visualStyle';
+import {
+  syncOrthographicCamera,
+  applySavedPoseToContext,
+  setActiveCamera,
+  updateFloorPlacement,
+  applyCameraPreset,
+} from './molecule-canvas/camera';
+import {
+  buildMoleculeVisibilityIndex,
+  isAtomVisible,
+  labelSourceVisible,
+} from './molecule-canvas/visibility';
+import {
+  perfLoggingEnabled,
+  frameMetrics,
+  sampleFrameTimes,
+  webglDebugInfo,
+  benchmarkPickMetrics,
+  sceneRenderStats,
+  benchmarkInteractionMetrics,
+} from './molecule-canvas/benchmark';
+import {
+  createAngleArcMesh,
+  removeAngleArcMesh,
+  removeOverlay,
+  clearOverlays,
+  createAtomOverlay,
+  createBondOverlay,
+} from './molecule-canvas/geometry';
+import {
+  pickScene,
+} from './molecule-canvas/picking';
+import { renderCurrentViewDataUrl } from './molecule-canvas/exportPng';
 
 interface Props {
   moleculeData: MoleculeData | null;
@@ -310,811 +171,6 @@ interface Props {
   previewCaptureToken?: string | null;
   onPreviewCaptured?: (token: string, dataUrl: string) => void;
   onPreviewError?: (token: string, error: string) => void;
-}
-
-interface BondSelectionData {
-  atom1Element: string;
-  atom2Element: string;
-  distance: number;
-  midpoint: Vector3;
-  atom1Index: number;
-  atom2Index: number;
-  displayRadius: number;
-  matrix: Matrix4;
-}
-
-interface AtomSelectionData {
-  element: string;
-  atomIndex: number;
-  position: Vector3;
-  baseRadius: number;
-}
-
-interface SceneRenderStats {
-  renderCalls: number;
-  triangles: number;
-  geometries: number;
-  textures: number;
-  sceneObjects: number;
-}
-
-interface MoleculeVisibilityIndex {
-  moleculeData: MoleculeData;
-  adjacency: number[][];
-  isHydrogen: boolean[];
-  isCarbonHydrogen: boolean[];
-  bounds: Box3 | null;
-}
-
-interface PickMetrics {
-  pickAtomMs: number | null;
-  pickBondMs: number | null;
-  pickTotalMs: number;
-  pickHitType: 'atom' | 'bond' | 'none';
-  pickAtomCandidates: number;
-  pickBondCandidates: number;
-}
-
-interface PickResult extends PickMetrics {
-  atom: AtomSelectionData | null;
-  bond: BondSelectionData | null;
-}
-
-interface BondRenderInstance {
-  matrix: Matrix4;
-  selection: BondSelectionData;
-}
-
-interface SceneCtx {
-  renderer:   WebGLRenderer;
-  scene:      Scene;
-  camera:     PerspectiveCamera | OrthographicCamera;
-  perspectiveCamera: PerspectiveCamera;
-  orthographicCamera: OrthographicCamera;
-  controls:   OrbitControls;
-  molGroup:   Group;
-  floorGroup: Group;
-  floorPlane: Mesh;
-  floorGrid: GridHelper;
-  floorMat: MeshBasicMaterial;
-  lights: {
-    ambient: AmbientLight;
-    key: DirectionalLight;
-    fill: DirectionalLight;
-    rim: DirectionalLight;
-    topLight: DirectionalLight;
-  };
-  lastCameraDistance: number;
-  lastMoleculeBox: Box3 | null;
-  animId:     number;
-  sphereGeom: SphereGeometry;
-  cylGeom:    CylinderGeometry;
-  lowDetailSphereGeom: SphereGeometry;
-  lowDetailCylGeom: CylinderGeometry;
-  atomMats:   Map<string, MeshPhongMaterial>;
-  bondMat:    MeshPhongMaterial;
-  selectedBondMat: MeshPhongMaterial;
-  raycaster: Raycaster;
-  pointer: Vector2;
-  selectedBondOverlay: Mesh | null;
-  selectedBondData: BondSelectionData | null;
-  bondPickObjects: Array<Mesh | InstancedMesh>;
-  selectedAtomMat: MeshPhongMaterial;
-  atomPickObjects: InstancedMesh[];
-  selectedAtomOverlays: Mesh[];
-  modeSelectedAtomOverlays: Mesh[];
-  modeSelectedBondOverlays: Mesh[];
-  modeSelectedAtoms: AtomSelectionData[];
-  modeSelectedBonds: BondSelectionData[];
-  angleSelection: AtomSelectionData[];
-  angleLabelPosition: Vector3 | null;
-  angleDegrees: number | null;
-  dihedralLabelPosition: Vector3 | null;
-  dihedralDegrees: number | null;
-  angleArcMesh: Mesh | null;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function hexColorNumber(hex: string | undefined, fallback: number): number {
-  if (!hex) return fallback;
-  const normalized = hex.trim();
-  if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return fallback;
-  return Number.parseInt(normalized.slice(1), 16);
-}
-
-function backdropColor(tone: ViewOptions['backdropTone'], customHex?: string): number {
-  if (tone === 'warm') return 0xf2eee7;
-  if (tone === 'slate') return 0xdce3ea;
-  if (tone === 'black') return 0x05070a;
-  if (tone === 'custom') return hexColorNumber(customHex, 0xffffff);
-  return 0xffffff;
-}
-
-function syncOrthographicCamera(ctx: SceneCtx): void {
-  const { renderer, orthographicCamera, controls } = ctx;
-  const width = renderer.domElement.clientWidth || 800;
-  const height = renderer.domElement.clientHeight || 600;
-  const aspect = width / height;
-  const distance = Math.max(ctx.camera.position.distanceTo(controls.target), ctx.lastCameraDistance, 8);
-  const viewHeight = Math.max(distance * 0.55, 4);
-
-  orthographicCamera.left = (-viewHeight * aspect) / 2;
-  orthographicCamera.right = (viewHeight * aspect) / 2;
-  orthographicCamera.top = viewHeight / 2;
-  orthographicCamera.bottom = -viewHeight / 2;
-  orthographicCamera.near = Math.max(distance / 120, 0.01);
-  orthographicCamera.far = distance * 120;
-  orthographicCamera.updateProjectionMatrix();
-}
-
-function applySavedPoseToContext(current: SceneCtx, pose: SavedPose) {
-  current.camera.position.set(pose.cameraPosition.x, pose.cameraPosition.y, pose.cameraPosition.z);
-  current.controls.target.set(pose.target.x, pose.target.y, pose.target.z);
-  current.camera.lookAt(current.controls.target);
-  current.controls.update();
-  current.controls.saveState();
-  current.lastCameraDistance = current.camera.position.distanceTo(current.controls.target);
-  if (current.camera instanceof OrthographicCamera) syncOrthographicCamera(current);
-}
-
-function setActiveCamera(ctx: SceneCtx, projection: ViewOptions['projection']): void {
-  const nextCamera = projection === 'orthographic'
-    ? ctx.orthographicCamera
-    : ctx.perspectiveCamera;
-
-  if (ctx.camera === nextCamera) {
-    if (nextCamera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
-    return;
-  }
-
-  nextCamera.position.copy(ctx.camera.position);
-  nextCamera.quaternion.copy(ctx.camera.quaternion);
-  nextCamera.up.copy(ctx.camera.up);
-  nextCamera.near = ctx.camera.near;
-  nextCamera.far = ctx.camera.far;
-  if (nextCamera instanceof PerspectiveCamera) {
-    nextCamera.updateProjectionMatrix();
-  }
-
-  ctx.camera = nextCamera;
-  if (nextCamera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
-  ctx.controls.object = nextCamera;
-  ctx.controls.update();
-}
-
-function updateFloorPlacement(ctx: SceneCtx): void {
-  if (!ctx.lastMoleculeBox) {
-    ctx.floorGroup.visible = false;
-    return;
-  }
-
-  const box = ctx.lastMoleculeBox;
-  const size = box.getSize(new Vector3());
-  const center = box.getCenter(new Vector3());
-  const floorSize = Math.max(size.x, size.z, size.y, 4) * 2.35;
-
-  ctx.floorGroup.position.set(center.x, box.min.y - 0.45, center.z);
-  ctx.floorPlane.scale.set(floorSize, floorSize, 1);
-  ctx.floorGrid.scale.setScalar(floorSize / 10);
-}
-
-function applyCameraPreset(ctx: SceneCtx, preset: 'front' | 'top' | 'right' | 'iso'): void {
-  const target = ctx.controls.target.clone();
-  const distance = Math.max(ctx.camera.position.distanceTo(target), ctx.lastCameraDistance, 8);
-  const offsets = {
-    front: new Vector3(0, 0, distance),
-    top: new Vector3(0, distance, 0.001),
-    right: new Vector3(distance, 0, 0),
-    iso: new Vector3(0.62, 0.48, 0.62).normalize().multiplyScalar(distance),
-  };
-
-  ctx.camera.position.copy(target).add(offsets[preset]);
-  ctx.camera.up.set(0, 1, 0);
-  if (preset === 'top') {
-    ctx.camera.up.set(0, 0, -1);
-  }
-  ctx.camera.lookAt(target);
-  ctx.controls.target.copy(target);
-  ctx.controls.update();
-  ctx.controls.saveState();
-  ctx.lastCameraDistance = distance;
-  if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
-}
-
-function bondKey(atom1: number, atom2: number): string {
-  return atom1 < atom2 ? `${atom1}-${atom2}` : `${atom2}-${atom1}`;
-}
-
-function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshPhongMaterial): MeshPhongMaterial {
-  if (!style) return fallback;
-  const material = fallback.clone();
-  if (style.type === 'ts') {
-    material.color.set(0x9bb4d0);
-    material.transparent = true;
-    material.opacity = 0.48;
-  } else if (style.type === 'dative') {
-    material.color.set(0x8f9aa3);
-    material.transparent = true;
-    material.opacity = 0.62;
-  } else if (style.type === 'interaction') {
-    material.color.set(0x1f2933);
-    material.transparent = true;
-    material.opacity = 0.38;
-  } else if (style.type === 'thin') {
-    material.color.set(0x3bd16f);
-  }
-  return material;
-}
-
-const MATERIAL_PRESETS = {
-  CYLviewLegacy: {
-    specular: new Color(0.28, 0.32, 0.36),
-    shininess: 68,
-    bondColor: 0x129bdd,
-  },
-  CYLview: {
-    specular: new Color(0.86, 0.9, 0.96),
-    shininess: 175,
-    bondColor: 0x2f9df4,
-  },
-  Houkmol: {
-    specular: new Color(0.18, 0.18, 0.18),
-    shininess: 36,
-    bondColor: 0x6f8796,
-  },
-} satisfies Record<MaterialPresetId, { specular: Color; shininess: number; bondColor: number }>;
-
-const LARGE_SCENE_ATOM_THRESHOLD = 150_000;
-const LARGE_SCENE_PRIMITIVE_THRESHOLD = 600_000;
-
-function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId, isAtom = false) {
-  const preset = MATERIAL_PRESETS[presetId];
-  if (!isAtom) {
-    material.color.set(preset.bondColor);
-  }
-  material.specular.copy(preset.specular);
-  material.shininess = preset.shininess;
-
-  if (isAtom && presetId === 'Houkmol') {
-    material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <color_fragment>',
-        `
-        #include <color_fragment>
-        // Houkmol quadrant shading
-        float qx = step(0.0, normal.x);
-        float qy = step(0.0, normal.y);
-        float quadrantShade = 0.86 + 0.14 * (qx * 0.6 + qy * 0.4);
-        diffuseColor.rgb *= quadrantShade;
-        `
-      );
-    };
-    material.customProgramCacheKey = () => 'houkmol-quadrants';
-  } else if (isAtom) {
-    material.onBeforeCompile = () => {};
-    material.customProgramCacheKey = () => '';
-  }
-  material.needsUpdate = true;
-}
-
-function bondMaterialForType(type: BondStyleType, fallback: MeshPhongMaterial): MeshPhongMaterial {
-  return bondStyleMaterial(type === 'full' ? undefined : { type }, fallback);
-}
-
-function bondKindToStyleType(kind: BondKind | undefined): BondStyleType {
-  if (kind === 'Ts') return 'ts';
-  if (kind === 'Dative') return 'dative';
-  if (kind === 'Interaction') return 'interaction';
-  if (kind === 'Thin') return 'thin';
-  return 'full';
-}
-
-function updateAngleSelection(
-  selection: AtomSelectionData[],
-  clickedAtom: AtomSelectionData,
-): AtomSelectionData[] {
-  if (selection.length >= 4) {
-    return [clickedAtom];
-  }
-
-  if (selection.length === 0) {
-    return [clickedAtom];
-  }
-
-  if (selection[selection.length - 1].atomIndex === clickedAtom.atomIndex) {
-    return selection;
-  }
-
-  return [...selection, clickedAtom];
-}
-
-function atomMaterial(color: string, presetId: MaterialPresetId = 'Houkmol'): MeshPhongMaterial {
-  const preset = MATERIAL_PRESETS[presetId];
-  const mat = new MeshPhongMaterial({
-    color,
-    shininess: preset.shininess,
-    specular: preset.specular.clone(),
-  });
-  if (presetId === 'Houkmol') {
-    applyMaterialPreset(mat, presetId, true);
-  }
-  return mat;
-}
-
-function legacyBondMaterial(color: string, styleType: BondStyleType): MeshPhongMaterial {
-  const material = new MeshPhongMaterial({
-    color,
-    shininess: MATERIAL_PRESETS.CYLviewLegacy.shininess,
-    specular: MATERIAL_PRESETS.CYLviewLegacy.specular.clone(),
-  });
-  if (styleType === 'ts') {
-    material.transparent = true;
-    material.opacity = 0.52;
-  } else if (styleType === 'dative') {
-    material.transparent = true;
-    material.opacity = 0.64;
-  } else if (styleType === 'interaction') {
-    material.transparent = true;
-    material.opacity = 0.42;
-  }
-  return material;
-}
-
-function legacyAtomColorHex(
-  atomIndex: number,
-  element: string,
-  elementColorOverrides: ElementColorOverrides,
-  atomStyleOverrides: Record<string, AtomStyleOverride>,
-): string {
-  return atomStyleOverrides[String(atomIndex)]?.color
-    ?? elementColorOverrides[element]
-    ?? legacyElementColorHex(element);
-}
-
-function legacyBondSplit(startElement: string, endElement: string): number {
-  if (startElement === 'H' && endElement !== 'H') return 0.28;
-  if (endElement === 'H' && startElement !== 'H') return 0.72;
-  if (startElement !== 'C' && endElement === 'C') return 0.34;
-  if (startElement === 'C' && endElement !== 'C') return 0.66;
-  return 0.5;
-}
-
-function segmentTransform(start: Vector3, end: Vector3, from: number, to: number, radius: number): Matrix4 | null {
-  const segmentStart = start.clone().lerp(end, from);
-  const segmentEnd = start.clone().lerp(end, to);
-  if (segmentStart.distanceTo(segmentEnd) < 0.01) return null;
-  return bondTransform(segmentStart, segmentEnd, radius);
-}
-
-function isLargeScene(atomCount: number, bondCount: number): boolean {
-  return (
-    atomCount >= LARGE_SCENE_ATOM_THRESHOLD ||
-    atomCount + bondCount >= LARGE_SCENE_PRIMITIVE_THRESHOLD
-  );
-}
-
-function renderPixelRatioForScene(atomCount: number, bondCount: number): number {
-  if (isLargeScene(atomCount, bondCount)) return 1;
-  return Math.min(window.devicePixelRatio, 2);
-}
-
-function applyRenderPixelRatio(ctx: SceneCtx, atomCount: number, bondCount: number): void {
-  const nextPixelRatio = renderPixelRatioForScene(atomCount, bondCount);
-  if (Math.abs(ctx.renderer.getPixelRatio() - nextPixelRatio) < 0.01) return;
-
-  const canvas = ctx.renderer.domElement;
-  const width = canvas.clientWidth || 800;
-  const height = canvas.clientHeight || 600;
-  ctx.renderer.setPixelRatio(nextPixelRatio);
-  ctx.renderer.setSize(width, height, false);
-  ctx.perspectiveCamera.aspect = width / height;
-  ctx.perspectiveCamera.updateProjectionMatrix();
-  if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
-}
-
-function moleculeBatchGeometries(
-  ctx: SceneCtx,
-  atomCount: number,
-  bondCount: number,
-): { sphereGeom: SphereGeometry; cylGeom: CylinderGeometry } {
-  if (isLargeScene(atomCount, bondCount)) {
-    return {
-      sphereGeom: ctx.lowDetailSphereGeom,
-      cylGeom: ctx.lowDetailCylGeom,
-    };
-  }
-
-  return {
-    sphereGeom: ctx.sphereGeom,
-    cylGeom: ctx.cylGeom,
-  };
-}
-
-function bondTransform(start: Vector3, end: Vector3, radius: number): Matrix4 {
-  const UP = new Vector3(0, 1, 0);
-  const dir = new Vector3().subVectors(end, start);
-  const len = dir.length();
-  const midpoint = new Vector3().addVectors(start, end).multiplyScalar(0.5);
-  const matrix = new Matrix4();
-  const quaternion = new Quaternion();
-  const dirNorm = dir.clone().normalize();
-
-  if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
-    quaternion.setFromAxisAngle(new Vector3(1, 0, 0), dirNorm.y < 0 ? Math.PI : 0);
-  } else {
-    quaternion.setFromUnitVectors(UP, dirNorm);
-  }
-
-  return matrix.compose(midpoint, quaternion, new Vector3(radius, len, radius));
-}
-
-function removeOverlay(ctx: SceneCtx, mesh: Mesh | null): void {
-  if (!mesh) return;
-  ctx.molGroup.remove(mesh);
-}
-
-function clearOverlays(ctx: SceneCtx, overlays: Mesh[]): void {
-  for (const overlay of overlays) {
-    ctx.molGroup.remove(overlay);
-  }
-  overlays.length = 0;
-}
-
-function createAtomOverlay(ctx: SceneCtx, atom: AtomSelectionData): Mesh {
-  const overlay = new Mesh(ctx.sphereGeom, ctx.selectedAtomMat);
-  overlay.position.copy(atom.position);
-  overlay.scale.setScalar(atom.baseRadius * 1.45);
-  overlay.userData.atom = atom;
-  ctx.molGroup.add(overlay);
-  return overlay;
-}
-
-function createBondOverlay(ctx: SceneCtx, bond: BondSelectionData): Mesh {
-  const overlay = new Mesh(ctx.cylGeom, ctx.selectedBondMat);
-  overlay.applyMatrix4(bond.matrix);
-  overlay.scale.multiplyScalar(1.22);
-  overlay.userData.bond = bond;
-  ctx.molGroup.add(overlay);
-  return overlay;
-}
-
-function resolveAtomHit(hit: Intersection | undefined): AtomSelectionData | null {
-  if (!hit || !(hit.object instanceof InstancedMesh) || typeof hit.instanceId !== 'number') {
-    return null;
-  }
-  const atoms = hit.object.userData.atoms as AtomSelectionData[] | undefined;
-  return atoms?.[hit.instanceId] ?? null;
-}
-
-function resolveBondHit(hit: Intersection | undefined): BondSelectionData | null {
-  if (!hit) return null;
-  if (hit.object instanceof InstancedMesh && typeof hit.instanceId === 'number') {
-    const bonds = hit.object.userData.bonds as BondSelectionData[] | undefined;
-    return bonds?.[hit.instanceId] ?? null;
-  }
-  if (hit.object instanceof Mesh) {
-    return (hit.object.userData.bond as BondSelectionData | undefined) ?? null;
-  }
-  return null;
-}
-
-function pickScene(ctx: SceneCtx, mode: SelectionMode): PickResult {
-  const totalStart = performance.now();
-  let atomHit: Intersection | undefined;
-  let bondHit: Intersection | undefined;
-  let pickAtomMs: number | null = null;
-  let pickBondMs: number | null = null;
-
-  const pickAtoms = () => {
-    const startedAt = performance.now();
-    atomHit = ctx.raycaster.intersectObjects(ctx.atomPickObjects, false)[0];
-    pickAtomMs = performance.now() - startedAt;
-    return resolveAtomHit(atomHit);
-  };
-
-  const pickBonds = () => {
-    const startedAt = performance.now();
-    bondHit = ctx.raycaster.intersectObjects(ctx.bondPickObjects, false)[0];
-    pickBondMs = performance.now() - startedAt;
-    return resolveBondHit(bondHit);
-  };
-
-  let atom: AtomSelectionData | null = null;
-  let bond: BondSelectionData | null = null;
-
-  if (mode === 'label' || mode === 'atom') {
-    atom = pickAtoms();
-  } else if (mode === 'bond') {
-    bond = pickBonds();
-  } else if (mode === 'atom-bond' || mode === 'measure') {
-    atom = pickAtoms();
-    if (!atom) {
-      bond = pickBonds();
-    }
-  }
-
-  const pickTotalMs = performance.now() - totalStart;
-  return {
-    atom,
-    bond,
-    pickAtomMs,
-    pickBondMs,
-    pickTotalMs,
-    pickHitType: atom ? 'atom' : bond ? 'bond' : 'none',
-    pickAtomCandidates: ctx.atomPickObjects.reduce((sum, object) => sum + object.count, 0),
-    pickBondCandidates: ctx.bondPickObjects.reduce((sum, object) => (
-      sum + (object instanceof InstancedMesh ? object.count : 1)
-    ), 0),
-  };
-}
-
-function benchmarkPickMetrics(ctx: SceneCtx): PickMetrics {
-  ctx.pointer.set(0, 0);
-  ctx.raycaster.setFromCamera(ctx.pointer, ctx.camera);
-  const result = pickScene(ctx, 'atom-bond');
-  return {
-    pickAtomMs: result.pickAtomMs,
-    pickBondMs: result.pickBondMs,
-    pickTotalMs: result.pickTotalMs,
-    pickHitType: result.pickHitType,
-    pickAtomCandidates: result.pickAtomCandidates,
-    pickBondCandidates: result.pickBondCandidates,
-  };
-}
-
-function sceneRenderStats(ctx: SceneCtx): SceneRenderStats {
-  let sceneObjects = 0;
-  ctx.molGroup.traverse(() => {
-    sceneObjects += 1;
-  });
-
-  return {
-    renderCalls: ctx.renderer.info.render.calls,
-    triangles: ctx.renderer.info.render.triangles,
-    geometries: ctx.renderer.info.memory.geometries,
-    textures: ctx.renderer.info.memory.textures,
-    sceneObjects,
-  };
-}
-
-function buildMoleculeVisibilityIndex(moleculeData: MoleculeData | null): MoleculeVisibilityIndex | null {
-  if (!moleculeData || moleculeData.atoms.length === 0) return null;
-
-  const adjacency = moleculeData.atoms.map(() => [] as number[]);
-  const isHydrogen = moleculeData.atoms.map((atom) => atom.element === 'H');
-  const isCarbonHydrogen = moleculeData.atoms.map(() => false);
-  const bounds = new Box3();
-
-  moleculeData.atoms.forEach((atom) => {
-    const radius = Math.max(atomDisplayRadius(atom.element), atom.radius, 0.15);
-    bounds.expandByPoint(new Vector3(atom.x - radius, atom.y - radius, atom.z - radius));
-    bounds.expandByPoint(new Vector3(atom.x + radius, atom.y + radius, atom.z + radius));
-  });
-
-  for (const bond of moleculeData.bonds) {
-    if (!moleculeData.atoms[bond.atom1] || !moleculeData.atoms[bond.atom2]) continue;
-    adjacency[bond.atom1].push(bond.atom2);
-    adjacency[bond.atom2].push(bond.atom1);
-  }
-
-  for (const [atomIndex, atom] of moleculeData.atoms.entries()) {
-    if (atom.element !== 'H') continue;
-    isCarbonHydrogen[atomIndex] = adjacency[atomIndex].some((neighborIndex) => (
-      moleculeData.atoms[neighborIndex]?.element === 'C'
-    ));
-  }
-
-  return {
-    moleculeData,
-    adjacency,
-    isHydrogen,
-    isCarbonHydrogen,
-    bounds: bounds.isEmpty() ? null : bounds,
-  };
-}
-
-function isAtomVisible(
-  atomIndex: number,
-  moleculeData: MoleculeData,
-  hydrogenVisibility: HydrogenVisibility,
-  hiddenAtomSet: Set<number>,
-  visibilityIndex: MoleculeVisibilityIndex | null,
-): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
-  if (hydrogenVisibility === 'hidden' && (visibilityIndex?.isHydrogen[atomIndex] ?? atom.element === 'H')) return false;
-  if (hydrogenVisibility === 'hide-c-h' && (visibilityIndex?.isCarbonHydrogen[atomIndex] ?? false)) return false;
-  return true;
-}
-
-function labelSourceVisible(
-  label: PersistentLabel,
-  moleculeData: MoleculeData | null,
-  hydrogenVisibility: HydrogenVisibility,
-  hiddenAtomSet: Set<number>,
-  visibilityIndex: MoleculeVisibilityIndex | null,
-): boolean {
-  if (!moleculeData) return false;
-  const atomIndices = label.source?.atomIndices
-    ?? (typeof label.source?.atomIndex === 'number' ? [label.source.atomIndex] : undefined)
-    ?? label.source?.bond;
-
-  if (!atomIndices || atomIndices.length === 0) return true;
-  return atomIndices.every((atomIndex) => (
-    isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet, visibilityIndex)
-  ));
-}
-
-function percentile(values: number[], percentileValue: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.ceil((percentileValue / 100) * sorted.length) - 1),
-  );
-  return sorted[index];
-}
-
-function frameMetrics(frameTimes: number[]) {
-  const averageFrameMs = frameTimes.length > 0
-    ? frameTimes.reduce((sum, value) => sum + value, 0) / frameTimes.length
-    : null;
-  const p95FrameMs = percentile(frameTimes, 95);
-  const worstFrameMs = frameTimes.length > 0 ? Math.max(...frameTimes) : null;
-
-  return {
-    sampledFrames: frameTimes.length,
-    averageFrameMs,
-    p95FrameMs,
-    minFps: worstFrameMs ? 1000 / worstFrameMs : null,
-    averageFps: averageFrameMs ? 1000 / averageFrameMs : null,
-  };
-}
-
-function sampleFrameTimes(
-  durationMs: number,
-  onFrame?: (progress: number) => void,
-): Promise<number[]> {
-  return new Promise((resolve) => {
-    const frameTimes: number[] = [];
-    let startedAt: number | null = null;
-    let previous: number | null = null;
-
-    const tick = (timestamp: number) => {
-      if (startedAt === null) {
-        startedAt = timestamp;
-        previous = timestamp;
-        requestAnimationFrame(tick);
-        return;
-      }
-
-      if (previous !== null) {
-        frameTimes.push(timestamp - previous);
-      }
-      previous = timestamp;
-
-      const elapsedMs = timestamp - startedAt;
-      onFrame?.(Math.min(1, elapsedMs / durationMs));
-
-      if (elapsedMs >= durationMs) {
-        resolve(frameTimes);
-        return;
-      }
-
-      requestAnimationFrame(tick);
-    };
-
-    requestAnimationFrame(tick);
-  });
-}
-
-async function benchmarkInteractionMetrics(ctx: SceneCtx, phaseMs: number) {
-  const phases: Array<{
-    phase: 'orbit' | 'pan' | 'zoom';
-    frameSampleMs: number;
-    sampledFrames: number;
-    averageFrameMs: number | null;
-    p95FrameMs: number | null;
-    minFps: number | null;
-    averageFps: number | null;
-  }> = [];
-  const allFrameTimes: number[] = [];
-
-  const originalPosition = ctx.camera.position.clone();
-  const originalTarget = ctx.controls.target.clone();
-  const originalZoom = ctx.camera.zoom;
-  const originalQuaternion = ctx.camera.quaternion.clone();
-  const originalUp = ctx.camera.up.clone();
-  const baseOffset = originalPosition.clone().sub(originalTarget);
-  const panExtent = Math.max(baseOffset.length() * 0.08, 1);
-
-  const restoreCamera = () => {
-    ctx.camera.position.copy(originalPosition);
-    ctx.camera.quaternion.copy(originalQuaternion);
-    ctx.camera.up.copy(originalUp);
-    ctx.camera.zoom = originalZoom;
-    ctx.camera.updateProjectionMatrix();
-    ctx.controls.target.copy(originalTarget);
-    ctx.controls.update();
-    ctx.renderer.render(ctx.scene, ctx.camera);
-  };
-
-  const runPhase = async (
-    phase: 'orbit' | 'pan' | 'zoom',
-    applyPose: (progress: number) => void,
-  ) => {
-    const frameTimes = await sampleFrameTimes(phaseMs, (progress) => {
-      applyPose(progress);
-      ctx.controls.update();
-      ctx.renderer.render(ctx.scene, ctx.camera);
-    });
-    allFrameTimes.push(...frameTimes);
-    phases.push({
-      phase,
-      frameSampleMs: phaseMs,
-      ...frameMetrics(frameTimes),
-    });
-    restoreCamera();
-  };
-
-  await runPhase('orbit', (progress) => {
-    const angle = Math.sin(progress * Math.PI * 2) * 0.42;
-    const pitch = Math.sin(progress * Math.PI * 4) * 0.12;
-    const offset = baseOffset
-      .clone()
-      .applyAxisAngle(new Vector3(0, 1, 0), angle)
-      .applyAxisAngle(new Vector3(1, 0, 0), pitch);
-    ctx.camera.position.copy(originalTarget).add(offset);
-    ctx.camera.lookAt(ctx.controls.target);
-  });
-
-  await runPhase('pan', (progress) => {
-    const x = Math.sin(progress * Math.PI * 2) * panExtent;
-    const y = Math.sin(progress * Math.PI * 4) * panExtent * 0.45;
-    const pan = new Vector3(x, y, 0);
-    ctx.controls.target.copy(originalTarget).add(pan);
-    ctx.camera.position.copy(originalPosition).add(pan);
-    ctx.camera.lookAt(ctx.controls.target);
-  });
-
-  await runPhase('zoom', (progress) => {
-    const scale = 1 + Math.sin(progress * Math.PI * 2) * 0.28;
-    const offset = baseOffset.clone().multiplyScalar(scale);
-    ctx.camera.position.copy(ctx.controls.target).add(offset);
-    ctx.camera.lookAt(ctx.controls.target);
-    if (ctx.camera instanceof OrthographicCamera) {
-      ctx.camera.zoom = originalZoom / scale;
-      ctx.camera.updateProjectionMatrix();
-    }
-  });
-
-  restoreCamera();
-  const overallMetrics = frameMetrics(allFrameTimes);
-
-  return {
-    phases,
-    sampledFrames: overallMetrics.sampledFrames,
-    averageFrameMs: overallMetrics.averageFrameMs,
-    p95FrameMs: overallMetrics.p95FrameMs,
-    minFps: overallMetrics.minFps,
-    averageFps: overallMetrics.averageFps,
-  };
-}
-
-function webglDebugInfo(renderer: WebGLRenderer): { webglRenderer: string | null; webglVendor: string | null } {
-  const gl = renderer.getContext();
-  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-  if (!debugInfo) {
-    return { webglRenderer: null, webglVendor: null };
-  }
-
-  return {
-    webglRenderer: gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) as string,
-    webglVendor: gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) as string,
-  };
 }
 
 export function MoleculeCanvas({
@@ -1225,108 +281,6 @@ export function MoleculeCanvas({
   useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
   }, [visibilityIndex]);
-
-  const renderCurrentViewDataUrl = useCallback((maxWidth?: number) => {
-    const ctx = ctxRef.current;
-    const host = containerRef.current;
-    if (!ctx) throw new Error('Molecule canvas is not ready.');
-    if (!moleculeData) {
-      throw new Error('Load a molecule before exporting a PNG.');
-    }
-
-    const renderer = ctx.renderer;
-    const sourceCanvas = renderer.domElement;
-    const originalPixelRatio = renderer.getPixelRatio();
-    const originalSize = new Vector2();
-    renderer.getSize(originalSize);
-    const cssWidth = sourceCanvas.clientWidth || originalSize.x || 800;
-    const cssHeight = sourceCanvas.clientHeight || originalSize.y || 600;
-    const exportScale = maxWidth ? 1 : Math.max(1, pngExportScale);
-    const shouldRenderScaled = !maxWidth && exportScale > 1;
-
-    try {
-      if (shouldRenderScaled) {
-        const renderWidth = Math.max(1, Math.round(cssWidth * exportScale));
-        const renderHeight = Math.max(1, Math.round(cssHeight * exportScale));
-        renderer.setPixelRatio(1);
-        renderer.setSize(renderWidth, renderHeight, false);
-        ctx.perspectiveCamera.aspect = renderWidth / renderHeight;
-        ctx.perspectiveCamera.updateProjectionMatrix();
-      }
-
-      renderer.render(ctx.scene, ctx.camera);
-
-      const outputScale = maxWidth && sourceCanvas.width > maxWidth
-        ? maxWidth / sourceCanvas.width
-        : 1;
-      const exportCanvas = document.createElement('canvas');
-      exportCanvas.width = Math.max(1, Math.round(sourceCanvas.width * outputScale));
-      exportCanvas.height = Math.max(1, Math.round(sourceCanvas.height * outputScale));
-      const exportCtx = exportCanvas.getContext('2d');
-      if (!exportCtx) {
-        throw new Error('Could not prepare PNG export canvas.');
-      }
-
-      exportCtx.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
-      if (host) {
-        const scaleX = exportCanvas.width / cssWidth;
-        const scaleY = exportCanvas.height / cssHeight;
-        const hostRect = host.getBoundingClientRect();
-        const labels = host.querySelectorAll<HTMLElement>(
-          '.bond-distance-label, .angle-measure-label, .dihedral-measure-label, .persistent-label',
-        );
-
-        for (const label of labels) {
-          const text = label.textContent?.trim();
-          if (!text || label.style.display === 'none') continue;
-          const rect = label.getBoundingClientRect();
-          if (rect.width <= 0 || rect.height <= 0) continue;
-          const styles = window.getComputedStyle(label);
-          const x = (rect.left - hostRect.left) * scaleX;
-          const y = (rect.top - hostRect.top) * scaleY;
-          const width = rect.width * scaleX;
-          const height = rect.height * scaleY;
-          const radius = Math.min(12 * scaleX, height / 2);
-
-          exportCtx.save();
-          exportCtx.fillStyle = styles.backgroundColor || 'rgba(255, 255, 255, 0.92)';
-          exportCtx.strokeStyle = styles.borderColor || 'rgba(160, 175, 190, 0.85)';
-          exportCtx.lineWidth = Math.max(1, scaleX);
-          exportCtx.beginPath();
-          exportCtx.roundRect(x, y, width, height, radius);
-          exportCtx.fill();
-          exportCtx.stroke();
-          exportCtx.fillStyle = styles.color || '#1f2933';
-          const baseFontSize = Number.parseFloat(styles.fontSize || '12') * scaleY;
-          exportCtx.font = `${styles.fontWeight || '700'} ${baseFontSize}px ${styles.fontFamily || 'sans-serif'}`;
-          exportCtx.textAlign = 'center';
-          exportCtx.textBaseline = 'middle';
-          const html = label.innerHTML ?? text;
-          if (/<sub>|<sup>/.test(html)) {
-            drawRichLabelText(exportCtx, html, x + width / 2, y + height / 2, baseFontSize, styles.fontWeight || '700', styles.fontFamily || 'sans-serif');
-          } else {
-            exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
-          }
-          exportCtx.restore();
-        }
-
-        const linkCanvasEl = host.querySelector<HTMLCanvasElement>('.label-link-overlay');
-        if (linkCanvasEl && linkCanvasEl.style.display !== 'none') {
-          exportCtx.drawImage(linkCanvasEl, 0, 0, exportCanvas.width, exportCanvas.height);
-        }
-      }
-
-      return exportCanvas.toDataURL('image/png');
-    } finally {
-      if (shouldRenderScaled) {
-        renderer.setPixelRatio(originalPixelRatio);
-        renderer.setSize(originalSize.x, originalSize.y, false);
-        ctx.perspectiveCamera.aspect = cssWidth / cssHeight;
-        ctx.perspectiveCamera.updateProjectionMatrix();
-        renderer.render(ctx.scene, ctx.camera);
-      }
-    }
-  }, [moleculeData, pngExportScale]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -1989,7 +943,9 @@ export function MoleculeCanvas({
 
         if (!targetPath) return;
 
-        const pngBytes = dataUrlToBytes(renderCurrentViewDataUrl());
+        const current = ctxRef.current;
+        if (!current) return;
+        const pngBytes = dataUrlToBytes(renderCurrentViewDataUrl(current, containerRef.current, { moleculeData, pngExportScale }));
         await invoke('export_png', { path: targetPath, bytes: Array.from(pngBytes) });
         onToast(`Exported PNG to ${targetPath.split(/[\\/]/).pop() ?? 'file'}`, 'success');
       } catch (error) {
@@ -2039,7 +995,6 @@ export function MoleculeCanvas({
     onSelectionSummaryChange,
     onToast,
     previewMode,
-    renderCurrentViewDataUrl,
   ]);
 
   useEffect(() => {
@@ -2056,12 +1011,14 @@ export function MoleculeCanvas({
         await waitFrame();
         if (cancelled) return;
         const ctx = ctxRef.current;
-        if (!ctx) throw new Error('Preview renderer is not ready.');
+        const host = containerRef.current;
+        if (!ctx || !host) throw new Error('Preview renderer is not ready.');
         applySavedPoseToContext(ctx, previewPose);
         await waitFrame();
         await waitFrame();
         if (cancelled) return;
-        onPreviewCaptured?.(previewCaptureToken, renderCurrentViewDataUrl(400));
+        const dataUrl = renderCurrentViewDataUrl(ctx, host, { moleculeData, pngExportScale, maxWidth: 400 });
+        onPreviewCaptured?.(previewCaptureToken, dataUrl);
       } catch (error) {
         if (cancelled) return;
         onPreviewError?.(
@@ -2082,7 +1039,6 @@ export function MoleculeCanvas({
     previewCaptureToken,
     previewMode,
     previewPose,
-    renderCurrentViewDataUrl,
   ]);
 
   useEffect(() => {
