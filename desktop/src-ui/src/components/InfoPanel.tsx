@@ -134,6 +134,7 @@ interface InfoPanelProps {
   selectionSummary: SelectionSummary;
   distancePrecision: number;
   anglePrecision: number;
+  useSymbolUnits: boolean;
   savedPoses: SavedPose[];
   poseLibrary: PoseLibraryEntry[];
   onHideSelectedAtoms: () => void;
@@ -164,12 +165,14 @@ function clampPrecision(precision: number): number {
   return Math.min(4, Math.max(1, Math.round(precision)));
 }
 
-function formatDistance(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} A`;
+function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? 'Å' : 'A';
+  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
 }
 
-function formatAngle(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} deg`;
+function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? '°' : 'deg';
+  return `${value.toFixed(clampPrecision(precision))}${unit}`;
 }
 
 function CollapsibleSection({
@@ -272,6 +275,7 @@ export function InfoPanel({
   selectionSummary,
   distancePrecision,
   anglePrecision,
+  useSymbolUnits,
   savedPoses,
   poseLibrary,
   onHideSelectedAtoms,
@@ -418,14 +422,14 @@ export function InfoPanel({
       ? selectedDihedral.stage < 3
         ? 'Click three atoms'
         : selectedAngle
-          ? formatAngle(selectedAngle.angleDegrees, anglePrecision)
-          : formatAngle(0, anglePrecision)
+          ? formatAngle(selectedAngle.angleDegrees, anglePrecision, useSymbolUnits)
+          : formatAngle(0, anglePrecision, useSymbolUnits)
       : selectedAngle?.stage === 1
       ? `First atom: ${selectedAngle.atomElements[0]}`
       : selectedAngle?.stage === 2
         ? `Next: ${selectedAngle.atomElements[0]}-${selectedAngle.atomElements[1]}-?`
         : selectedAngle
-          ? formatAngle(selectedAngle.angleDegrees, anglePrecision)
+          ? formatAngle(selectedAngle.angleDegrees, anglePrecision, useSymbolUnits)
           : 'Click three atoms';
 
   const dihedralPrompt =
@@ -436,7 +440,7 @@ export function InfoPanel({
         : selectedDihedral?.stage === 3
           ? `Next: ${selectedDihedral.atomElements.slice(0, 3).join('-')}-?`
           : selectedDihedral
-            ? formatAngle(selectedDihedral.dihedralDegrees, anglePrecision)
+            ? formatAngle(selectedDihedral.dihedralDegrees, anglePrecision, useSymbolUnits)
             : 'Click four atoms';
 
   return (
@@ -533,7 +537,7 @@ export function InfoPanel({
           <span className="info-label">Distance</span>
           <span className="info-value">
             {!selectedAngle && selectedBond
-              ? `${selectedBond.atom1Element}-${selectedBond.atom2Element} · ${formatDistance(selectedBond.distance, distancePrecision)}`
+              ? `${selectedBond.atom1Element}-${selectedBond.atom2Element} · ${formatDistance(selectedBond.distance, distancePrecision, useSymbolUnits)}`
               : 'Click bond'}
           </span>
         </div>

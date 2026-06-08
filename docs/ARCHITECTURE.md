@@ -53,9 +53,29 @@ The React app owns interaction state and the Three.js scene.
 - Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
 - Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
 - `MoleculeCanvas.tsx` builds the WebGL scene and keeps normal molecule topology rendering batched.
+- It is intentionally an orchestrating React component: scene init, event handlers, effects, and JSX live here, while pure helpers and scene internals live in `components/molecule-canvas/`.
 - Atoms are rendered with instanced sphere geometry.
 - Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
-- Selection and measurement overlays may use separate transient objects because they are small UI overlays, not persistent topology rendering.
+- Selection and measurement overlays use separate transient objects.
+- Angle measurements display a 3D arc mesh in the plane of the three selected atoms.
+
+### `molecule-canvas/` modules
+
+`MoleculeCanvas.tsx` imports domain-specific helpers from `components/molecule-canvas/`:
+
+| Module | Responsibility |
+|---|---|
+| `types.ts` | Shared interfaces: `SceneCtx`, `BondSelectionData`, `AtomSelectionData`, `PickResult`, etc. |
+| `labels.ts` | Label formatting (`formatDistance`, `formatAngle`), text sanitizing, and rich canvas sub/superscript rendering. |
+| `visualStyle.ts` | Atom colors, `MATERIAL_PRESETS`, `applyMaterialPreset`, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
+| `camera.ts` | Camera sync, preset application, saved-pose restoration, and floor placement. |
+| `visibility.ts` | `buildMoleculeVisibilityIndex`, `isAtomVisible`, and `labelSourceVisible` for hydrogen/visibility filtering. |
+| `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
+| `geometry.ts` | Angle-arc mesh creation/removal and selection overlay creation/removal. |
+| `picking.ts` | Raycast resolution: `pickScene`, `resolveAtomHit`, `resolveBondHit`. |
+| `exportPng.ts` | `renderCurrentViewDataUrl(ctx, host, options)` — a pure function that composites the WebGL canvas with DOM labels and link lines. |
+
+This split keeps `MoleculeCanvas.tsx` focused on React lifecycle and Three.js mutable state, while the modules remain mostly pure and easy to test by typecheck.
 
 The renderer chooses bond style in this order:
 
@@ -112,10 +132,11 @@ Thumbnail generation reuses the WebView renderer. The frontend mounts a hidden i
 
 Material presets are serializable presentation choices. Current presets are:
 
-- `CYLview`: the glossy default used for the classic cylindrical-bond look.
-- `Houkmol`: a flatter figure-preparation preset with quadrants enabled in state for future rendering parity.
+- `CYLviewLegacy`: the classic cylindrical-bond look with restrained specular.
+- `CYLview`: a glossy default with brighter specular and shinier finishes.
+- `Houkmol`: a flatter figure-preparation preset with view-space quadrant shading via `onBeforeCompile` shader patch.
 
-The active preset is stored in per-file state and applied when bond and selected-overlay materials are created or updated. Future exporters, such as POV-Ray output, should reuse the same preset data rather than inventing separate finish settings.
+The active preset is stored in per-file state and applied when bond and atom materials are created or updated. Future exporters, such as POV-Ray output, should reuse the same preset data rather than inventing separate finish settings.
 
 ## Extension Points
 
