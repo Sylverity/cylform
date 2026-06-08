@@ -568,7 +568,7 @@ function defaultAppSettings(): AppSettings {
     app: {
       autoCheckForUpdates: false,
       devtoolsMenuEnabled: true,
-      theme: 'auto',
+      theme: 'dark',
     },
   };
 }

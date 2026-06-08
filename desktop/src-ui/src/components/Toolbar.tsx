@@ -145,6 +145,15 @@ export function Toolbar({
               {shortcut && <kbd>{shortcut}</kbd>}
             </button>
           ))}
+          <button
+            onClick={onCycleHydrogenVisibility}
+            disabled={isLoading}
+            className={hydrogenVisibility !== 'shown' ? 'toggle-active' : ''}
+            title="Cycle hydrogen visibility (H)"
+          >
+            <span>{hydrogenButtonLabel(hydrogenVisibility)}</span>
+            <kbd>H</kbd>
+          </button>
         </div>
       </div>
 
@@ -213,16 +222,6 @@ export function Toolbar({
           aria-label="Clear selection"
         >
           <IconX />
-        </button>
-
-        <button
-          onClick={onCycleHydrogenVisibility}
-          disabled={isLoading}
-          className={hydrogenVisibility !== 'shown' ? 'toggle-active' : ''}
-          title="Cycle hydrogen visibility (H)"
-        >
-          <span>{hydrogenButtonLabel(hydrogenVisibility)}</span>
-          <kbd>H</kbd>
         </button>
       </div>
 

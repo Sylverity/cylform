@@ -2301,8 +2301,8 @@ export function MoleculeCanvas({
       const intensity = clamp(viewOptions.fogIntensity, 0.1, 1);
       ctx.scene.fog = new Fog(
         bg,
-        distance * (1.42 - intensity * 0.32),
-        distance * (4.8 - intensity * 1.55),
+        distance * (2.5 - intensity * 1.9),
+        distance * (5.5 - intensity * 3.8),
       );
     } else {
       ctx.scene.fog = null;
