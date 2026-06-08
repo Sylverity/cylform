@@ -1183,8 +1183,8 @@ export function MoleculeCanvas({
       }
 
       const split = legacyBondSplit(atom1Element, atom2Element);
-      const startMatrix = segmentTransform(start, end, 0, split, bondData.displayRadius);
-      const endMatrix = segmentTransform(start, end, split, 1, bondData.displayRadius);
+      const startMatrix = segmentTransform(start, end, 0, split, bondData.displayRadius, { overlapStart: true, overlapEnd: false });
+      const endMatrix = segmentTransform(start, end, split, 1, bondData.displayRadius, { overlapStart: false, overlapEnd: true });
       if (startMatrix) {
         const bucket = legacyMaterialFor(startColor, styleType);
         addBondInstance(bucket.key, bucket.material, bondData, startMatrix);
@@ -1225,7 +1225,7 @@ export function MoleculeCanvas({
         atom1Index: bond.atom1,
         atom2Index: bond.atom2,
         displayRadius,
-        matrix: bondTransform(start, end, displayRadius),
+        matrix: bondTransform(start, end, displayRadius, { overlapStart: true, overlapEnd: true }),
       } satisfies BondSelectionData;
 
       if (isLegacyPreset) {

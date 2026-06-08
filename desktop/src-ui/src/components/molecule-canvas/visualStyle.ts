@@ -266,29 +266,64 @@ export function legacyBondSplit(startElement: string, endElement: string): numbe
   return 0.5;
 }
 
-export function segmentTransform(start: Vector3, end: Vector3, from: number, to: number, radius: number): Matrix4 | null {
+export interface BondOverlapOptions {
+  overlapStart?: boolean;
+  overlapEnd?: boolean;
+}
+
+export function segmentTransform(
+  start: Vector3,
+  end: Vector3,
+  from: number,
+  to: number,
+  radius: number,
+  overlap?: BondOverlapOptions,
+): Matrix4 | null {
   const segmentStart = start.clone().lerp(end, from);
   const segmentEnd = start.clone().lerp(end, to);
   if (segmentStart.distanceTo(segmentEnd) < 0.01) return null;
-  return bondTransform(segmentStart, segmentEnd, radius);
+  return bondTransform(segmentStart, segmentEnd, radius, overlap);
 }
 
-export function bondTransform(start: Vector3, end: Vector3, radius: number): Matrix4 {
+export function bondTransform(
+  start: Vector3,
+  end: Vector3,
+  radius: number,
+  { overlapStart = false, overlapEnd = false }: BondOverlapOptions = {},
+): Matrix4 {
   const UP = new Vector3(0, 1, 0);
-  const dir = new Vector3().subVectors(end, start);
-  const len = dir.length();
-  const midpoint = new Vector3().addVectors(start, end).multiplyScalar(0.5);
-  const matrix = new Matrix4();
-  const quaternion = new Quaternion();
-  const dirNorm = dir.clone().normalize();
-
-  if (Math.abs(dirNorm.dot(UP)) > 0.9999) {
-    quaternion.setFromAxisAngle(new Vector3(1, 0, 0), dirNorm.y < 0 ? Math.PI : 0);
-  } else {
-    quaternion.setFromUnitVectors(UP, dirNorm);
+  const axis = new Vector3().subVectors(end, start);
+  const len = axis.length();
+  if (len < 1e-6) {
+    const matrix = new Matrix4();
+    const quaternion = new Quaternion();
+    return matrix.compose(start, quaternion, new Vector3(radius, 0.001, radius));
   }
 
-  return matrix.compose(midpoint, quaternion, new Vector3(radius, len, radius));
+  const dir = axis.clone().normalize();
+
+  // Overlap at junction ends to eliminate rasterization gaps.
+  // Tuned so tight junctions don't look swollen.
+  const overlap = Math.min(radius * 0.35, len * 0.06);
+  const startOver = overlapStart ? overlap : 0;
+  const endOver = overlapEnd ? overlap : 0;
+  const renderLength = len + startOver + endOver;
+
+  const center = new Vector3()
+    .addVectors(start, end)
+    .multiplyScalar(0.5)
+    .addScaledVector(dir, (endOver - startOver) * 0.5);
+
+  const matrix = new Matrix4();
+  const quaternion = new Quaternion();
+
+  if (Math.abs(dir.dot(UP)) > 0.9999) {
+    quaternion.setFromAxisAngle(new Vector3(1, 0, 0), dir.y < 0 ? Math.PI : 0);
+  } else {
+    quaternion.setFromUnitVectors(UP, dir);
+  }
+
+  return matrix.compose(center, quaternion, new Vector3(radius, renderLength, radius));
 }
 
 export function isLargeScene(atomCount: number, bondCount: number): boolean {
