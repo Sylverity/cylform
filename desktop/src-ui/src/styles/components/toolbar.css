@@ -126,6 +126,17 @@
   box-shadow: 0 2px 8px var(--c-accent-subtle);
 }
 
+.mode-selector button.toggle-active {
+  background: var(--c-accent-subtle);
+  border-color: var(--c-accent-border);
+  color: var(--c-accent-strong);
+}
+
+.mode-selector button.toggle-active:hover:not(:disabled) {
+  background: var(--c-accent-subtle);
+  border-color: var(--c-accent-border);
+}
+
 .mode-selector button:disabled {
   opacity: 0.46;
   cursor: not-allowed;

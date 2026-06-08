@@ -409,6 +409,17 @@ export function SettingsDialog({
                 />
                 DevTools menu action enabled
               </label>
+              <label className="settings-row">
+                <span>Theme</span>
+                <select
+                  value={settings.app.theme}
+                  onChange={(event) => update('app', { theme: event.target.value as AppSettings['app']['theme'] })}
+                >
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
               <label className="settings-check disabled">
                 <input type="checkbox" checked={false} disabled />
                 Auto-check for updates <span>Coming later</span>

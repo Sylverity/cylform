@@ -974,6 +974,7 @@ fn normalize_app_settings(value: Value) -> Value {
         "app": {
             "autoCheckForUpdates": setting_bool(app, "autoCheckForUpdates", false),
             "devtoolsMenuEnabled": setting_bool(app, "devtoolsMenuEnabled", true),
+            "theme": setting_string(app, "theme", "dark", &["dark", "light", "auto"]),
         },
     })
 }
@@ -1807,7 +1808,7 @@ fn main() {
                 .title("Cylform")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(800.0, 600.0)
-                .center()
+                .maximized(true)
                 .build()?;
 
             Ok(())

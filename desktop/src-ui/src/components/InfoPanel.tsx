@@ -832,7 +832,7 @@ export function InfoPanel({
             <span className="info-value">{moleculeData.groups.length.toLocaleString()} molecules</span>
           </div>
           <div className="group-list">
-            {groupSummaries.slice(0, 12).map((group) => (
+            {groupSummaries.slice(0, 200).map((group) => (
               <div key={group.residueName} className="group-row">
                 <div className="group-row-main">
                   <span className={group.hiddenCount === group.moleculeCount ? 'group-name muted' : 'group-name'}>
@@ -854,8 +854,8 @@ export function InfoPanel({
               </div>
             ))}
           </div>
-          {groupSummaries.length > 12 && (
-            <p className="info-note">Showing the 12 most common molecule types.</p>
+          {groupSummaries.length > 200 && (
+            <p className="info-note">Showing the 200 most common molecule types.</p>
           )}
         </CollapsibleSection>
       )}
