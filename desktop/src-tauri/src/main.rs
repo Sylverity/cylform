@@ -959,6 +959,7 @@ fn normalize_app_settings(value: Value) -> Value {
             "distancePrecision": setting_u8_range(chemistry, "distancePrecision", 2, 1, 4),
             "anglePrecision": setting_u8_range(chemistry, "anglePrecision", 1, 1, 4),
             "bondPerceptionTolerance": setting_f64_range(chemistry, "bondPerceptionTolerance", 1.3, 1.1, 1.5),
+            "useSymbolUnits": setting_bool(chemistry, "useSymbolUnits", true),
         },
         "interaction": {
             "mouseMode": setting_string(interaction, "mouseMode", "standard", &["standard", "one-button"]),

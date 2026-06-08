@@ -24,6 +24,7 @@ function testSettings(): AppSettings {
       distancePrecision: 2,
       anglePrecision: 1,
       bondPerceptionTolerance: 1.3,
+      useSymbolUnits: true,
     },
     interaction: {
       mouseMode: 'standard',
@@ -56,6 +57,9 @@ function testViewOptions(): ViewOptions {
     fogIntensity: 0.45,
     autoRotate: false,
     autoRotateSpeed: 0.35,
+    labelFontScale: 1.0,
+    bondSizeScale: 1.0,
+    showLabelLinkLines: false,
   };
 }
 

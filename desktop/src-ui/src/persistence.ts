@@ -78,6 +78,9 @@ export function createDefaultPresentationState(
       fogIntensity: 0.45,
       autoRotate: false,
       autoRotateSpeed: 0.35,
+      labelFontScale: 1.0,
+      bondSizeScale: 1.0,
+      showLabelLinkLines: false,
     },
   };
 }

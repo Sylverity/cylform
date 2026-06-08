@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAc
 import {
   AmbientLight,
   Box3,
+  BufferGeometry,
+  CatmullRomCurve3,
   Color,
   CylinderGeometry,
   DirectionalLight,
@@ -24,6 +26,7 @@ import {
   Raycaster,
   Scene,
   SphereGeometry,
+  TubeGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -133,12 +136,114 @@ function clampPrecision(precision: number): number {
   return Math.min(4, Math.max(1, Math.round(precision)));
 }
 
-function formatDistance(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} A`;
+function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? 'Å' : 'A';
+  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
 }
 
-function formatAngle(value: number, precision: number): string {
-  return `${value.toFixed(clampPrecision(precision))} deg`;
+function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
+  const unit = useSymbolUnits ? '°' : 'deg';
+  return `${value.toFixed(clampPrecision(precision))}${unit}`;
+}
+
+function sanitizeLabelText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/&lt;sub&gt;(.*?)&lt;\/sub&gt;/g, '<sub>$1</sub>')
+    .replace(/&lt;sup&gt;(.*?)&lt;\/sup&gt;/g, '<sup>$1</sup>');
+}
+
+function drawRichLabelText(
+  ctx: CanvasRenderingContext2D,
+  html: string,
+  cx: number,
+  cy: number,
+  baseFontSize: number,
+  fontWeight: string,
+  fontFamily: string,
+) {
+  const segments: Array<{ text: string; offsetY: number; scale: number }> = [];
+  const regex = /(?:<sub>(.*?)<\/sub>)|(?:<sup>(.*?)<\/sup>)|([^<]+)/g;
+  let match;
+  while ((match = regex.exec(html)) !== null) {
+    if (match[1] !== undefined) {
+      segments.push({ text: match[1], offsetY: baseFontSize * 0.22, scale: 0.75 });
+    } else if (match[2] !== undefined) {
+      segments.push({ text: match[2], offsetY: -baseFontSize * 0.22, scale: 0.75 });
+    } else if (match[3] !== undefined) {
+      segments.push({ text: match[3], offsetY: 0, scale: 1 });
+    }
+  }
+
+  let totalWidth = 0;
+  const segmentWidths: number[] = [];
+  for (const seg of segments) {
+    ctx.font = `${fontWeight} ${baseFontSize * seg.scale}px ${fontFamily}`;
+    const w = ctx.measureText(seg.text).width;
+    segmentWidths.push(w);
+    totalWidth += w;
+  }
+
+  let currentX = cx - totalWidth / 2;
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    ctx.font = `${fontWeight} ${baseFontSize * seg.scale}px ${fontFamily}`;
+    ctx.fillText(seg.text, currentX + segmentWidths[i] / 2, cy + seg.offsetY);
+    currentX += segmentWidths[i];
+  }
+}
+
+function createAngleArcMesh(
+  vertex: Vector3,
+  armA: Vector3,
+  armC: Vector3,
+  scene: Scene,
+): Mesh {
+  const ba = new Vector3().subVectors(armA, vertex);
+  const bc = new Vector3().subVectors(armC, vertex);
+  const baLen = ba.length();
+  const bcLen = bc.length();
+  const radius = Math.min(baLen, bcLen) * 0.35;
+  if (radius < 0.01) {
+    return new Mesh(new BufferGeometry(), new MeshBasicMaterial());
+  }
+
+  const u = ba.clone().normalize();
+  const normal = new Vector3().crossVectors(ba, bc).normalize();
+  const v = new Vector3().crossVectors(normal, u).normalize();
+
+  const angleRad = Math.acos(clamp(ba.normalize().dot(bc.normalize()), -1, 1));
+  const segments = Math.max(8, Math.round(angleRad * 20));
+  const points: Vector3[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = (i / segments) * angleRad;
+    points.push(
+      vertex.clone().add(
+        u.clone().multiplyScalar(Math.cos(t) * radius).add(
+          v.clone().multiplyScalar(Math.sin(t) * radius),
+        ),
+      ),
+    );
+  }
+
+  const curve = new CatmullRomCurve3(points);
+  const geometry = new TubeGeometry(curve, segments, 0.018, 8, false);
+  const material = new MeshBasicMaterial({ color: 0xffa24c, transparent: true, opacity: 0.85 });
+  const mesh = new Mesh(geometry, material);
+  scene.add(mesh);
+  return mesh;
+}
+
+function removeAngleArcMesh(ctx: SceneCtx) {
+  if (ctx.angleArcMesh) {
+    ctx.scene.remove(ctx.angleArcMesh);
+    ctx.angleArcMesh.geometry.dispose();
+    (ctx.angleArcMesh.material as MeshBasicMaterial).dispose();
+    ctx.angleArcMesh = null;
+  }
 }
 
 function perfLoggingEnabled(): boolean {
@@ -165,7 +270,9 @@ interface Props {
   viewOptions: ViewOptions;
   distancePrecision: number;
   anglePrecision: number;
+  useSymbolUnits: boolean;
   pngExportScale: 1 | 2 | 4;
+  onPngExportScaleChange: (scale: 1 | 2 | 4) => void;
   mouseMode: 'standard' | 'one-button';
   invertScrollZoom: boolean;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
@@ -304,6 +411,7 @@ interface SceneCtx {
   angleDegrees: number | null;
   dihedralLabelPosition: Vector3 | null;
   dihedralDegrees: number | null;
+  angleArcMesh: Mesh | null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -462,11 +570,34 @@ const MATERIAL_PRESETS = {
 const LARGE_SCENE_ATOM_THRESHOLD = 150_000;
 const LARGE_SCENE_PRIMITIVE_THRESHOLD = 600_000;
 
-function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId) {
+function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId, isAtom = false) {
   const preset = MATERIAL_PRESETS[presetId];
-  material.color.set(preset.bondColor);
+  if (!isAtom) {
+    material.color.set(preset.bondColor);
+  }
   material.specular.copy(preset.specular);
   material.shininess = preset.shininess;
+
+  if (isAtom && presetId === 'Houkmol') {
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `
+        #include <color_fragment>
+        // Houkmol quadrant shading
+        float qx = step(0.0, normal.x);
+        float qy = step(0.0, normal.y);
+        float quadrantShade = 0.86 + 0.14 * (qx * 0.6 + qy * 0.4);
+        diffuseColor.rgb *= quadrantShade;
+        `
+      );
+    };
+    material.customProgramCacheKey = () => 'houkmol-quadrants';
+  } else if (isAtom) {
+    material.onBeforeCompile = () => {};
+    material.customProgramCacheKey = () => '';
+  }
+  material.needsUpdate = true;
 }
 
 function bondMaterialForType(type: BondStyleType, fallback: MeshPhongMaterial): MeshPhongMaterial {
@@ -500,12 +631,17 @@ function updateAngleSelection(
   return [...selection, clickedAtom];
 }
 
-function atomMaterial(color: string): MeshPhongMaterial {
-  return new MeshPhongMaterial({
+function atomMaterial(color: string, presetId: MaterialPresetId = 'Houkmol'): MeshPhongMaterial {
+  const preset = MATERIAL_PRESETS[presetId];
+  const mat = new MeshPhongMaterial({
     color,
-    shininess: 42,
-    specular: new Color(0.18, 0.18, 0.18),
+    shininess: preset.shininess,
+    specular: preset.specular.clone(),
   });
+  if (presetId === 'Houkmol') {
+    applyMaterialPreset(mat, presetId, true);
+  }
+  return mat;
 }
 
 function legacyBondMaterial(color: string, styleType: BondStyleType): MeshPhongMaterial {
@@ -993,7 +1129,9 @@ export function MoleculeCanvas({
   viewOptions,
   distancePrecision,
   anglePrecision,
+  useSymbolUnits,
   pngExportScale,
+  onPngExportScaleChange,
   mouseMode,
   invertScrollZoom,
   onViewOptionsChange,
@@ -1037,6 +1175,7 @@ export function MoleculeCanvas({
   const bondLabelRef = useRef<HTMLDivElement>(null);
   const angleLabelRef = useRef<HTMLDivElement>(null);
   const dihedralLabelRef = useRef<HTMLDivElement>(null);
+  const linkLinesRef = useRef<HTMLCanvasElement>(null);
   const selectionModeRef = useRef<SelectionMode>(selectionMode);
   const viewOptionsRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelsRef = useRef<PersistentLabel[]>(persistentLabels);
@@ -1045,6 +1184,7 @@ export function MoleculeCanvas({
   const moleculeDataRef = useRef<MoleculeData | null>(moleculeData);
   const distancePrecisionRef = useRef(distancePrecision);
   const anglePrecisionRef = useRef(anglePrecision);
+  const useSymbolUnitsRef = useRef(useSymbolUnits);
   const visibilityIndexRef = useRef<MoleculeVisibilityIndex | null>(null);
   const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
@@ -1079,7 +1219,8 @@ export function MoleculeCanvas({
   useEffect(() => {
     distancePrecisionRef.current = distancePrecision;
     anglePrecisionRef.current = anglePrecision;
-  }, [anglePrecision, distancePrecision]);
+    useSymbolUnitsRef.current = useSymbolUnits;
+  }, [anglePrecision, distancePrecision, useSymbolUnits]);
 
   useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
@@ -1156,11 +1297,22 @@ export function MoleculeCanvas({
           exportCtx.fill();
           exportCtx.stroke();
           exportCtx.fillStyle = styles.color || '#1f2933';
-          exportCtx.font = `${styles.fontWeight || '700'} ${Number.parseFloat(styles.fontSize || '12') * scaleY}px ${styles.fontFamily || 'sans-serif'}`;
+          const baseFontSize = Number.parseFloat(styles.fontSize || '12') * scaleY;
+          exportCtx.font = `${styles.fontWeight || '700'} ${baseFontSize}px ${styles.fontFamily || 'sans-serif'}`;
           exportCtx.textAlign = 'center';
           exportCtx.textBaseline = 'middle';
-          exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
+          const html = label.innerHTML ?? text;
+          if (/<sub>|<sup>/.test(html)) {
+            drawRichLabelText(exportCtx, html, x + width / 2, y + height / 2, baseFontSize, styles.fontWeight || '700', styles.fontFamily || 'sans-serif');
+          } else {
+            exportCtx.fillText(text, x + width / 2, y + height / 2, width - 8 * scaleX);
+          }
           exportCtx.restore();
+        }
+
+        const linkCanvasEl = host.querySelector<HTMLCanvasElement>('.label-link-overlay');
+        if (linkCanvasEl && linkCanvasEl.style.display !== 'none') {
+          exportCtx.drawImage(linkCanvasEl, 0, 0, exportCanvas.width, exportCanvas.height);
         }
       }
 
@@ -1300,7 +1452,7 @@ export function MoleculeCanvas({
 
         bondLabel.style.display = visible ? 'block' : 'none';
         bondLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        bondLabel.textContent = formatDistance(selectedBond.distance, distancePrecisionRef.current);
+        bondLabel.textContent = formatDistance(selectedBond.distance, distancePrecisionRef.current, useSymbolUnitsRef.current);
       } else if (bondLabel) {
         bondLabel.style.display = 'none';
       }
@@ -1316,7 +1468,7 @@ export function MoleculeCanvas({
 
         angleLabel.style.display = visible ? 'block' : 'none';
         angleLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        angleLabel.textContent = formatAngle(angleDegrees, anglePrecisionRef.current);
+        angleLabel.textContent = formatAngle(angleDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
       } else if (angleLabel) {
         angleLabel.style.display = 'none';
       }
@@ -1332,7 +1484,7 @@ export function MoleculeCanvas({
 
         dihedralLabel.style.display = visible ? 'block' : 'none';
         dihedralLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        dihedralLabel.textContent = formatAngle(dihedralDegrees, anglePrecisionRef.current);
+        dihedralLabel.textContent = formatAngle(dihedralDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
       } else if (dihedralLabel) {
         dihedralLabel.style.display = 'none';
       }
@@ -1368,6 +1520,39 @@ export function MoleculeCanvas({
         labelElement.style.display = visible ? 'block' : 'none';
         labelElement.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 10}px)`;
       }
+
+      const linkCanvas = linkLinesRef.current;
+      if (linkCanvas && viewOptionsRef.current.showLabelLinkLines) {
+        const w = renderer.domElement.clientWidth;
+        const h = renderer.domElement.clientHeight;
+        if (linkCanvas.width !== w || linkCanvas.height !== h) {
+          linkCanvas.width = w;
+          linkCanvas.height = h;
+        }
+        const ctx2d = linkCanvas.getContext('2d');
+        if (ctx2d) {
+          ctx2d.clearRect(0, 0, w, h);
+          ctx2d.setLineDash([4, 3]);
+          ctx2d.strokeStyle = 'rgba(180, 160, 120, 0.5)';
+          ctx2d.lineWidth = 1;
+          for (const label of persistentLabelsRef.current) {
+            if (!label.visible) continue;
+            const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
+              .project(activeCamera);
+            const x = ((projected.x + 1) / 2) * w;
+            const y = ((-projected.y + 1) / 2) * h;
+            if (projected.z < -1 || projected.z > 1) continue;
+            ctx2d.beginPath();
+            ctx2d.moveTo(x, y);
+            ctx2d.lineTo(x, y - 10);
+            ctx2d.stroke();
+          }
+        }
+      } else if (linkCanvas) {
+        const ctx2d = linkCanvas.getContext('2d');
+        if (ctx2d) ctx2d.clearRect(0, 0, linkCanvas.width, linkCanvas.height);
+      }
+
       renderer.render(scene, activeCamera);
     }
     animate();
@@ -1384,7 +1569,7 @@ export function MoleculeCanvas({
       selectedAtomMat, atomPickObjects: [], selectedAtomOverlays: [], modeSelectedAtomOverlays: [],
       modeSelectedBondOverlays: [], modeSelectedAtoms: [], modeSelectedBonds: [], angleSelection: [],
       angleLabelPosition: null, angleDegrees: null, dihedralLabelPosition: null,
-      dihedralDegrees: null,
+      dihedralDegrees: null, angleArcMesh: null,
     };
 
     // Resize
@@ -1454,6 +1639,7 @@ export function MoleculeCanvas({
       current.angleDegrees = null;
       current.dihedralLabelPosition = null;
       current.dihedralDegrees = null;
+      removeAngleArcMesh(current);
       onBondSelected(null);
       onAngleSelected(null);
       onDihedralSelected(null);
@@ -1668,6 +1854,8 @@ export function MoleculeCanvas({
 
         current.angleDegrees = angleDegrees;
         current.angleLabelPosition = b.position.clone().add(offsetDirection.multiplyScalar(0.9));
+        removeAngleArcMesh(current);
+        current.angleArcMesh = createAngleArcMesh(b.position, a.position, c.position, current.scene);
         const angleAnchor = current.angleLabelPosition.clone();
         onAngleSelected({
           atomElements: [
@@ -1902,11 +2090,18 @@ export function MoleculeCanvas({
     const ctx = ctxRef.current;
     if (!ctx) return;
     applyMaterialPreset(ctx.bondMat, materialPreset);
+    for (const material of ctx.atomMats.values()) {
+      applyMaterialPreset(material, materialPreset, true);
+    }
     ctx.molGroup.traverse((object) => {
       if (object instanceof InstancedMesh && object.material instanceof MeshPhongMaterial) {
         const bonds = object.userData.bonds as BondSelectionData[] | undefined;
         if (bonds && object.material === ctx.bondMat) {
           applyMaterialPreset(object.material, materialPreset);
+        }
+        const atoms = object.userData.atoms as AtomSelectionData[] | undefined;
+        if (atoms) {
+          applyMaterialPreset(object.material, materialPreset, true);
         }
       }
     });
@@ -2064,9 +2259,9 @@ export function MoleculeCanvas({
       if (len < 0.01) continue;
 
       const styleType = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)]?.type ?? bondKindToStyleType(bond.kind);
-      const displayRadius = styleType === 'thin'
+      const displayRadius = (styleType === 'thin'
         ? Math.max(0.026, bond.radius * 0.38)
-        : Math.max(0.055, bond.radius * 0.82);
+        : Math.max(0.055, bond.radius * 0.82)) * viewOptions.bondSizeScale;
       const bondData = {
         atom1Element: a1.element,
         atom2Element: a2.element,
@@ -2109,8 +2304,8 @@ export function MoleculeCanvas({
       let bucket = atomBuckets.get(bucketKey);
       if (!bucket) {
         const material = atomStyle?.color || elementColorOverrides[atom.element]
-          ? atomMaterial(color)
-          : (atomMats.get(atom.element) ?? atomMaterial(color));
+          ? atomMaterial(color, materialPreset)
+          : (atomMats.get(atom.element) ?? atomMaterial(color, materialPreset));
         if (!atomStyle?.color && !elementColorOverrides[atom.element] && !atomMats.has(atom.element)) {
           atomMats.set(atom.element, material);
         }
@@ -2346,11 +2541,11 @@ export function MoleculeCanvas({
       : selectedDihedral?.stage === 3
         ? 'Select atom 4'
         : selectedDihedral?.stage === 4
-          ? `Dihedral ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision)}`
+          ? `Dihedral ${formatAngle(selectedDihedral.dihedralDegrees, anglePrecision, useSymbolUnits)}`
           : selectedAngle
-        ? `Angle ${formatAngle(selectedAngle.angleDegrees, anglePrecision)}`
+        ? `Angle ${formatAngle(selectedAngle.angleDegrees, anglePrecision, useSymbolUnits)}`
         : selectedBond
-          ? `Distance ${formatDistance(selectedBond.distance, distancePrecision)}`
+          ? `Distance ${formatDistance(selectedBond.distance, distancePrecision, useSymbolUnits)}`
           : 'Click a bond for distance, or atoms for angle/dihedral';
 
   const helpText = !moleculeData
@@ -2378,7 +2573,11 @@ export function MoleculeCanvas({
   };
 
   return (
-    <div ref={containerRef} className={previewMode ? 'molecule-canvas preview-render-canvas' : 'molecule-canvas'}>
+    <div
+      ref={containerRef}
+      className={previewMode ? 'molecule-canvas preview-render-canvas' : 'molecule-canvas'}
+      style={{ '--label-font-scale': viewOptions.labelFontScale } as React.CSSProperties}
+    >
       {!previewMode && (
         <div
           className="left-options-stack"
@@ -2406,6 +2605,15 @@ export function MoleculeCanvas({
                 onClick={() => patchViewOptions({ showGrid: !viewOptions.showGrid })}
               >
                 Grid
+              </button>
+            </div>
+            <div className="view-toggle-row">
+              <button
+                type="button"
+                className={viewOptions.showLabelLinkLines ? 'view-toggle active' : 'view-toggle'}
+                onClick={() => patchViewOptions({ showLabelLinkLines: !viewOptions.showLabelLinkLines })}
+              >
+                Link lines
               </button>
             </div>
 
@@ -2455,6 +2663,20 @@ export function MoleculeCanvas({
                 <option value="CYLviewLegacy">CYLView Legacy</option>
                 <option value="CYLview">CYLform Glossy</option>
                 <option value="Houkmol">Houkmol</option>
+              </select>
+            </label>
+
+            <label className="view-control">
+              <span>Export scale</span>
+              <select
+                value={pngExportScale}
+                onChange={(event) => {
+                  onPngExportScaleChange(Number(event.target.value) as 1 | 2 | 4);
+                }}
+              >
+                <option value={1}>1x</option>
+                <option value={2}>2x</option>
+                <option value={4}>4x</option>
               </select>
             </label>
 
@@ -2518,6 +2740,8 @@ export function MoleculeCanvas({
             atomStyleOverrides={atomStyleOverrides}
             bondStyleOverrides={bondStyleOverrides}
             atomSizeScale={atomSizeScale}
+            labelFontScale={viewOptions.labelFontScale}
+            bondSizeScale={viewOptions.bondSizeScale}
             materialPreset={materialPreset}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
@@ -2525,6 +2749,8 @@ export function MoleculeCanvas({
             onResetElementColor={onResetElementColor}
             onResetAllElementColors={onResetAllElementColors}
             onAtomSizeScaleChange={onAtomSizeScaleChange}
+            onLabelFontScaleChange={(scale) => onViewOptionsChange((prev) => ({ ...prev, labelFontScale: scale }))}
+            onBondSizeScaleChange={(scale) => onViewOptionsChange((prev) => ({ ...prev, bondSizeScale: scale }))}
 
             onStyleSelectedAtoms={onStyleSelectedAtoms}
             onSizeSelectedAtoms={onSizeSelectedAtoms}
@@ -2550,10 +2776,14 @@ export function MoleculeCanvas({
           }}
           className={`persistent-label persistent-label-${label.type}`}
           title={label.type}
-        >
-          {label.text}
-        </div>
+          dangerouslySetInnerHTML={{ __html: sanitizeLabelText(label.text) }}
+        />
       ))}
+      <canvas
+        ref={linkLinesRef}
+        className="label-link-overlay"
+        style={{ display: viewOptions.showLabelLinkLines ? 'block' : 'none' }}
+      />
       {!previewMode && !moleculeData && (
         <div className="canvas-placeholder">
           <div className="placeholder-mark" aria-hidden="true">
