@@ -189,12 +189,7 @@
 }
 
 .settings-section {
-  display: none;
-}
-
-.settings-section.active {
   display: block;
-  animation: fade-in var(--transition-fast);
 }
 
 .settings-section h4 {

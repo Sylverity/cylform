@@ -547,7 +547,7 @@ function defaultAppSettings(): AppSettings {
       pngExportScale: 2,
       defaultBackground: 'white',
       customBackgroundHex: '#ffffff',
-      defaultMaterialPreset: 'CYLviewLegacy',
+      defaultMaterialPreset: 'CYLview',
       defaultProjection: 'perspective',
       defaultLighting: 'publication',
       showFloorGridByDefault: false,
@@ -682,7 +682,7 @@ function PosePreviewRenderer({
           atomStyleOverrides={styles?.atom_style_overrides ?? {}}
           bondStyleOverrides={styles?.bond_style_overrides ?? {}}
           atomSizeScale={styles?.atom_size_scale ?? 1}
-          materialPreset={styles?.material_preset ?? 'CYLviewLegacy'}
+          materialPreset={styles?.material_preset ?? 'CYLview'}
           viewOptions={job.pose.viewOptions}
           distancePrecision={appSettings.chemistry.distancePrecision}
           anglePrecision={appSettings.chemistry.anglePrecision}
@@ -873,7 +873,7 @@ function App() {
   const [atomStyleOverrides, setAtomStyleOverrides] = useState<Record<string, AtomStyleOverride>>({});
   const [bondStyleOverrides, setBondStyleOverrides] = useState<Record<string, BondStyleOverride>>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
-  const [materialPreset, setMaterialPreset] = useState<MaterialPresetId>('CYLviewLegacy');
+  const [materialPreset, setMaterialPreset] = useState<MaterialPresetId>('CYLview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [moleculeTabs, setMoleculeTabs] = useState<MoleculeTab[]>([]);
@@ -1050,7 +1050,7 @@ function App() {
     setAtomSizeScale(normalized.styles.atom_size_scale ?? 1);
     setAtomStyleOverrides(normalized.styles.atom_style_overrides ?? {});
     setBondStyleOverrides(normalized.styles.bond_style_overrides ?? {});
-    setMaterialPreset(normalized.styles.material_preset ?? 'CYLviewLegacy');
+    setMaterialPreset(normalized.styles.material_preset ?? 'CYLview');
     setSavedPoses(normalized.poses);
     setViewOptions(normalized.camera ?? defaultPresentationState().camera);
     nextLabelId.current = Math.max(
