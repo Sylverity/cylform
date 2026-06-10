@@ -301,7 +301,7 @@ fn app_settings_version() -> u32 {
 }
 
 fn default_material_preset() -> String {
-    "CYLviewLegacy".to_string()
+    "CYLview".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -949,7 +949,7 @@ fn normalize_app_settings(value: Value) -> Value {
             "pngExportScale": png_export_scale,
             "defaultBackground": setting_string(rendering, "defaultBackground", "white", &["white", "black", "custom"]),
             "customBackgroundHex": normalize_hex_color(rendering.and_then(|section| section.get("customBackgroundHex")), "#ffffff"),
-            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLviewLegacy", &["CYLviewLegacy", "CYLview", "Houkmol", "last-used"]),
+            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLview", &["CYLviewLegacy", "CYLview", "Houkmol", "last-used"]),
             "defaultProjection": setting_string(rendering, "defaultProjection", "perspective", &["perspective", "orthographic"]),
             "defaultLighting": setting_string(rendering, "defaultLighting", "publication", &["publication", "soft-studio", "high-contrast"]),
             "showFloorGridByDefault": setting_bool(rendering, "showFloorGridByDefault", false),
@@ -1199,7 +1199,7 @@ fn normalize_presentation_state(value: Value) -> Result<Value, String> {
             "atom_size_scale": value.get("atomSizeScale").cloned(),
             "atom_style_overrides": value_object(value.get("atomStyleOverrides")),
             "bond_style_overrides": value_object(value.get("bondStyleOverrides")),
-            "material_preset": value.get("materialPreset").cloned().unwrap_or_else(|| json!("CYLviewLegacy"))
+            "material_preset": value.get("materialPreset").cloned().unwrap_or_else(|| json!("CYLview"))
         },
         "camera": value.get("viewOptions").cloned().unwrap_or(Value::Null)
     });
@@ -1899,7 +1899,7 @@ mod tests {
         );
         assert_eq!(
             normalized["rendering"]["defaultMaterialPreset"],
-            json!("CYLviewLegacy")
+            json!("CYLview")
         );
         assert_eq!(
             normalized["rendering"]["showFloorGridByDefault"],
@@ -2148,7 +2148,7 @@ mod tests {
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
         assert_eq!(
             normalized["styles"]["material_preset"],
-            json!("CYLviewLegacy")
+            json!("CYLview")
         );
     }
 

@@ -204,7 +204,8 @@ export function SettingsDialog({
           {/* Content */}
           <div className="settings-content">
             {/* Rendering */}
-            <section className={activeCategory === 'rendering' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'rendering' && (
+            <section className="settings-section">
               <h4>Rendering & Export</h4>
               <label className="settings-row">
                 <span>PNG export scale</span>
@@ -279,9 +280,11 @@ export function SettingsDialog({
                 Show floor/grid for new molecules
               </label>
             </section>
+            )}
 
             {/* Chemistry */}
-            <section className={activeCategory === 'chemistry' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'chemistry' && (
+            <section className="settings-section">
               <h4>Chemistry & Measurements</h4>
               <label className="settings-row">
                 <span>Default hydrogens</span>
@@ -335,9 +338,11 @@ export function SettingsDialog({
               </label>
               <p className="settings-note">Bond tolerance applies to newly loaded or reloaded molecules.</p>
             </section>
+            )}
 
             {/* Interaction */}
-            <section className={activeCategory === 'interaction' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'interaction' && (
+            <section className="settings-section">
               <h4>Interaction & Accessibility</h4>
               <label className="settings-row">
                 <span>Mouse mode</span>
@@ -358,9 +363,11 @@ export function SettingsDialog({
                 Invert scroll zoom
               </label>
             </section>
+            )}
 
             {/* Files */}
-            <section className={activeCategory === 'files' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'files' && (
+            <section className="settings-section">
               <h4>Files & Session</h4>
               <label className="settings-check">
                 <input
@@ -405,9 +412,11 @@ export function SettingsDialog({
                 </button>
               </div>
             </section>
+            )}
 
             {/* App */}
-            <section className={activeCategory === 'app' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'app' && (
+            <section className="settings-section">
               <h4>App & Diagnostics</h4>
               <label className="settings-check">
                 <input
@@ -448,9 +457,11 @@ export function SettingsDialog({
                 </div>
               )}
             </section>
+            )}
 
             {/* Shortcuts */}
-            <section className={activeCategory === 'shortcuts' ? 'settings-section active' : 'settings-section'}>
+            {activeCategory === 'shortcuts' && (
+            <section className="settings-section">
               <h4>Keyboard Shortcuts</h4>
               <div className="shortcut-settings-table">
                 {shortcutRows.map((action) => (
@@ -469,6 +480,7 @@ export function SettingsDialog({
                 Reset Shortcuts
               </button>
             </section>
+            )}
           </div>
         </div>
         <div className="menu-dialog-footer">
