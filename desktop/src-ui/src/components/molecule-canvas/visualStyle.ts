@@ -183,7 +183,7 @@ export function updateAngleSelection(
   return [...selection, clickedAtom];
 }
 
-export function atomMaterial(color: string, presetId: MaterialPresetId = 'Houkmol'): MeshPhongMaterial {
+export function atomMaterial(color: string, presetId: MaterialPresetId = 'CYLview'): MeshPhongMaterial {
   const preset = MATERIAL_PRESETS[presetId];
   const mat = new MeshPhongMaterial({
     color,

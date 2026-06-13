@@ -92,7 +92,6 @@ describe('presentation persistence', () => {
     const normalized = normalizePresentationState(
       JSON.parse(JSON.stringify(state)),
       testSettings(),
-      'CYLviewLegacy',
     );
 
     expect(normalized.annotations).toEqual([annotation]);
@@ -102,11 +101,10 @@ describe('presentation persistence', () => {
   });
 
   it('fills missing presentation fields from current app defaults', () => {
-    const defaults = createDefaultPresentationState(testSettings(), 'CYLviewLegacy');
+    const defaults = createDefaultPresentationState(testSettings());
     const normalized = normalizePresentationState(
       { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: {} },
       testSettings(),
-      'CYLviewLegacy',
     );
 
     expect(normalized.camera).toEqual(defaults.camera);
@@ -121,12 +119,10 @@ describe('presentation persistence', () => {
     const glossy = normalizePresentationState(
       { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: { material_preset: 'CYLview' } },
       settings,
-      'CYLviewLegacy',
     );
     const unknown = normalizePresentationState(
       { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: { material_preset: 'Mystery' as never } },
       settings,
-      'CYLviewLegacy',
     );
 
     expect(glossy.styles.material_preset).toBe('CYLview');

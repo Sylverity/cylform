@@ -22,6 +22,8 @@ Open a structure, set the view, measure, annotate, export a PNG.
 4. **Measure** distances, angles, and dihedrals by clicking atoms
 5. **Export** a high-resolution PNG for your manuscript
 
+See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for the current default shortcuts.
+
 ---
 
 ## What's Included

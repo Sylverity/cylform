@@ -135,7 +135,7 @@ export interface AppSettings {
     pngExportScale: 1 | 2 | 4;
     defaultBackground: 'white' | 'black' | 'custom';
     customBackgroundHex: string;
-    defaultMaterialPreset: MaterialPresetId | 'last-used';
+    defaultMaterialPreset: MaterialPresetId;
     defaultProjection: ProjectionMode;
     defaultLighting: LightingMood;
     showFloorGridByDefault: boolean;
@@ -792,8 +792,8 @@ function App() {
   }, [appSettings]);
 
   const defaultPresentationState = useCallback(() => {
-    return createDefaultPresentationState(appSettingsRef.current, materialPreset);
-  }, [materialPreset]);
+    return createDefaultPresentationState(appSettingsRef.current);
+  }, []);
   const activeShortcuts = effectiveKeyboardShortcuts(appSettings);
 
   const refreshRecentFiles = useCallback(async () => {
@@ -901,7 +901,7 @@ function App() {
 
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
-    const normalized = normalizePresentationState(state, appSettingsRef.current, materialPreset);
+    const normalized = normalizePresentationState(state, appSettingsRef.current);
     setPersistentLabels(normalized.annotations);
     setHiddenAtomIndices(normalized.hidden_atoms);
     setHydrogenVisibility(normalized.styles.hydrogen_visibility ?? 'shown');
@@ -924,7 +924,7 @@ function App() {
       isApplyingPresentationState.current = false;
       hasLoadedPresentationState.current = activatePersistence;
     }, 0);
-  }, [defaultPresentationState, materialPreset]);
+  }, [defaultPresentationState]);
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);

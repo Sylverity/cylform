@@ -949,7 +949,7 @@ fn normalize_app_settings(value: Value) -> Value {
             "pngExportScale": png_export_scale,
             "defaultBackground": setting_string(rendering, "defaultBackground", "white", &["white", "black", "custom"]),
             "customBackgroundHex": normalize_hex_color(rendering.and_then(|section| section.get("customBackgroundHex")), "#ffffff"),
-            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLview", &["CYLviewLegacy", "CYLview", "Houkmol", "last-used"]),
+            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLview", &["CYLviewLegacy", "CYLview", "Houkmol"]),
             "defaultProjection": setting_string(rendering, "defaultProjection", "perspective", &["perspective", "orthographic"]),
             "defaultLighting": setting_string(rendering, "defaultLighting", "publication", &["publication", "soft-studio", "high-contrast"]),
             "showFloorGridByDefault": setting_bool(rendering, "showFloorGridByDefault", false),
@@ -1870,7 +1870,7 @@ mod tests {
                 "pngExportScale": 3,
                 "defaultBackground": "transparent",
                 "customBackgroundHex": "not-a-color",
-                "defaultMaterialPreset": "Unknown",
+                "defaultMaterialPreset": "last-used",
                 "showFloorGridByDefault": true
             },
             "chemistry": {
