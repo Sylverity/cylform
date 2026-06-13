@@ -57,7 +57,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: 'bondMode', label: 'Bond Selection', defaultShortcut: 'B', group: 'selection' },
   { id: 'atomBondMode', label: 'Atom+Bond Selection', defaultShortcut: 'Z', group: 'selection' },
   { id: 'labelMode', label: 'Label Mode', defaultShortcut: 'L', group: 'selection' },
-  { id: 'toggleHydrogen', label: 'Toggle Hydrogen Mode', defaultShortcut: 'H', group: 'visibility' },
+  { id: 'toggleHydrogen', label: 'Cycle Hydrogen Visibility', defaultShortcut: 'H', group: 'visibility' },
   { id: 'openSettings', label: 'Settings', defaultShortcut: 'CmdOrCtrl+,', group: 'help' },
   { id: 'showShortcuts', label: 'Keyboard Shortcuts', defaultShortcut: 'Shift+/', group: 'help' },
 ];

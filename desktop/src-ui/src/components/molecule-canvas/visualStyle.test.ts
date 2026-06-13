@@ -3,6 +3,7 @@ import { MeshPhongMaterial } from 'three';
 import {
   applyMaterialFinish,
   applyMaterialPreset,
+  atomMaterial,
   atomColorHex,
   legacyElementColorHex,
 } from './visualStyle';
@@ -24,6 +25,13 @@ describe('material presets', () => {
 
     applyMaterialPreset(material, 'CYLview', true);
     expect(material.customProgramCacheKey()).toBe('');
+  });
+
+  it('uses CYLform Glossy for default atom materials', () => {
+    const material = atomMaterial('#ffffff');
+
+    expect(material.shininess).toBe(175);
+    expect(material.customProgramCacheKey()).not.toBe('houkmol-quadrants');
   });
 
   it('updates material finish without replacing styled bond colors', () => {

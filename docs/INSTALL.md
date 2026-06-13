@@ -90,6 +90,8 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 9. Click **Export PNG** or use **File → Export PNG…** to save the current view, including visible annotations, as an image.
 10. Use **File → Settings…** to configure export scale, default appearance, measurement precision, shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and app-data diagnostics.
 
+See [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) for the current default shortcuts. `H` cycles hydrogen visibility only; Houkmol is selected from the material preset controls.
+
 The desktop app also includes a standard menu bar. Use **File** for opening, recent files, closing the current molecule tab, export, Settings, and quitting. **View → Open DevTools** is for local development builds; release builds without DevTools support report that it is unavailable, and the Settings diagnostics section can disable the DevTools menu action. **Help → About Cylform** shows version/about details.
 
 ## File Safety

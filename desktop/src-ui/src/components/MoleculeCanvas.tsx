@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
@@ -119,6 +119,13 @@ import {
   pickScene,
 } from './molecule-canvas/picking';
 import { renderCurrentViewDataUrl } from './molecule-canvas/exportPng';
+
+function preventMaterialPresetShortcutOverlap(event: ReactKeyboardEvent<HTMLSelectElement>) {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'h') {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
 
 interface Props {
   moleculeData: MoleculeData | null;
@@ -1624,7 +1631,11 @@ export function MoleculeCanvas({
               <span>Material</span>
               <select
                 value={materialPreset}
-                onChange={(event) => onMaterialPresetChange(event.target.value as MaterialPresetId)}
+                onKeyDown={preventMaterialPresetShortcutOverlap}
+                onChange={(event) => {
+                  onMaterialPresetChange(event.target.value as MaterialPresetId);
+                  event.currentTarget.blur();
+                }}
               >
                 <option value="CYLviewLegacy">CYLView Legacy</option>
                 <option value="CYLview">CYLform Glossy</option>

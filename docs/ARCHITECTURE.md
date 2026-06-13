@@ -67,7 +67,8 @@ The React app owns interaction state and the Three.js scene.
 |---|---|
 | `types.ts` | Shared interfaces: `SceneCtx`, `BondSelectionData`, `AtomSelectionData`, `PickResult`, etc. |
 | `labels.ts` | Label formatting (`formatDistance`, `formatAngle`), text sanitizing, and rich canvas sub/superscript rendering. |
-| `visualStyle.ts` | Atom colors, `MATERIAL_PRESETS`, `applyMaterialPreset`, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
+| `materialPresets.ts` | Shared element colors and material preset definitions used by the renderer and appearance UI. |
+| `visualStyle.ts` | `applyMaterialPreset`, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
 | `camera.ts` | Camera sync, preset application, saved-pose restoration, and floor placement. |
 | `visibility.ts` | `buildMoleculeVisibilityIndex`, `isAtomVisible`, and `labelSourceVisible` for hydrogen/visibility filtering. |
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
@@ -138,10 +139,12 @@ Material presets are serializable presentation choices. Current presets are:
 
 The active preset is stored in per-file state and applied when bond and atom materials are created or updated. Future exporters, such as POV-Ray output, should reuse the same preset data rather than inventing separate finish settings.
 
+New molecules use the explicit default material preset from Settings when no per-file presentation state exists. Material presets do not have letter shortcuts; `H` is reserved for cycling hydrogen visibility.
+
 ## Extension Points
 
 - Add a file format by writing a `FormatParser` implementation and registering it in the built-in parser list.
 - Add trajectory playback by loading additional frames into `Structure.frames` and updating frontend instance matrices by frame index.
 - Add a persisted annotation type by extending the Rust enum, TypeScript union, and annotations panel rendering.
-- Add a material preset by extending the shared preset list and preserving the saved-state default behavior.
+- Add a material preset by extending `materialPresets.ts`, the `MaterialPresetId` union, and the Settings/native normalization allowlists.
 - Add a bond style by extending `BondKind`, Tauri serialization, TypeScript style mapping, and the existing instanced bond bucket path.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  SHORTCUT_DEFINITIONS,
   effectiveKeyboardShortcuts,
   hasShortcutConflict,
   normalizeShortcutText,
@@ -60,5 +61,15 @@ describe('keyboard shortcuts', () => {
     expect(effectiveKeyboardShortcuts(configured).resetView).toBe('Ctrl+R');
     expect(hasShortcutConflict('openFile', 'Ctrl+R', configured)).toBe(true);
     expect(hasShortcutConflict('openFile', 'Ctrl+Shift+R', configured)).toBe(false);
+  });
+
+  it('keeps bare H reserved for hydrogen visibility only', () => {
+    const defaults = effectiveKeyboardShortcuts(settings({}));
+    const hActions = SHORTCUT_DEFINITIONS
+      .filter((definition) => normalizeShortcutText(defaults[definition.id]) === 'H')
+      .map((definition) => definition.id);
+
+    expect(hActions).toEqual(['toggleHydrogen']);
+    expect(SHORTCUT_DEFINITIONS.some((definition) => /houkmol|material/i.test(definition.id + definition.label))).toBe(false);
   });
 });

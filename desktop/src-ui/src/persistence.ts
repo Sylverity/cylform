@@ -40,12 +40,8 @@ function normalizeMaterialPreset(value: unknown, fallback = DEFAULT_MATERIAL_PRE
 
 export function createDefaultPresentationState(
   settings: AppSettings,
-  currentMaterialPreset: MaterialPresetId,
 ): NormalizedPresentationState {
-  const defaultMaterial =
-    settings.rendering.defaultMaterialPreset === 'last-used'
-      ? normalizeMaterialPreset(currentMaterialPreset)
-      : normalizeMaterialPreset(settings.rendering.defaultMaterialPreset);
+  const defaultMaterial = normalizeMaterialPreset(settings.rendering.defaultMaterialPreset);
   const showFloorGrid = settings.rendering.showFloorGridByDefault;
   const backdropTone =
     settings.rendering.defaultBackground === 'black'
@@ -88,9 +84,8 @@ export function createDefaultPresentationState(
 export function normalizePresentationState(
   state: PresentationState | null | undefined,
   settings: AppSettings,
-  currentMaterialPreset: MaterialPresetId,
 ): NormalizedPresentationState {
-  const defaults = createDefaultPresentationState(settings, currentMaterialPreset);
+  const defaults = createDefaultPresentationState(settings);
   const styles = state?.styles ?? {};
   const camera = state?.camera
     ? {

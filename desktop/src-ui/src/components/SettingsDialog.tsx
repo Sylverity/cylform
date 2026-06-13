@@ -17,6 +17,13 @@ import {
   type ShortcutActionId,
 } from '../shortcuts';
 
+function preventMaterialPresetShortcutOverlap(event: ReactKeyboardEvent<HTMLSelectElement>) {
+  if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'h') {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+}
+
 type SettingsCategory =
   | 'rendering'
   | 'chemistry'
@@ -198,12 +205,15 @@ export function SettingsDialog({
                 <span>Default material</span>
                 <select
                   value={settings.rendering.defaultMaterialPreset}
-                  onChange={(event) => update('rendering', { defaultMaterialPreset: event.target.value as AppSettings['rendering']['defaultMaterialPreset'] })}
+                  onKeyDown={preventMaterialPresetShortcutOverlap}
+                  onChange={(event) => {
+                    update('rendering', { defaultMaterialPreset: event.target.value as AppSettings['rendering']['defaultMaterialPreset'] });
+                    event.currentTarget.blur();
+                  }}
                 >
                   <option value="CYLviewLegacy">CYLView Legacy</option>
                   <option value="CYLview">CYLform Glossy</option>
                   <option value="Houkmol">Houkmol</option>
-                  <option value="last-used">Last used</option>
                 </select>
               </label>
               <label className="settings-row">
