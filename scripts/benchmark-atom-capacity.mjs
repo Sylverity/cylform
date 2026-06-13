@@ -210,8 +210,13 @@ function summarize(results) {
   console.log('\nCylform atom capacity benchmark');
   console.table(results.map((result) => ({
     atoms: result.atoms,
+    bonds: result.totalBonds ?? result.bonds ?? '',
     status: result.status,
     responsive: Boolean(result.responsive),
+    material: result.materialPreset ?? '',
+    quality: result.renderQuality?.qualityT?.toFixed?.(2) ?? '',
+    cylSegments: result.renderQuality?.cylinderRadialSegments ?? '',
+    pixelRatio: result.renderQuality?.pixelRatio?.toFixed?.(2) ?? '',
     loadMs: result.loadMs ?? '',
     rebuildMs: result.rebuildSceneMs ?? '',
     avgFps: result.averageFps ? result.averageFps.toFixed(1) : '',

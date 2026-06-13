@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AtomStyleOverride,
   BondStyleOverride,
@@ -9,32 +9,7 @@ import type {
   SelectionMode,
   SelectionSummary,
 } from '../App';
-
-const DEFAULT_ELEMENT_COLORS: Record<string, string> = {
-  H: '#cfd3d7',
-  C: '#8d949c',
-  N: '#4b84d8',
-  O: '#ea6a1a',
-  F: '#33cc55',
-  P: '#ff8800',
-  S: '#ddaa00',
-  Cl: '#22bb44',
-  Br: '#aa2200',
-  I: '#770088',
-};
-
-const LEGACY_ELEMENT_COLORS: Record<string, string> = {
-  H: '#c8ccd0',
-  C: '#129bdd',
-  N: '#3f7fd6',
-  O: '#e86a1a',
-  F: '#6fcf80',
-  P: '#f6a23a',
-  S: '#d8a21e',
-  Cl: '#45b86b',
-  Br: '#a9492e',
-  I: '#7f4a96',
-};
+import { defaultElementColorHex } from './molecule-canvas/materialPresets';
 
 const BOND_STYLE_OPTIONS: Array<{ value: BondStyleType; label: string }> = [
   { value: 'full', label: 'Full' },
@@ -43,11 +18,6 @@ const BOND_STYLE_OPTIONS: Array<{ value: BondStyleType; label: string }> = [
   { value: 'interaction', label: 'Interaction' },
   { value: 'thin', label: 'Thin' },
 ];
-
-function defaultElementColor(element: string, materialPreset: MaterialPresetId): string {
-  const colors = materialPreset === 'CYLviewLegacy' ? LEGACY_ELEMENT_COLORS : DEFAULT_ELEMENT_COLORS;
-  return colors[element] ?? '#888888';
-}
 
 function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
   const atom = moleculeData.atoms[atomIndex];
@@ -125,6 +95,39 @@ export function AppearancePanel({
   onResetSelectedBondStyles,
 }: AppearancePanelProps) {
   const [bondStyleDraft, setBondStyleDraft] = useState<BondStyleType>('full');
+  const frameRef = useRef<number | null>(null);
+  const pendingRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+  }, []);
+
+  const schedule = useCallback((callback: () => void) => {
+    pendingRef.current = callback;
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      const pending = pendingRef.current;
+      pendingRef.current = null;
+      pending?.();
+    });
+  }, []);
+
+  const scheduleAtomSize = useCallback((scale: number) => {
+    schedule(() => onAtomSizeScaleChange(scale));
+  }, [onAtomSizeScaleChange, schedule]);
+
+  const scheduleLabelSize = useCallback((scale: number) => {
+    schedule(() => onLabelFontScaleChange(scale));
+  }, [onLabelFontScaleChange, schedule]);
+
+  const scheduleBondSize = useCallback((scale: number) => {
+    schedule(() => onBondSizeScaleChange(scale));
+  }, [onBondSizeScaleChange, schedule]);
+
+  const scheduleElementColor = useCallback((element: string, color: string) => {
+    schedule(() => onElementColorChange(element, color));
+  }, [onElementColorChange, schedule]);
   const visibleElements = useMemo(() => {
     if (!moleculeData) return [];
     const hiddenAtomSet = new Set(hiddenAtomIndices);
@@ -167,7 +170,7 @@ export function AppearancePanel({
         step="0.05"
         value={atomSizeScale}
         aria-label="Atom size"
-        onChange={(event) => onAtomSizeScaleChange(Number(event.target.value))}
+        onChange={(event) => scheduleAtomSize(Number(event.target.value))}
       />
 
       <div className="view-split-row">
@@ -182,7 +185,7 @@ export function AppearancePanel({
         step="0.05"
         value={labelFontScale}
         aria-label="Label font size"
-        onChange={(event) => onLabelFontScaleChange(Number(event.target.value))}
+        onChange={(event) => scheduleLabelSize(Number(event.target.value))}
       />
 
       <div className="view-split-row">
@@ -197,7 +200,7 @@ export function AppearancePanel({
         step="0.05"
         value={bondSizeScale}
         aria-label="Bond size"
-        onChange={(event) => onBondSizeScaleChange(Number(event.target.value))}
+        onChange={(event) => scheduleBondSize(Number(event.target.value))}
       />
 
       <section className="appearance-section">
@@ -214,7 +217,7 @@ export function AppearancePanel({
         ) : (
           <div className="appearance-color-list">
             {visibleElements.map((element) => {
-              const color = elementColorOverrides[element] ?? defaultElementColor(element, materialPreset);
+              const color = elementColorOverrides[element] ?? defaultElementColorHex(element, materialPreset);
               const isCustom = Boolean(elementColorOverrides[element]);
 
               return (
@@ -224,7 +227,7 @@ export function AppearancePanel({
                     className="appearance-color-input"
                     type="color"
                     value={color}
-                    onChange={(event) => onElementColorChange(element, event.target.value)}
+                    onChange={(event) => scheduleElementColor(element, event.target.value)}
                     aria-label={`${element} colour`}
                   />
                   <span className={isCustom ? 'appearance-color-status custom' : 'appearance-color-status'}>

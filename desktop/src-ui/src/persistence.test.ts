@@ -117,6 +117,7 @@ describe('presentation persistence', () => {
 
   it('preserves explicit glossy CYLview state but falls back from unknown presets', () => {
     const settings = testSettings();
+    settings.rendering.defaultMaterialPreset = 'CYLview';
     const glossy = normalizePresentationState(
       { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: { material_preset: 'CYLview' } },
       settings,
@@ -129,7 +130,7 @@ describe('presentation persistence', () => {
     );
 
     expect(glossy.styles.material_preset).toBe('CYLview');
-    expect(unknown.styles.material_preset).toBe('CYLviewLegacy');
+    expect(unknown.styles.material_preset).toBe('CYLview');
   });
 });
 

@@ -1243,6 +1243,9 @@ fn devtools_menu_enabled(app: &AppHandle) -> bool {
 
 #[tauri::command]
 fn get_app_settings(app: AppHandle) -> Result<Value, String> {
+    if benchmark_enabled() {
+        return Ok(default_app_settings());
+    }
     read_app_settings_from_path(&app_settings_path(&app)?)
 }
 
@@ -1631,28 +1634,28 @@ fn menu_event_name(menu_id: &str) -> Option<&'static str> {
 
 fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
     let open_file = MenuItemBuilder::with_id(MENU_FILE_OPEN, "Open File...")
-        .accelerator("Ctrl+O")
+        .accelerator("CommandOrControl+O")
         .build(manager)?;
     let open_recent = MenuItemBuilder::with_id(MENU_FILE_OPEN_RECENT, "Open Recent...")
-        .accelerator("Ctrl+Shift+O")
+        .accelerator("CommandOrControl+Shift+O")
         .build(manager)?;
     let close_current = MenuItemBuilder::with_id(MENU_FILE_CLOSE_CURRENT, "Close Current Molecule")
-        .accelerator("Ctrl+W")
+        .accelerator("CommandOrControl+W")
         .build(manager)?;
     let export_png = MenuItemBuilder::with_id(MENU_FILE_EXPORT_PNG, "Export PNG...")
-        .accelerator("Ctrl+E")
+        .accelerator("CommandOrControl+E")
         .build(manager)?;
     let settings = MenuItemBuilder::with_id(MENU_FILE_SETTINGS, "Settings...")
-        .accelerator("Ctrl+,")
+        .accelerator("CommandOrControl+,")
         .build(manager)?;
     let quit = MenuItemBuilder::with_id(MENU_FILE_QUIT, "Quit Cylform")
-        .accelerator("Ctrl+Q")
+        .accelerator("CommandOrControl+Q")
         .build(manager)?;
     let reset_view = MenuItemBuilder::with_id(MENU_VIEW_RESET, "Reset View")
         .accelerator("R")
         .build(manager)?;
     let open_devtools = MenuItemBuilder::with_id(MENU_VIEW_OPEN_DEVTOOLS, "Open DevTools")
-        .accelerator("Ctrl+Shift+I")
+        .accelerator("CommandOrControl+Shift+I")
         .build(manager)?;
 
     let about = AboutMetadataBuilder::new()

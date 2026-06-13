@@ -1,13 +1,14 @@
 import type { HydrogenVisibility, SelectionMode } from '../App';
 import appIconUrl from '../../../src-tauri/icons/32x32.png';
+import { shortcutDisplayText, type ShortcutActionId } from '../shortcuts';
 
-const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; shortcut?: string; disabled?: boolean }> = [
-  { mode: 'view', label: 'View', shortcut: 'V' },
-  { mode: 'measure', label: 'Measure', shortcut: 'M' },
-  { mode: 'atom', label: 'Atom', shortcut: 'A' },
-  { mode: 'bond', label: 'Bond', shortcut: 'B' },
-  { mode: 'atom-bond', label: 'Atom+Bond', shortcut: 'Z' },
-  { mode: 'label', label: 'Label', shortcut: 'L' },
+const SELECTION_MODES: Array<{ mode: SelectionMode; label: string; shortcutAction: ShortcutActionId; disabled?: boolean }> = [
+  { mode: 'view', label: 'View', shortcutAction: 'viewMode' },
+  { mode: 'measure', label: 'Measure', shortcutAction: 'measureMode' },
+  { mode: 'atom', label: 'Atom', shortcutAction: 'atomMode' },
+  { mode: 'bond', label: 'Bond', shortcutAction: 'bondMode' },
+  { mode: 'atom-bond', label: 'Atom+Bond', shortcutAction: 'atomBondMode' },
+  { mode: 'label', label: 'Label', shortcutAction: 'labelMode' },
 ];
 
 interface ToolbarProps {
@@ -28,6 +29,7 @@ interface ToolbarProps {
   onOpenSettings: () => void;
   onOpenShortcuts: () => void;
   onOpenRecentDialog: () => void;
+  shortcuts: Record<ShortcutActionId, string>;
 }
 
 function hydrogenButtonLabel(mode: HydrogenVisibility): string {
@@ -118,7 +120,10 @@ export function Toolbar({
   onOpenSettings,
   onOpenShortcuts,
   onOpenRecentDialog,
+  shortcuts,
 }: ToolbarProps) {
+  const hint = (action: ShortcutActionId) => shortcutDisplayText(shortcuts[action]);
+
   return (
     <div className="toolbar">
       {/* Logo */}
@@ -132,27 +137,27 @@ export function Toolbar({
       {/* Mode selector */}
       <div className="toolbar-section mode-toolbar-section">
         <div className="mode-selector" aria-label="Selection mode">
-          {SELECTION_MODES.map(({ mode, label, shortcut, disabled }) => (
+          {SELECTION_MODES.map(({ mode, label, shortcutAction, disabled }) => (
             <button
               key={mode}
               type="button"
               className={selectionMode === mode ? 'mode-active' : ''}
               disabled={isLoading || disabled}
-              title={`${label} mode${shortcut ? ` (${shortcut})` : ''}`}
+              title={`${label} mode (${hint(shortcutAction)})`}
               onClick={() => onSelectionModeChange(mode)}
             >
               <span>{label}</span>
-              {shortcut && <kbd>{shortcut}</kbd>}
+              <kbd>{hint(shortcutAction)}</kbd>
             </button>
           ))}
           <button
             onClick={onCycleHydrogenVisibility}
             disabled={isLoading}
             className={hydrogenVisibility !== 'shown' ? 'toggle-active' : ''}
-            title="Cycle hydrogen visibility (H)"
+            title={`Cycle hydrogen visibility (${hint('toggleHydrogen')})`}
           >
             <span>{hydrogenButtonLabel(hydrogenVisibility)}</span>
-            <kbd>H</kbd>
+            <kbd>{hint('toggleHydrogen')}</kbd>
           </button>
         </div>
       </div>
@@ -161,7 +166,7 @@ export function Toolbar({
       <div className="toolbar-section action-toolbar-section">
         <button onClick={onOpenFile} disabled={isLoading} className="primary">
           <span>Open File</span>
-          <kbd>Ctrl O</kbd>
+          <kbd>{hint('openFile')}</kbd>
         </button>
 
         <button
@@ -178,7 +183,7 @@ export function Toolbar({
           onClick={onResetView}
           disabled={isLoading}
           className="icon-only"
-          title="Reset view (R)"
+          title={`Reset view (${hint('resetView')})`}
           aria-label="Reset view"
         >
           <IconRefresh />
@@ -188,7 +193,7 @@ export function Toolbar({
           onClick={onExportPng}
           disabled={isLoading}
           className="icon-only"
-          title="Export PNG (Ctrl+E)"
+          title={`Export PNG (${hint('exportPng')})`}
           aria-label="Export PNG"
         >
           <IconSave />
@@ -231,17 +236,17 @@ export function Toolbar({
           onClick={onOpenShortcuts}
           disabled={isLoading}
           className="icon-only"
-          title="Keyboard shortcuts (?)"
+          title={`Keyboard shortcuts (${hint('showShortcuts')})`}
           aria-label="Keyboard shortcuts"
         >
-          <kbd style={{ minWidth: 'auto', padding: '1px 4px' }}>?</kbd>
+          <kbd style={{ minWidth: 'auto', padding: '1px 4px' }}>{hint('showShortcuts')}</kbd>
         </button>
 
         <button
           onClick={onOpenSettings}
           disabled={isLoading}
           className="icon-only"
-          title="Settings (Ctrl+,)"
+          title={`Settings (${hint('openSettings')})`}
           aria-label="Settings"
         >
           <IconMenu />

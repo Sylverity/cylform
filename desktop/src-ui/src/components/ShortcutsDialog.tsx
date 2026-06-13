@@ -1,69 +1,65 @@
+import {
+  SHORTCUT_DEFINITIONS,
+  shortcutDisplayText,
+  type ShortcutActionId,
+} from '../shortcuts';
+
 interface ShortcutsDialogProps {
   open: boolean;
-  shortcuts?: {
-    openFile: string;
-    exportPng: string;
-    resetView: string;
-    toggleHydrogen: string;
-    viewMode: string;
-    measureMode: string;
-    atomMode: string;
-    bondMode: string;
-    atomBondMode: string;
-    labelMode: string;
-    openSettings: string;
-  };
+  shortcuts: Record<ShortcutActionId, string>;
   onClose: () => void;
 }
 
 function shortcutKeys(shortcut: string): string[] {
-  return shortcut.split('+').map((part) => part.trim()).filter(Boolean);
+  return shortcutDisplayText(shortcut).split('+').map((part) => part.trim()).filter(Boolean);
 }
 
 export function ShortcutsDialog({ open, shortcuts, onClose }: ShortcutsDialogProps) {
   if (!open) return null;
 
-  const groups = [
+  const shortcutGroups = [
     {
       title: 'File',
-      shortcuts: [
-        { keys: shortcutKeys(shortcuts?.openFile ?? 'Ctrl+O'), action: 'Open file' },
-        { keys: shortcutKeys(shortcuts?.exportPng ?? 'Ctrl+E'), action: 'Export PNG' },
-        { keys: shortcutKeys(shortcuts?.openSettings ?? 'Ctrl+,'), action: 'Settings' },
-      ],
+      ids: ['openFile', 'openRecent', 'closeTab', 'exportPng', 'previousTab', 'nextTab', 'previousFile', 'nextFile'],
     },
     {
       title: 'Navigation',
-      shortcuts: [
-        { keys: ['L', 'drag'], action: 'Rotate' },
-        { keys: ['R', 'drag'], action: 'Pan' },
+      ids: ['resetView', 'clearSelection', 'cameraFront', 'cameraTop', 'cameraRight', 'cameraIso'],
+      extra: [
+        { keys: ['Left drag'], action: 'Rotate' },
+        { keys: ['Right drag'], action: 'Pan' },
         { keys: ['Scroll'], action: 'Zoom' },
-        { keys: shortcutKeys(shortcuts?.resetView ?? 'R'), action: 'Reset view' },
       ],
     },
     {
       title: 'Selection modes',
-      shortcuts: [
-        { keys: shortcutKeys(shortcuts?.viewMode ?? 'V'), action: 'View mode' },
-        { keys: shortcutKeys(shortcuts?.measureMode ?? 'M'), action: 'Measure mode' },
-        { keys: shortcutKeys(shortcuts?.atomMode ?? 'A'), action: 'Select atoms' },
-        { keys: shortcutKeys(shortcuts?.bondMode ?? 'B'), action: 'Select bonds' },
-        { keys: shortcutKeys(shortcuts?.atomBondMode ?? 'Z'), action: 'Select atoms + bonds' },
-        { keys: shortcutKeys(shortcuts?.labelMode ?? 'L'), action: 'Label mode' },
-      ],
+      ids: ['viewMode', 'measureMode', 'atomMode', 'bondMode', 'atomBondMode', 'labelMode'],
     },
     {
       title: 'Visibility & style',
-      shortcuts: [
-        { keys: shortcutKeys(shortcuts?.toggleHydrogen ?? 'H'), action: 'Cycle hydrogen visibility' },
-        { keys: ['Esc'], action: 'Clear selection' },
-      ],
+      ids: ['toggleHydrogen'],
     },
     {
       title: 'Help',
-      shortcuts: [{ keys: ['?'], action: 'Show this dialog' }],
+      ids: ['openSettings', 'showShortcuts'],
     },
-  ];
+  ] satisfies Array<{
+    title: string;
+    ids: ShortcutActionId[];
+    extra?: Array<{ keys: string[]; action: string }>;
+  }>;
+
+  const definitionById = new Map(SHORTCUT_DEFINITIONS.map((definition) => [definition.id, definition]));
+  const groups = shortcutGroups.map((group) => ({
+    title: group.title,
+    shortcuts: [
+      ...(group.extra ?? []),
+      ...group.ids.map((id) => ({
+        keys: shortcutKeys(shortcuts[id]),
+        action: definitionById.get(id)?.label ?? id,
+      })),
+    ],
+  }));
 
   return (
     <div

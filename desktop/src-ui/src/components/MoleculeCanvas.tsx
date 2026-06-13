@@ -70,6 +70,7 @@ import {
   backdropColor,
   MATERIAL_PRESETS,
   applyMaterialPreset,
+  applyMaterialFinish,
   bondMaterialForType,
   bondKindToStyleType,
   atomMaterial,
@@ -246,6 +247,7 @@ export function MoleculeCanvas({
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
   const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
+  const isLegacyMaterialPreset = materialPreset === 'CYLviewLegacy';
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -362,12 +364,10 @@ export function MoleculeCanvas({
     floorGroup.visible = false;
     scene.add(floorGroup);
 
-    // Shared geometries. The high-detail pair preserves the normal CYLform look,
-    // while the large-scene pair keeps dense benchmark scenes interactive.
     const sphereGeom = new SphereGeometry(1, 20, 16);
-    const cylGeom    = new CylinderGeometry(1, 1, 1, 24);
-    const lowDetailSphereGeom = new SphereGeometry(1, 8, 4);
-    const lowDetailCylGeom = new CylinderGeometry(1, 1, 1, 8, 1, true);
+    const cylGeom    = new CylinderGeometry(1, 1, 1, 24, 1, true);
+    const sphereGeometryCache = new Map<string, SphereGeometry>([['20x16', sphereGeom]]);
+    const cylinderGeometryCache = new Map<string, CylinderGeometry>([['24', cylGeom]]);
 
     // Saturated cyan cylinders with enough gloss to read like polished tubes.
     const bondMat = new MeshPhongMaterial({
@@ -518,7 +518,7 @@ export function MoleculeCanvas({
       lastCameraDistance: 25,
       lastMoleculeBox: null,
       animId,
-      sphereGeom, cylGeom, lowDetailSphereGeom, lowDetailCylGeom, atomMats, bondMat, selectedBondMat,
+      sphereGeom, cylGeom, sphereGeometryCache, cylinderGeometryCache, atomMats, bondMat, selectedBondMat,
       raycaster, pointer, selectedBondOverlay: null, selectedBondData: null, bondPickObjects: [],
       selectedAtomMat, atomPickObjects: [], selectedAtomOverlays: [], modeSelectedAtomOverlays: [],
       modeSelectedBondOverlays: [], modeSelectedAtoms: [], modeSelectedBonds: [], angleSelection: [],
@@ -569,10 +569,17 @@ export function MoleculeCanvas({
       if (!current || !pose) return;
       applySavedPoseToContext(current, pose);
     };
+    const onApplyCameraPreset = (event: Event) => {
+      const current = ctxRef.current;
+      const preset = (event as CustomEvent<'front' | 'top' | 'right' | 'iso'>).detail;
+      if (!current || !moleculeDataRef.current || !preset) return;
+      applyCameraPreset(current, preset);
+    };
     if (!previewMode) {
       window.addEventListener('reset-camera', onReset);
       window.addEventListener('capture-camera-pose', onCaptureCameraPose);
       window.addEventListener('apply-camera-pose', onApplyCameraPose);
+      window.addEventListener('camera-preset', onApplyCameraPreset);
     }
 
     let pointerDown = { x: 0, y: 0 };
@@ -966,15 +973,14 @@ export function MoleculeCanvas({
       window.removeEventListener('reset-camera', onReset);
       window.removeEventListener('capture-camera-pose', onCaptureCameraPose);
       window.removeEventListener('apply-camera-pose', onApplyCameraPose);
+      window.removeEventListener('camera-preset', onApplyCameraPreset);
       window.removeEventListener('export-png', onExport);
       window.removeEventListener('clear-selection', onClearSelection);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(animId);
-      sphereGeom.dispose();
-      cylGeom.dispose();
-      lowDetailSphereGeom.dispose();
-      lowDetailCylGeom.dispose();
+      sphereGeometryCache.forEach((geometry) => geometry.dispose());
+      cylinderGeometryCache.forEach((geometry) => geometry.dispose());
       floorPlane.geometry.dispose();
       floorMat.dispose();
       bondMat.dispose();
@@ -1053,6 +1059,8 @@ export function MoleculeCanvas({
         const bonds = object.userData.bonds as BondSelectionData[] | undefined;
         if (bonds && object.material === ctx.bondMat) {
           applyMaterialPreset(object.material, materialPreset);
+        } else if (bonds) {
+          applyMaterialFinish(object.material, materialPreset);
         }
         const atoms = object.userData.atoms as AtomSelectionData[] | undefined;
         if (atoms) {
@@ -1121,7 +1129,7 @@ export function MoleculeCanvas({
     let visibleBondCount = 0;
     let visibleAtomCount = 0;
     applyRenderPixelRatio(ctx, moleculeData.atoms.length, moleculeData.bonds.length);
-    const { sphereGeom, cylGeom } = moleculeBatchGeometries(
+    const { sphereGeom, cylGeom, qualityProfile } = moleculeBatchGeometries(
       ctx,
       moleculeData.atoms.length,
       moleculeData.bonds.length,
@@ -1359,6 +1367,8 @@ export function MoleculeCanvas({
           visibleBonds: visibleBondCount,
           totalAtoms: moleculeData.atoms.length,
           totalBonds: moleculeData.bonds.length,
+          materialPreset,
+          renderQuality: qualityProfile,
           renderCalls: renderStats.renderCalls,
           triangles: renderStats.triangles,
           geometries: renderStats.geometries,
@@ -1401,7 +1411,7 @@ export function MoleculeCanvas({
     visibilityIndex,
     hydrogenVisibility,
     hiddenAtomIndices,
-    materialPreset,
+    isLegacyMaterialPreset,
     elementColorOverrides,
     atomStyleOverrides,
     atomSizeScale,

@@ -1,12 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type {
   AppSettings,
   AppDataPaths,
   HydrogenVisibility,
   LightingMood,
   ProjectionMode,
-  ShortcutActionId,
 } from '../App';
+import {
+  DEFAULT_KEYBOARD_SHORTCUTS,
+  SHORTCUT_ACTION_LABELS,
+  SHORTCUT_DEFINITIONS,
+  effectiveKeyboardShortcuts,
+  hasShortcutConflict,
+  shortcutDisplayText,
+  shortcutFromKeyboardEvent,
+  type ShortcutActionId,
+} from '../shortcuts';
 
 type SettingsCategory =
   | 'rendering'
@@ -38,79 +47,6 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
-function normalizeShortcutText(shortcut: string): string | null {
-  const parts = shortcut
-    .split('+')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-
-  const modifiers = new Set<string>();
-  let key: string | null = null;
-  for (const part of parts) {
-    const lower = part.toLowerCase();
-    if (['ctrl', 'control'].includes(lower)) modifiers.add('Ctrl');
-    else if (['cmd', 'command', 'meta'].includes(lower)) modifiers.add('Meta');
-    else if (lower === 'alt' || lower === 'option') modifiers.add('Alt');
-    else if (lower === 'shift') modifiers.add('Shift');
-    else if (!key) key = part.length === 1 ? part.toUpperCase() : part;
-    else return null;
-  }
-
-  if (!key) return null;
-  return [...modifiers, key].join('+');
-}
-
-const DEFAULT_KEYBOARD_SHORTCUTS: Record<ShortcutActionId, string> = {
-  openFile: 'Ctrl+O',
-  exportPng: 'Ctrl+E',
-  resetView: 'R',
-  toggleHydrogen: 'H',
-  viewMode: 'V',
-  measureMode: 'M',
-  atomMode: 'A',
-  bondMode: 'B',
-  atomBondMode: 'Z',
-  labelMode: 'L',
-  openSettings: 'Ctrl+,',
-};
-
-const SHORTCUT_ACTION_LABELS: Record<ShortcutActionId, string> = {
-  openFile: 'Open File',
-  exportPng: 'Export PNG',
-  resetView: 'Reset View',
-  toggleHydrogen: 'Toggle Hydrogen Mode',
-  viewMode: 'View Mode',
-  measureMode: 'Measure Mode',
-  atomMode: 'Atom Selection',
-  bondMode: 'Bond Selection',
-  atomBondMode: 'Atom+Bond Selection',
-  labelMode: 'Label Mode',
-  openSettings: 'Settings',
-};
-
-function effectiveKeyboardShortcuts(settings: AppSettings): Record<ShortcutActionId, string> {
-  const shortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS };
-  for (const action of Object.keys(DEFAULT_KEYBOARD_SHORTCUTS) as ShortcutActionId[]) {
-    const normalized = normalizeShortcutText(settings.interaction.keyboardShortcuts[action] ?? '');
-    if (normalized) shortcuts[action] = normalized;
-  }
-  return shortcuts;
-}
-
-function hasShortcutConflict(
-  action: ShortcutActionId,
-  shortcut: string,
-  settings: AppSettings,
-): boolean {
-  const normalized = normalizeShortcutText(shortcut);
-  if (!normalized) return true;
-  const shortcuts = effectiveKeyboardShortcuts(settings);
-  return (Object.keys(shortcuts) as ShortcutActionId[]).some((candidate) => (
-    candidate !== action && normalizeShortcutText(shortcuts[candidate]) === normalized
-  ));
-}
-
 export function SettingsDialog({
   open,
   settings,
@@ -127,7 +63,7 @@ export function SettingsDialog({
   const [shortcutWarning, setShortcutWarning] = useState<string | null>(null);
 
   const shortcuts = useMemo(() => effectiveKeyboardShortcuts(settings), [settings]);
-  const shortcutRows = useMemo(() => Object.keys(DEFAULT_KEYBOARD_SHORTCUTS) as ShortcutActionId[], []);
+  const shortcutRows = useMemo(() => SHORTCUT_DEFINITIONS.map((definition) => definition.id), []);
 
   if (!open) return null;
 
@@ -144,14 +80,13 @@ export function SettingsDialog({
     } as AppSettings);
   };
 
-  const updateShortcut = (action: ShortcutActionId, value: string) => {
-    const normalized = normalizeShortcutText(value);
+  const setShortcut = (action: ShortcutActionId, normalized: string) => {
     if (!normalized) {
-      setShortcutWarning('Use a shortcut like Ctrl+O, Shift+R, or M.');
+      setShortcutWarning('Press a shortcut like Ctrl+O, Shift+R, or M.');
       return;
     }
     if (hasShortcutConflict(action, normalized, settings)) {
-      setShortcutWarning(`${normalized} is already assigned.`);
+      setShortcutWarning(`${shortcutDisplayText(normalized)} is already assigned.`);
       return;
     }
     setShortcutWarning(null);
@@ -163,9 +98,30 @@ export function SettingsDialog({
     });
   };
 
+  const captureShortcut = (action: ShortcutActionId, event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      const next = { ...settings.interaction.keyboardShortcuts };
+      delete next[action];
+      setShortcutWarning(null);
+      update('interaction', { keyboardShortcuts: next });
+      return;
+    }
+    const normalized = shortcutFromKeyboardEvent(event.nativeEvent);
+    if (normalized) setShortcut(action, normalized);
+  };
+
   const resetShortcuts = () => {
     setShortcutWarning(null);
     update('interaction', { keyboardShortcuts: {} });
+  };
+
+  const resetShortcut = (action: ShortcutActionId) => {
+    const next = { ...settings.interaction.keyboardShortcuts };
+    delete next[action];
+    setShortcutWarning(null);
+    update('interaction', { keyboardShortcuts: next });
   };
 
   return (
@@ -468,10 +424,20 @@ export function SettingsDialog({
                   <div key={action}>
                     <span>{SHORTCUT_ACTION_LABELS[action]}</span>
                     <input
-                      value={shortcuts[action]}
-                      onChange={(event) => updateShortcut(action, event.target.value)}
+                      value={shortcutDisplayText(shortcuts[action])}
+                      readOnly
+                      onKeyDown={(event) => captureShortcut(action, event)}
+                      onFocus={(event) => event.currentTarget.select()}
                       aria-label={`${SHORTCUT_ACTION_LABELS[action]} shortcut`}
                     />
+                    <button
+                      type="button"
+                      className="appearance-mini-button"
+                      onClick={() => resetShortcut(action)}
+                      disabled={shortcuts[action] === DEFAULT_KEYBOARD_SHORTCUTS[action]}
+                    >
+                      Reset
+                    </button>
                   </div>
                 ))}
               </div>
