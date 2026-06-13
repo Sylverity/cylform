@@ -17,6 +17,11 @@ import {
   serializePresentationState,
 } from './persistence'
 import { hideGroupAtoms, revealGroupAtoms } from './groupVisibility'
+import {
+  effectiveKeyboardShortcuts,
+  shortcutMatchesEvent,
+  type ShortcutActionId,
+} from './shortcuts'
 
 const MoleculeCanvas = lazy(() =>
   import('./components/MoleculeCanvas').then((module) => ({
@@ -85,54 +90,6 @@ export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
 export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
 export type BondKind = 'Normal' | 'Ts' | 'Dative' | 'Interaction' | 'Thin';
 export type MaterialPresetId = 'CYLviewLegacy' | 'CYLview' | 'Houkmol';
-
-export interface MaterialPreset {
-  id: MaterialPresetId;
-  ambient: number;
-  diffuse: number;
-  specular: number;
-  shininess: number;
-  outline: boolean;
-  outline_size: number;
-  quadrants: boolean;
-  quadrant_size: number;
-}
-
-export const MATERIAL_PRESETS: Record<MaterialPresetId, MaterialPreset> = {
-  CYLviewLegacy: {
-    id: 'CYLviewLegacy',
-    ambient: 0.62,
-    diffuse: 1.22,
-    specular: 0.32,
-    shininess: 68,
-    outline: false,
-    outline_size: 0,
-    quadrants: false,
-    quadrant_size: 0,
-  },
-  CYLview: {
-    id: 'CYLview',
-    ambient: 0.52,
-    diffuse: 1.65,
-    specular: 0.9,
-    shininess: 175,
-    outline: false,
-    outline_size: 0,
-    quadrants: false,
-    quadrant_size: 0,
-  },
-  Houkmol: {
-    id: 'Houkmol',
-    ambient: 0.7,
-    diffuse: 0.95,
-    specular: 0.18,
-    shininess: 36,
-    outline: false,
-    outline_size: 0,
-    quadrants: true,
-    quadrant_size: 0.5,
-  },
-};
 
 export interface Annotation {
   id: string;
@@ -208,46 +165,7 @@ export interface AppSettings {
   };
 }
 
-export type ShortcutActionId =
-  | 'openFile'
-  | 'exportPng'
-  | 'resetView'
-  | 'toggleHydrogen'
-  | 'viewMode'
-  | 'measureMode'
-  | 'atomMode'
-  | 'bondMode'
-  | 'atomBondMode'
-  | 'labelMode'
-  | 'openSettings';
-
-const DEFAULT_KEYBOARD_SHORTCUTS: Record<ShortcutActionId, string> = {
-  openFile: 'Ctrl+O',
-  exportPng: 'Ctrl+E',
-  resetView: 'R',
-  toggleHydrogen: 'H',
-  viewMode: 'V',
-  measureMode: 'M',
-  atomMode: 'A',
-  bondMode: 'B',
-  atomBondMode: 'Z',
-  labelMode: 'L',
-  openSettings: 'Ctrl+,',
-};
-
-export const SHORTCUT_ACTION_LABELS: Record<ShortcutActionId, string> = {
-  openFile: 'Open File',
-  exportPng: 'Export PNG',
-  resetView: 'Reset View',
-  toggleHydrogen: 'Toggle Hydrogen Mode',
-  viewMode: 'View Mode',
-  measureMode: 'Measure Mode',
-  atomMode: 'Atom Selection',
-  bondMode: 'Bond Selection',
-  atomBondMode: 'Atom+Bond Selection',
-  labelMode: 'Label Mode',
-  openSettings: 'Settings',
-};
+export type { ShortcutActionId };
 
 export interface AppDataPaths {
   root: string;
@@ -418,6 +336,15 @@ export interface BenchmarkRenderMetrics {
   visibleBonds: number;
   totalAtoms: number;
   totalBonds: number;
+  materialPreset: MaterialPresetId;
+  renderQuality: {
+    primitiveLoad: number;
+    qualityT: number;
+    pixelRatio: number;
+    sphereWidthSegments: number;
+    sphereHeightSegments: number;
+    cylinderRadialSegments: number;
+  };
   renderCalls: number;
   triangles: number;
   geometries: number;
@@ -469,75 +396,6 @@ function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
   const extension = extensionForPath(path);
   if (!extension) return false;
   return extensions.some((candidate) => candidate.toLowerCase() === extension);
-}
-
-function normalizeShortcutText(shortcut: string): string | null {
-  const parts = shortcut
-    .split('+')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-
-  const modifiers = new Set<string>();
-  let key: string | null = null;
-  for (const part of parts) {
-    const lower = part.toLowerCase();
-    if (['ctrl', 'control'].includes(lower)) modifiers.add('Ctrl');
-    else if (['cmd', 'command', 'meta'].includes(lower)) modifiers.add('Meta');
-    else if (lower === 'alt' || lower === 'option') modifiers.add('Alt');
-    else if (lower === 'shift') modifiers.add('Shift');
-    else if (!key) key = part.length === 1 ? part.toUpperCase() : part;
-    else return null;
-  }
-
-  if (!key) return null;
-  return [...modifiers, key].join('+');
-}
-
-function effectiveKeyboardShortcuts(settings: AppSettings): Record<ShortcutActionId, string> {
-  const shortcuts = { ...DEFAULT_KEYBOARD_SHORTCUTS };
-  for (const action of Object.keys(DEFAULT_KEYBOARD_SHORTCUTS) as ShortcutActionId[]) {
-    const normalized = normalizeShortcutText(settings.interaction.keyboardShortcuts[action] ?? '');
-    if (normalized) shortcuts[action] = normalized;
-  }
-  return shortcuts;
-}
-
-function shortcutMatchesEvent(shortcut: string, event: KeyboardEvent): boolean {
-  const normalized = normalizeShortcutText(shortcut);
-  if (!normalized) return false;
-  const parts = normalized.split('+');
-  const key = parts[parts.length - 1]?.toLowerCase();
-  const wantsCtrl = parts.includes('Ctrl');
-  const wantsMeta = parts.includes('Meta');
-  const wantsAlt = parts.includes('Alt');
-  const wantsShift = parts.includes('Shift');
-  const eventKey = event.key.length === 1 ? event.key.toLowerCase() : event.key.toLowerCase();
-  const commandOrControlMatches = wantsMeta
-    ? event.metaKey && event.ctrlKey === wantsCtrl
-    : wantsCtrl
-      ? event.ctrlKey || event.metaKey
-      : !event.ctrlKey && !event.metaKey;
-
-  return (
-    key === eventKey &&
-    commandOrControlMatches &&
-    event.altKey === wantsAlt &&
-    event.shiftKey === wantsShift
-  );
-}
-
-export function hasShortcutConflict(
-  action: ShortcutActionId,
-  shortcut: string,
-  settings: AppSettings,
-): boolean {
-  const normalized = normalizeShortcutText(shortcut);
-  if (!normalized) return true;
-  const shortcuts = effectiveKeyboardShortcuts(settings);
-  return (Object.keys(shortcuts) as ShortcutActionId[]).some((candidate) => (
-    candidate !== action && normalizeShortcutText(shortcuts[candidate]) === normalized
-  ));
 }
 
 function defaultAppSettings(): AppSettings {
@@ -936,6 +794,7 @@ function App() {
   const defaultPresentationState = useCallback(() => {
     return createDefaultPresentationState(appSettingsRef.current, materialPreset);
   }, [materialPreset]);
+  const activeShortcuts = effectiveKeyboardShortcuts(appSettings);
 
   const refreshRecentFiles = useCallback(async () => {
     try {
@@ -1482,6 +1341,8 @@ function App() {
       visibleBonds: renderMetrics.visibleBonds,
       totalAtoms: renderMetrics.totalAtoms,
       totalBonds: renderMetrics.totalBonds,
+      materialPreset: renderMetrics.materialPreset,
+      renderQuality: renderMetrics.renderQuality,
       renderCalls: renderMetrics.renderCalls,
       triangles: renderMetrics.triangles,
       geometries: renderMetrics.geometries,
@@ -1903,91 +1764,129 @@ function App() {
       );
     };
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target) || isLoading) return;
+    const closeTopmostDialog = () => {
+      if (shortcutsOpen) {
+        setShortcutsOpen(false);
+        return true;
+      }
+      if (recentDialogOpen) {
+        setRecentDialogOpen(false);
+        return true;
+      }
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return true;
+      }
+      return false;
+    };
 
-      const shortcuts = effectiveKeyboardShortcuts(appSettingsRef.current);
+    const focusAdjacentWorkspaceTab = (direction: -1 | 1) => {
+      if (!activeTabId) return;
+      const currentIndex = moleculeTabs.findIndex((tab) => tab.id === activeTabId);
+      const nextTab = moleculeTabs[currentIndex + direction];
+      if (nextTab) void focusMoleculeTab(nextTab.id);
+    };
 
-      if (shortcutMatchesEvent(shortcuts.openFile, event)) {
-        event.preventDefault();
-        void handleOpenFile();
-        return;
-      }
+    const dispatchCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
+      window.dispatchEvent(new CustomEvent('camera-preset', { detail: preset }));
+    };
 
-      if (shortcutMatchesEvent(shortcuts.exportPng, event)) {
-        event.preventDefault();
-        handleExportPng();
-        return;
-      }
-
-      if (shortcutMatchesEvent(shortcuts.openSettings, event)) {
-        event.preventDefault();
-        setSettingsOpen(true);
-        return;
-      }
-
-      if (event.altKey || event.ctrlKey || event.metaKey) return;
-
-      const key = event.key.toLowerCase();
-
-      if (shortcutMatchesEvent(shortcuts.resetView, event)) {
-        event.preventDefault();
-        handleResetView();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.toggleHydrogen, event)) {
-        event.preventDefault();
-        cycleHydrogenVisibility();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.viewMode, event)) {
-        event.preventDefault();
-        setSelectionMode('view');
-        handleClearSelection();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.measureMode, event)) {
-        event.preventDefault();
-        setSelectionMode('measure');
-        handleClearSelection();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.atomMode, event)) {
-        event.preventDefault();
-        setSelectionMode('atom');
-        handleClearSelection();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.bondMode, event)) {
-        event.preventDefault();
-        setSelectionMode('bond');
-        handleClearSelection();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.atomBondMode, event)) {
-        event.preventDefault();
-        setSelectionMode('atom-bond');
-        handleClearSelection();
-        return;
-      }
-      if (shortcutMatchesEvent(shortcuts.labelMode, event)) {
-        event.preventDefault();
-        setSelectionMode('label');
-        handleClearSelection();
-        return;
-      }
-
-      switch (key) {
-        case 'escape':
-          event.preventDefault();
+    const runShortcutAction = (action: ShortcutActionId) => {
+      switch (action) {
+        case 'openFile':
+          void handleOpenFile();
+          break;
+        case 'openRecent':
+          setRecentDialogOpen(true);
+          break;
+        case 'closeTab':
+          if (activeTabId) handleCloseTab(activeTabId);
+          break;
+        case 'exportPng':
+          handleExportPng();
+          break;
+        case 'previousTab':
+          focusAdjacentWorkspaceTab(-1);
+          break;
+        case 'nextTab':
+          focusAdjacentWorkspaceTab(1);
+          break;
+        case 'previousFile':
+          void loadAdjacentFile(-1);
+          break;
+        case 'nextFile':
+          void loadAdjacentFile(1);
+          break;
+        case 'resetView':
+          handleResetView();
+          break;
+        case 'clearSelection':
           handleClearSelection();
           break;
-        case '?':
-          event.preventDefault();
+        case 'toggleHydrogen':
+          cycleHydrogenVisibility();
+          break;
+        case 'viewMode':
+        case 'measureMode':
+        case 'atomMode':
+        case 'bondMode':
+        case 'atomBondMode':
+        case 'labelMode': {
+          const modes = {
+            viewMode: 'view',
+            measureMode: 'measure',
+            atomMode: 'atom',
+            bondMode: 'bond',
+            atomBondMode: 'atom-bond',
+            labelMode: 'label',
+          } satisfies Partial<Record<ShortcutActionId, SelectionMode>>;
+          setSelectionMode(modes[action]);
+          handleClearSelection();
+          break;
+        }
+        case 'openSettings':
+          setSettingsOpen(true);
+          break;
+        case 'showShortcuts':
           setShortcutsOpen(true);
+          break;
+        case 'cameraFront':
+          dispatchCameraPreset('front');
+          break;
+        case 'cameraTop':
+          dispatchCameraPreset('top');
+          break;
+        case 'cameraRight':
+          dispatchCameraPreset('right');
+          break;
+        case 'cameraIso':
+          dispatchCameraPreset('iso');
           break;
         default:
           break;
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
+      const modalOpen = settingsOpen || shortcutsOpen || recentDialogOpen;
+      if (modalOpen) {
+        if (event.key === 'Escape' && closeTopmostDialog()) {
+          event.preventDefault();
+        }
+        return;
+      }
+
+      if (isEditableTarget(event.target) || isLoading) return;
+
+      const shortcuts = effectiveKeyboardShortcuts(appSettingsRef.current);
+      for (const action of Object.keys(shortcuts) as ShortcutActionId[]) {
+        if (shortcutMatchesEvent(shortcuts[action], event)) {
+          event.preventDefault();
+          runShortcutAction(action);
+          return;
+        }
       }
     };
 
@@ -1996,10 +1895,18 @@ function App() {
   }, [
     handleClearSelection,
     handleExportPng,
+    handleCloseTab,
     handleOpenFile,
     handleResetView,
     isLoading,
     cycleHydrogenVisibility,
+    activeTabId,
+    focusMoleculeTab,
+    loadAdjacentFile,
+    moleculeTabs,
+    recentDialogOpen,
+    settingsOpen,
+    shortcutsOpen,
   ]);
 
   useEffect(() => {
@@ -2253,6 +2160,7 @@ function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
         onOpenRecentDialog={() => setRecentDialogOpen(true)}
+        shortcuts={activeShortcuts}
       />
 
       <WorkspaceTabs
@@ -2365,7 +2273,7 @@ function App() {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       <ShortcutsDialog
         open={shortcutsOpen}
-        shortcuts={effectiveKeyboardShortcuts(appSettings)}
+        shortcuts={activeShortcuts}
         onClose={() => setShortcutsOpen(false)}
       />
       <OpenRecentDialog

@@ -1,5 +1,4 @@
 import {
-  Color,
   MeshPhongMaterial,
   Vector3,
   Matrix4,
@@ -18,34 +17,19 @@ import type {
   ElementColorOverrides,
   ViewOptions,
 } from '../../App';
-import type { SceneCtx, AtomSelectionData } from './types';
-
-// Atom colours: keep the palette restrained so the cylindrical bonds dominate.
-export const ATOM_COLORS: Record<string, number> = {
-  H: 0xcfd3d7,
-  C: 0x8d949c,
-  N: 0x4b84d8,
-  O: 0xea6a1a,
-  F: 0x33CC55,
-  P: 0xFF8800,
-  S: 0xDDAA00,
-  Cl: 0x22BB44,
-  Br: 0xAA2200,
-  I: 0x770088,
-};
-
-export const LEGACY_ELEMENT_COLORS: Record<string, number> = {
-  H: 0xc8ccd0,
-  C: 0x129bdd,
-  N: 0x3f7fd6,
-  O: 0xe86a1a,
-  F: 0x6fcf80,
-  P: 0xf6a23a,
-  S: 0xd8a21e,
-  Cl: 0x45b86b,
-  Br: 0xa9492e,
-  I: 0x7f4a96,
-};
+import type { SceneCtx, AtomSelectionData, RenderQualityProfile } from './types';
+export {
+  ATOM_COLORS,
+  LEGACY_ELEMENT_COLORS,
+  MATERIAL_PRESETS,
+  atomColor,
+  atomColorHex,
+  legacyElementColorHex,
+} from './materialPresets';
+import {
+  MATERIAL_PRESETS,
+  legacyElementColorHex,
+} from './materialPresets';
 
 // Keep spheres understated so the render reads as a CYLview-style tube drawing.
 export const ATOM_DISPLAY_RADIUS: Record<string, number> = {
@@ -60,18 +44,6 @@ export const ATOM_DISPLAY_RADIUS: Record<string, number> = {
   Br: 0.13,
   I: 0.145,
 };
-
-export function atomColor(element: string): number {
-  return ATOM_COLORS[element] ?? 0x888888;
-}
-
-export function atomColorHex(element: string): string {
-  return `#${atomColor(element).toString(16).padStart(6, '0')}`;
-}
-
-export function legacyElementColorHex(element: string): string {
-  return `#${(LEGACY_ELEMENT_COLORS[element] ?? 0x8d949c).toString(16).padStart(6, '0')}`;
-}
 
 export function bondKey(atom1: number, atom2: number): string {
   return atom1 < atom2 ? `${atom1}-${atom2}` : `${atom2}-${atom1}`;
@@ -112,26 +84,14 @@ export function backdropColor(tone: ViewOptions['backdropTone'], customHex?: str
   return 0xffffff;
 }
 
-export const MATERIAL_PRESETS = {
-  CYLviewLegacy: {
-    specular: new Color(0.28, 0.32, 0.36),
-    shininess: 68,
-    bondColor: 0x129bdd,
-  },
-  CYLview: {
-    specular: new Color(0.86, 0.9, 0.96),
-    shininess: 175,
-    bondColor: 0x2f9df4,
-  },
-  Houkmol: {
-    specular: new Color(0.18, 0.18, 0.18),
-    shininess: 36,
-    bondColor: 0x6f8796,
-  },
-} satisfies Record<MaterialPresetId, { specular: Color; shininess: number; bondColor: number }>;
-
-const LARGE_SCENE_ATOM_THRESHOLD = 150_000;
-const LARGE_SCENE_PRIMITIVE_THRESHOLD = 600_000;
+const QUALITY_RAMP_START = 180_000;
+const QUALITY_RAMP_END = 1_800_000;
+const MIN_SPHERE_WIDTH_SEGMENTS = 8;
+const MAX_SPHERE_WIDTH_SEGMENTS = 20;
+const MIN_SPHERE_HEIGHT_SEGMENTS = 4;
+const MAX_SPHERE_HEIGHT_SEGMENTS = 16;
+const MIN_CYLINDER_RADIAL_SEGMENTS = 8;
+const MAX_CYLINDER_RADIAL_SEGMENTS = 24;
 
 export function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId, isAtom = false) {
   const preset = MATERIAL_PRESETS[presetId];
@@ -163,9 +123,17 @@ export function applyMaterialPreset(material: MeshPhongMaterial, presetId: Mater
   material.needsUpdate = true;
 }
 
+export function applyMaterialFinish(material: MeshPhongMaterial, presetId: MaterialPresetId): void {
+  const preset = MATERIAL_PRESETS[presetId];
+  material.specular.copy(preset.specular);
+  material.shininess = preset.shininess;
+  material.needsUpdate = true;
+}
+
 export function bondStyleMaterial(style: BondStyleOverride | undefined, fallback: MeshPhongMaterial): MeshPhongMaterial {
   if (!style) return fallback;
   const material = fallback.clone();
+  material.userData = { ...material.userData, bondStyleType: style.type };
   if (style.type === 'ts') {
     material.color.set(0x9bb4d0);
     material.transparent = true;
@@ -234,6 +202,7 @@ export function legacyBondMaterial(color: string, styleType: BondStyleType): Mes
     shininess: MATERIAL_PRESETS.CYLviewLegacy.shininess,
     specular: MATERIAL_PRESETS.CYLviewLegacy.specular.clone(),
   });
+  material.userData = { ...material.userData, legacyBondStyleType: styleType };
   if (styleType === 'ts') {
     material.transparent = true;
     material.opacity = 0.52;
@@ -326,20 +295,46 @@ export function bondTransform(
   return matrix.compose(center, quaternion, new Vector3(radius, renderLength, radius));
 }
 
-export function isLargeScene(atomCount: number, bondCount: number): boolean {
-  return (
-    atomCount >= LARGE_SCENE_ATOM_THRESHOLD ||
-    atomCount + bondCount >= LARGE_SCENE_PRIMITIVE_THRESHOLD
-  );
+function smoothstep(value: number): number {
+  const t = clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
-export function renderPixelRatioForScene(atomCount: number, bondCount: number): number {
-  if (isLargeScene(atomCount, bondCount)) return 1;
-  return Math.min(window.devicePixelRatio, 2);
+function evenSegmentCount(value: number, min: number, max: number): number {
+  const rounded = Math.round(value / 2) * 2;
+  return clamp(rounded, min, max);
+}
+
+export function renderQualityProfileForScene(atomCount: number, bondCount: number): RenderQualityProfile {
+  const primitiveLoad = atomCount + bondCount;
+  const qualityT = smoothstep((primitiveLoad - QUALITY_RAMP_START) / (QUALITY_RAMP_END - QUALITY_RAMP_START));
+  const nativePixelRatio = Math.min(window.devicePixelRatio, 2);
+  const pixelRatio = Math.max(1, nativePixelRatio - (nativePixelRatio - 1) * qualityT);
+
+  return {
+    primitiveLoad,
+    qualityT,
+    pixelRatio,
+    sphereWidthSegments: evenSegmentCount(
+      MAX_SPHERE_WIDTH_SEGMENTS - (MAX_SPHERE_WIDTH_SEGMENTS - MIN_SPHERE_WIDTH_SEGMENTS) * qualityT,
+      MIN_SPHERE_WIDTH_SEGMENTS,
+      MAX_SPHERE_WIDTH_SEGMENTS,
+    ),
+    sphereHeightSegments: evenSegmentCount(
+      MAX_SPHERE_HEIGHT_SEGMENTS - (MAX_SPHERE_HEIGHT_SEGMENTS - MIN_SPHERE_HEIGHT_SEGMENTS) * qualityT,
+      MIN_SPHERE_HEIGHT_SEGMENTS,
+      MAX_SPHERE_HEIGHT_SEGMENTS,
+    ),
+    cylinderRadialSegments: evenSegmentCount(
+      MAX_CYLINDER_RADIAL_SEGMENTS - (MAX_CYLINDER_RADIAL_SEGMENTS - MIN_CYLINDER_RADIAL_SEGMENTS) * qualityT,
+      MIN_CYLINDER_RADIAL_SEGMENTS,
+      MAX_CYLINDER_RADIAL_SEGMENTS,
+    ),
+  };
 }
 
 export function applyRenderPixelRatio(ctx: SceneCtx, atomCount: number, bondCount: number): void {
-  const nextPixelRatio = renderPixelRatioForScene(atomCount, bondCount);
+  const nextPixelRatio = renderQualityProfileForScene(atomCount, bondCount).pixelRatio;
   if (Math.abs(ctx.renderer.getPixelRatio() - nextPixelRatio) < 0.01) return;
 
   const canvas = ctx.renderer.domElement;
@@ -356,16 +351,26 @@ export function moleculeBatchGeometries(
   ctx: SceneCtx,
   atomCount: number,
   bondCount: number,
-): { sphereGeom: SphereGeometry; cylGeom: CylinderGeometry } {
-  if (isLargeScene(atomCount, bondCount)) {
-    return {
-      sphereGeom: ctx.lowDetailSphereGeom,
-      cylGeom: ctx.lowDetailCylGeom,
-    };
+): { sphereGeom: SphereGeometry; cylGeom: CylinderGeometry; qualityProfile: RenderQualityProfile } {
+  const qualityProfile = renderQualityProfileForScene(atomCount, bondCount);
+  const sphereKey = `${qualityProfile.sphereWidthSegments}x${qualityProfile.sphereHeightSegments}`;
+  const cylinderKey = String(qualityProfile.cylinderRadialSegments);
+
+  let sphereGeom = ctx.sphereGeometryCache.get(sphereKey);
+  if (!sphereGeom) {
+    sphereGeom = new SphereGeometry(
+      1,
+      qualityProfile.sphereWidthSegments,
+      qualityProfile.sphereHeightSegments,
+    );
+    ctx.sphereGeometryCache.set(sphereKey, sphereGeom);
   }
 
-  return {
-    sphereGeom: ctx.sphereGeom,
-    cylGeom: ctx.cylGeom,
-  };
+  let cylGeom = ctx.cylinderGeometryCache.get(cylinderKey);
+  if (!cylGeom) {
+    cylGeom = new CylinderGeometry(1, 1, 1, qualityProfile.cylinderRadialSegments, 1, true);
+    ctx.cylinderGeometryCache.set(cylinderKey, cylGeom);
+  }
+
+  return { sphereGeom, cylGeom, qualityProfile };
 }

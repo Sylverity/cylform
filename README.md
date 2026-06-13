@@ -42,16 +42,18 @@ See [ROADMAP.md](ROADMAP.md) for completed milestones and upcoming features.
 
 Cylform's normal release path is intentionally conservative: single structures are capped at 50,000 atoms while large-file behavior is validated across more machines and driver stacks. That cap is a product safety limit, not the renderer's measured ceiling.
 
-The developer benchmark can raise the internal atom limit and stress the real desktop app with generated XYZ files. On the current hardware-accelerated WSL2/WSLg development benchmark run, using the command documented in [docs/BENCHMARKING.md](docs/BENCHMARKING.md), the large-scene renderer produced:
+The developer benchmark can raise the internal atom limit and stress the real desktop app with generated XYZ files. On a single comparable WSL2/WSLg development benchmark run, using the command documented in [docs/BENCHMARKING.md](docs/BENCHMARKING.md), the current large-scene renderer produced:
 
-| atoms | passive FPS / p95 | interaction FPS / p95 | orbit FPS | pan FPS | zoom FPS |
-|---:|---:|---:|---:|---:|---:|
-| 100,000 | 56.1 / 20 ms | 37.8 / 28 ms | 37.2 | 38.0 | 38.0 |
-| 200,000 | 58.0 / 18 ms | 60.0 / 18 ms | 60.2 | 59.9 | 59.8 |
-| 250,000 | 54.5 / 22 ms | 49.0 / 21 ms | 49.0 | 48.9 | 49.2 |
-| 300,000 | 55.7 / 23 ms | 43.3 / 24 ms | 43.4 | 43.7 | 42.8 |
+| atoms | perceived bonds | passive FPS / p95 | interaction FPS / p95 |
+|---:|---:|---:|---:|
+| 50,000 | 154,052 | 49.0 / 23 ms | 40.9 / 26 ms |
+| 100,000 | 310,534 | 39.9 / 27 ms | 29.5 / 40 ms |
+| 150,000 | 438,169 | 36.1 / 30 ms | 26.4 / 40 ms |
+| 250,000 | 782,621 | 34.6 / 35 ms | 25.8 / 41 ms |
+| 350,000 | 1,029,184 | 35.2 / 31 ms | 26.5 / 39 ms |
+| 500,000 | 1,648,764 | 33.8 / 53 ms | 27.1 / 41 ms |
 
-Benchmarks run on WSL2/WSLg, RTX 4070 Ti. Your numbers will vary by GPU, driver, and molecule topology. The 250,000-atom case hit 45 FPS interaction; 300,000 remained usable but below that threshold.
+Benchmarks run on WSL2/WSLg with the benchmark environment selecting the RTX 4070 Ti through D3D12/Mesa and the current default `CYLview` material preset. Your numbers will vary by GPU, driver, material preset, and molecule topology.
 
 For reproducible performance claims, record the exact benchmark command, platform, GPU/renderer path, atom count, perceived bond count, passive FPS/p95, interaction FPS/p95, and per-phase orbit/pan/zoom results.
 

@@ -48,6 +48,15 @@ export interface SceneRenderStats {
   sceneObjects: number;
 }
 
+export interface RenderQualityProfile {
+  primitiveLoad: number;
+  qualityT: number;
+  pixelRatio: number;
+  sphereWidthSegments: number;
+  sphereHeightSegments: number;
+  cylinderRadialSegments: number;
+}
+
 export interface MoleculeVisibilityIndex {
   moleculeData: MoleculeData;
   adjacency: number[][];
@@ -99,8 +108,8 @@ export interface SceneCtx {
   animId: number;
   sphereGeom: SphereGeometry;
   cylGeom: CylinderGeometry;
-  lowDetailSphereGeom: SphereGeometry;
-  lowDetailCylGeom: CylinderGeometry;
+  sphereGeometryCache: Map<string, SphereGeometry>;
+  cylinderGeometryCache: Map<string, CylinderGeometry>;
   atomMats: Map<string, MeshPhongMaterial>;
   bondMat: MeshPhongMaterial;
   selectedBondMat: MeshPhongMaterial;

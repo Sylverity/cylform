@@ -29,7 +29,7 @@ export type NormalizedPresentationState = PresentationState & {
   camera: ViewOptions;
 };
 
-const DEFAULT_MATERIAL_PRESET: MaterialPresetId = 'CYLviewLegacy';
+const DEFAULT_MATERIAL_PRESET: MaterialPresetId = 'CYLview';
 const MATERIAL_PRESET_IDS = new Set<MaterialPresetId>(['CYLviewLegacy', 'CYLview', 'Houkmol']);
 
 function normalizeMaterialPreset(value: unknown, fallback = DEFAULT_MATERIAL_PRESET): MaterialPresetId {
