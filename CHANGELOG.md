@@ -10,7 +10,7 @@ High-level project history for Cylform.
 
 ---
 
-## [0.5.2] - 2026-06-08
+## [0.5.2] - 2026-06-19
 
 CYLview parity milestone — annotations, rendering refinements, and frontend architecture cleanup.
 

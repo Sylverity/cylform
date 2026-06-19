@@ -2149,10 +2149,7 @@ mod tests {
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
-        assert_eq!(
-            normalized["styles"]["material_preset"],
-            json!("CYLview")
-        );
+        assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
     }
 
     #[test]
