@@ -325,6 +325,41 @@ fn render_profile_to_material_preset(profile: &str) -> String {
     }
 }
 
+fn default_presentation_camera(render_profile: &str) -> Value {
+    let cylview = render_profile == "cylview";
+    json!({
+        "showFloor": false,
+        "showGrid": false,
+        "backdropTone": "paper",
+        "customBackdropHex": "#ffffff",
+        "projection": "perspective",
+        "lightingMood": "publication",
+        "fogEnabled": cylview,
+        "fogIntensity": if cylview { 0.55 } else { 0.45 },
+        "fogDepth": if cylview { 0.58 } else { 0.5 },
+        "focalBlurEnabled": false,
+        "focalBlurAmount": 0.32,
+        "focalDepth": 0.5,
+        "autoRotate": false,
+        "autoRotateSpeed": 0.35,
+        "labelFontScale": 1.0,
+        "bondSizeScale": 1.0,
+        "showLabelLinkLines": false
+    })
+}
+
+fn normalize_presentation_camera(camera: Value, render_profile: &str) -> Value {
+    let mut normalized = default_presentation_camera(render_profile);
+    if let (Some(normalized_object), Some(camera_object)) =
+        (normalized.as_object_mut(), camera.as_object())
+    {
+        for (key, value) in camera_object {
+            normalized_object.insert(key.clone(), value.clone());
+        }
+    }
+    normalized
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 enum Annotation {
@@ -453,7 +488,9 @@ impl Default for PresentationStateEnvelope {
     }
 }
 
-fn normalize_presentation_envelope(mut envelope: PresentationStateEnvelope) -> Result<Value, String> {
+fn normalize_presentation_envelope(
+    mut envelope: PresentationStateEnvelope,
+) -> Result<Value, String> {
     let fallback_profile =
         normalize_render_profile_str(Some(envelope.styles.material_preset.as_str()), "cylview");
     let render_profile = normalize_render_profile_str(
@@ -462,6 +499,7 @@ fn normalize_presentation_envelope(mut envelope: PresentationStateEnvelope) -> R
     );
     envelope.styles.render_profile = render_profile.clone();
     envelope.styles.material_preset = render_profile_to_material_preset(&render_profile);
+    envelope.camera = normalize_presentation_camera(envelope.camera, &render_profile);
     serde_json::to_value(envelope)
         .map_err(|error| format!("Could not normalize presentation state: {error}"))
 }
@@ -2213,6 +2251,12 @@ mod tests {
             normalized["styles"]["material_preset"],
             json!("CYLviewLegacy")
         );
+        assert_eq!(normalized["camera"]["fogEnabled"], json!(true));
+        assert_eq!(normalized["camera"]["fogIntensity"], json!(0.55));
+        assert_eq!(normalized["camera"]["fogDepth"], json!(0.58));
+        assert_eq!(normalized["camera"]["focalBlurEnabled"], json!(false));
+        assert_eq!(normalized["camera"]["focalBlurAmount"], json!(0.32));
+        assert_eq!(normalized["camera"]["focalDepth"], json!(0.5));
     }
 
     #[test]
@@ -2249,6 +2293,12 @@ mod tests {
         assert_eq!(normalized["styles"]["render_profile"], json!("houkmol"));
         assert_eq!(normalized["styles"]["material_preset"], json!("Houkmol"));
         assert_eq!(normalized["camera"]["projection"], json!("orthographic"));
+        assert_eq!(normalized["camera"]["fogEnabled"], json!(false));
+        assert_eq!(normalized["camera"]["fogIntensity"], json!(0.45));
+        assert_eq!(normalized["camera"]["fogDepth"], json!(0.5));
+        assert_eq!(normalized["camera"]["focalBlurEnabled"], json!(false));
+        assert_eq!(normalized["camera"]["focalBlurAmount"], json!(0.32));
+        assert_eq!(normalized["camera"]["focalDepth"], json!(0.5));
         assert_eq!(normalized["poses"][0]["id"], json!("pose-1"));
     }
 
@@ -2267,6 +2317,8 @@ mod tests {
 
         assert_eq!(normalized["styles"]["render_profile"], json!("ball-stick"));
         assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
+        assert_eq!(normalized["camera"]["fogEnabled"], json!(false));
+        assert_eq!(normalized["camera"]["fogDepth"], json!(0.5));
 
         let explicit = normalize_presentation_state(json!({
             "version": 1,
@@ -2285,6 +2337,8 @@ mod tests {
             explicit["styles"]["material_preset"],
             json!("CYLviewLegacy")
         );
+        assert_eq!(explicit["camera"]["fogEnabled"], json!(true));
+        assert_eq!(explicit["camera"]["fogDepth"], json!(0.58));
     }
 
     #[test]

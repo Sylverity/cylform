@@ -56,6 +56,10 @@ function testViewOptions(): ViewOptions {
     lightingMood: 'publication',
     fogEnabled: false,
     fogIntensity: 0.45,
+    fogDepth: 0.5,
+    focalBlurEnabled: false,
+    focalBlurAmount: 0.32,
+    focalDepth: 0.5,
     autoRotate: false,
     autoRotateSpeed: 0.35,
     labelFontScale: 1.0,
@@ -112,7 +116,43 @@ describe('presentation persistence', () => {
     expect(normalized.styles.hydrogen_visibility).toBe('shown');
     expect(normalized.styles.render_profile).toBe('cylview');
     expect(normalized.styles.material_preset).toBe('CYLviewLegacy');
+    expect(normalized.camera.fogEnabled).toBe(true);
+    expect(normalized.camera.fogDepth).toBe(0.58);
+    expect(normalized.camera.focalBlurEnabled).toBe(false);
+    expect(normalized.camera.focalBlurAmount).toBe(0.32);
+    expect(normalized.camera.focalDepth).toBe(0.5);
+  });
+
+  it('keeps alternate render profile defaults free of automatic fog', () => {
+    const settings = testSettings();
+    settings.rendering.defaultRenderProfile = 'ball-stick';
+    settings.rendering.defaultMaterialPreset = 'CYLview';
+
+    const defaults = createDefaultPresentationState(settings);
+
+    expect(defaults.styles.render_profile).toBe('ball-stick');
+    expect(defaults.camera.fogEnabled).toBe(false);
+    expect(defaults.camera.fogIntensity).toBe(0.45);
+    expect(defaults.camera.fogDepth).toBe(0.5);
+  });
+
+  it('uses the resolved render profile for missing camera depth defaults', () => {
+    const settings = testSettings();
+    const normalized = normalizePresentationState(
+      {
+        version: 1,
+        annotations: [],
+        hidden_atoms: [],
+        poses: [],
+        styles: { material_preset: 'CYLview' },
+      },
+      settings,
+    );
+
+    expect(normalized.styles.render_profile).toBe('ball-stick');
     expect(normalized.camera.fogEnabled).toBe(false);
+    expect(normalized.camera.fogIntensity).toBe(0.45);
+    expect(normalized.camera.fogDepth).toBe(0.5);
   });
 
   it('maps legacy material presets to render profiles and falls back from unknown values', () => {

@@ -2,6 +2,7 @@ import { Vector2 } from 'three';
 import type { SceneCtx } from './types';
 import type { MoleculeData } from '../../App';
 import { drawRichLabelText } from './labels';
+import { renderScene } from './depthCue';
 
 export function renderCurrentViewDataUrl(
   ctx: SceneCtx,
@@ -33,11 +34,13 @@ export function renderCurrentViewDataUrl(
       const renderHeight = Math.max(1, Math.round(cssHeight * exportScale));
       renderer.setPixelRatio(1);
       renderer.setSize(renderWidth, renderHeight, false);
+      ctx.depthCue.composer?.setPixelRatio(1);
+      ctx.depthCue.composer?.setSize(renderWidth, renderHeight);
       ctx.perspectiveCamera.aspect = renderWidth / renderHeight;
       ctx.perspectiveCamera.updateProjectionMatrix();
     }
 
-    renderer.render(ctx.scene, ctx.camera);
+    renderScene(ctx);
 
     const outputScale = maxWidth && sourceCanvas.width > maxWidth
       ? maxWidth / sourceCanvas.width
@@ -104,9 +107,11 @@ export function renderCurrentViewDataUrl(
     if (shouldRenderScaled) {
       renderer.setPixelRatio(originalPixelRatio);
       renderer.setSize(originalSize.x, originalSize.y, false);
+      ctx.depthCue.composer?.setPixelRatio(originalPixelRatio);
+      ctx.depthCue.composer?.setSize(originalSize.x, originalSize.y);
       ctx.perspectiveCamera.aspect = cssWidth / cssHeight;
       ctx.perspectiveCamera.updateProjectionMatrix();
-      renderer.render(ctx.scene, ctx.camera);
+      renderScene(ctx);
     }
   }
 }

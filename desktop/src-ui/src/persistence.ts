@@ -36,6 +36,7 @@ export function createDefaultPresentationState(
   const defaultRenderProfile = normalizeRenderProfile(
     settings.rendering.defaultRenderProfile ?? settings.rendering.defaultMaterialPreset,
   );
+  const defaultFogEnabled = defaultRenderProfile === 'cylview';
   const showFloorGrid = settings.rendering.showFloorGridByDefault;
   const backdropTone =
     settings.rendering.defaultBackground === 'black'
@@ -65,8 +66,12 @@ export function createDefaultPresentationState(
       customBackdropHex: settings.rendering.customBackgroundHex,
       projection: settings.rendering.defaultProjection,
       lightingMood: settings.rendering.defaultLighting,
-      fogEnabled: false,
-      fogIntensity: 0.45,
+      fogEnabled: defaultFogEnabled,
+      fogIntensity: defaultFogEnabled ? 0.55 : 0.45,
+      fogDepth: defaultFogEnabled ? 0.58 : 0.5,
+      focalBlurEnabled: false,
+      focalBlurAmount: 0.32,
+      focalDepth: 0.5,
       autoRotate: false,
       autoRotateSpeed: 0.35,
       labelFontScale: 1.0,
@@ -86,12 +91,19 @@ export function normalizePresentationState(
     styles.render_profile ?? styles.material_preset,
     defaults.styles.render_profile ?? 'cylview',
   );
+  const cameraDefaults = createDefaultPresentationState({
+    ...settings,
+    rendering: {
+      ...settings.rendering,
+      defaultRenderProfile: renderProfile,
+    },
+  }).camera;
   const camera = state?.camera
     ? {
-        ...defaults.camera,
+        ...cameraDefaults,
         ...state.camera,
       }
-    : defaults.camera;
+    : cameraDefaults;
 
   return {
     version: 1,
