@@ -4,6 +4,9 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
+### Fixed
+- **XYZ bond perception for crowded organic structures** — bounded inferred-bond cutoffs and valence-aware candidate filtering now reject long through-space C-C contacts while preserving ordinary covalent bonds.
+
 ### Planned
 - Multi-frame XYZ trajectory playback, PDB residue-level colouring, and Gaussian output support.
 - Expanded file-format support, animation authoring, and offline render export.
