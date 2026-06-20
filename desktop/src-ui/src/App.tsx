@@ -125,6 +125,10 @@ export interface ViewOptions {
   lightingMood: LightingMood;
   fogEnabled: boolean;
   fogIntensity: number;
+  fogDepth: number;
+  focalBlurEnabled: boolean;
+  focalBlurAmount: number;
+  focalDepth: number;
   autoRotate: boolean;
   autoRotateSpeed: number;
   labelFontScale: number;
@@ -528,6 +532,10 @@ function PosePreviewRenderer({
   if (!job || !moleculeData) return null;
 
   const styles = presentationState?.styles;
+  const previewViewOptions = {
+    ...createDefaultPresentationState(appSettings).camera,
+    ...job.pose.viewOptions,
+  };
   const handlePreviewCaptured = (token: string, dataUrl: string) => {
     if (token === job.jobId) onCaptured(job, dataUrl);
   };
@@ -547,7 +555,7 @@ function PosePreviewRenderer({
           bondStyleOverrides={styles?.bond_style_overrides ?? {}}
           atomSizeScale={styles?.atom_size_scale ?? 1}
           renderProfile={normalizeRenderProfile(styles?.render_profile ?? styles?.material_preset)}
-          viewOptions={job.pose.viewOptions}
+          viewOptions={previewViewOptions}
           distancePrecision={appSettings.chemistry.distancePrecision}
           anglePrecision={appSettings.chemistry.anglePrecision}
           useSymbolUnits={appSettings.chemistry.useSymbolUnits}
@@ -584,7 +592,7 @@ function PosePreviewRenderer({
           onError={(message) => onFailed(job, message)}
           onToast={() => undefined}
           previewMode
-          previewPose={job.pose}
+          previewPose={{ ...job.pose, viewOptions: previewViewOptions }}
           previewCaptureToken={captureToken}
           onPreviewCaptured={handlePreviewCaptured}
           onPreviewError={handlePreviewError}
@@ -784,8 +792,12 @@ function App() {
     customBackdropHex: '#ffffff',
     projection: 'perspective',
     lightingMood: 'publication',
-    fogEnabled: false,
-    fogIntensity: 0.45,
+    fogEnabled: true,
+    fogIntensity: 0.55,
+    fogDepth: 0.58,
+    focalBlurEnabled: false,
+    focalBlurAmount: 0.32,
+    focalDepth: 0.5,
     autoRotate: false,
     autoRotateSpeed: 0.35,
     labelFontScale: 1.0,
@@ -1583,9 +1595,16 @@ function App() {
   }, []);
 
   const handleApplyPose = useCallback((pose: SavedPose) => {
-    setViewOptions(pose.viewOptions);
-    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: pose }));
-  }, []);
+    const completePose = {
+      ...pose,
+      viewOptions: {
+        ...defaultPresentationState().camera,
+        ...pose.viewOptions,
+      },
+    };
+    setViewOptions(completePose.viewOptions);
+    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: completePose }));
+  }, [defaultPresentationState]);
 
   const handleUpdatePose = useCallback((pose: SavedPose) => {
     window.dispatchEvent(new CustomEvent('capture-camera-pose', { detail: { updatePoseId: pose.id } }));

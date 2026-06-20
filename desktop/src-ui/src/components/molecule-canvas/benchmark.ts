@@ -1,6 +1,7 @@
 import { WebGLRenderer, Vector3, OrthographicCamera } from 'three';
 import type { SceneCtx, SceneRenderStats, PickMetrics } from './types';
 import { pickScene } from './picking';
+import { renderScene } from './depthCue';
 
 export function perfLoggingEnabled(): boolean {
   try {
@@ -101,7 +102,7 @@ export async function benchmarkInteractionMetrics(ctx: SceneCtx, phaseMs: number
     ctx.camera.updateProjectionMatrix();
     ctx.controls.target.copy(originalTarget);
     ctx.controls.update();
-    ctx.renderer.render(ctx.scene, ctx.camera);
+    renderScene(ctx);
   };
 
   const runPhase = async (
@@ -111,7 +112,7 @@ export async function benchmarkInteractionMetrics(ctx: SceneCtx, phaseMs: number
     const frameTimes = await sampleFrameTimes(phaseMs, (progress) => {
       applyPose(progress);
       ctx.controls.update();
-      ctx.renderer.render(ctx.scene, ctx.camera);
+      renderScene(ctx);
     });
     allFrameTimes.push(...frameTimes);
     phases.push({

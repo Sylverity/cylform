@@ -6,7 +6,6 @@ import {
   CylinderGeometry,
   DirectionalLight,
   DoubleSide,
-  Fog,
   GridHelper,
   Group,
   InstancedMesh,
@@ -28,6 +27,9 @@ import {
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
@@ -121,6 +123,10 @@ import {
   pickScene,
 } from './molecule-canvas/picking';
 import { renderCurrentViewDataUrl } from './molecule-canvas/exportPng';
+import {
+  renderScene,
+  updateDepthCueBackground,
+} from './molecule-canvas/depthCue';
 
 function preventMaterialPresetShortcutOverlap(event: ReactKeyboardEvent<HTMLSelectElement>) {
   if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'h') {
@@ -311,12 +317,22 @@ export function MoleculeCanvas({
 
     const scene = new Scene();
     scene.background = new Color(0xffffff);
-    scene.fog = new Fog(0xffffff, 42, 120);
+    scene.fog = null;
 
     const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
     const orthographicCamera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
     camera.position.set(0, 0, 25);
     orthographicCamera.position.copy(camera.position);
+
+    const renderPass = new RenderPass(scene, camera);
+    const bokehPass = new BokehPass(scene, camera, {
+      focus: 25,
+      aperture: 0.00002,
+      maxblur: 0.006,
+    });
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bokehPass);
 
     // Bright, print-oriented lighting tuned toward the CYLview reference.
     const ambient = new AmbientLight(0xffffff, 0.52);
@@ -516,7 +532,12 @@ export function MoleculeCanvas({
         if (ctx2d) ctx2d.clearRect(0, 0, linkCanvas.width, linkCanvas.height);
       }
 
-      renderer.render(scene, activeCamera);
+      const current = ctxRef.current;
+      if (current) {
+        renderScene(current);
+      } else {
+        renderer.render(scene, activeCamera);
+      }
     }
     animate();
 
@@ -524,6 +545,13 @@ export function MoleculeCanvas({
       renderer, scene, camera, perspectiveCamera: camera, orthographicCamera, controls,
       molGroup, floorGroup, floorPlane, floorGrid, floorMat,
       lights: { ambient, key, fill, rim, topLight },
+      depthCue: {
+        options: viewOptionsRef.current,
+        backgroundColor: 0xffffff,
+        composer,
+        renderPass,
+        bokehPass,
+      },
       lastCameraDistance: 25,
       lastMoleculeBox: null,
       animId,
@@ -543,7 +571,10 @@ export function MoleculeCanvas({
       const current = ctxRef.current;
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
-      if (current) syncOrthographicCamera(current);
+      if (current) {
+        current.depthCue.composer?.setSize(cw, ch);
+        syncOrthographicCamera(current);
+      }
     });
     ro.observe(container);
 
@@ -996,6 +1027,8 @@ export function MoleculeCanvas({
       selectedBondMat.dispose();
       selectedAtomMat.dispose();
       atomMats.forEach(m => m.dispose());
+      composer.dispose();
+      bokehPass.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
       ctxRef.current = null;
@@ -1342,7 +1375,7 @@ export function MoleculeCanvas({
 
     previousMoleculeDataRef.current = moleculeData;
     const rebuildSceneMs = performance.now() - perfStart;
-    ctx.renderer.render(ctx.scene, ctx.camera);
+    renderScene(ctx);
     const renderStats = sceneRenderStats(ctx);
     if (perfLoggingEnabled()) {
       console.info(
@@ -1461,23 +1494,8 @@ export function MoleculeCanvas({
     setActiveCamera(ctx, viewOptions.projection);
 
     const bg = backdropColor(viewOptions.backdropTone, viewOptions.customBackdropHex);
-    ctx.scene.background = new Color(bg);
-
-    const distance = Math.max(
-      ctx.camera.position.distanceTo(ctx.controls.target),
-      ctx.lastCameraDistance,
-      12,
-    );
-    if (viewOptions.fogEnabled) {
-      const intensity = clamp(viewOptions.fogIntensity, 0.1, 1);
-      ctx.scene.fog = new Fog(
-        bg,
-        distance * (2.5 - intensity * 1.9),
-        distance * (5.5 - intensity * 3.8),
-      );
-    } else {
-      ctx.scene.fog = null;
-    }
+    ctx.depthCue.options = viewOptions;
+    updateDepthCueBackground(ctx, bg);
 
     const publicationMood = renderProfile === 'cylview'
       ? { ambient: 0.78, key: 0.96, fill: 0.68, rim: 0.14, topLight: 0.18 }
@@ -1668,18 +1686,78 @@ export function MoleculeCanvas({
               >
                 Depth cue
               </button>
+              <span>{viewOptions.fogEnabled ? 'On' : 'Off'}</span>
+            </div>
+            <div className="view-split-row">
+              <span>Fog</span>
               <span>{Math.round(viewOptions.fogIntensity * 100)}%</span>
             </div>
             <input
               className="view-range"
               type="range"
-              min="0.15"
+              min="0"
               max="1"
               step="0.05"
               value={viewOptions.fogIntensity}
               disabled={!viewOptions.fogEnabled}
-              aria-label="Depth cue intensity"
+              aria-label="Fog amount"
               onChange={(event) => patchViewOptions({ fogIntensity: Number(event.target.value) })}
+            />
+            <div className="view-split-row">
+              <span>Depth</span>
+              <span>{Math.round(viewOptions.fogDepth * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.fogDepth}
+              disabled={!viewOptions.fogEnabled}
+              aria-label="Fog depth"
+              onChange={(event) => patchViewOptions({ fogDepth: Number(event.target.value) })}
+            />
+
+            <div className="view-split-row">
+              <button
+                type="button"
+                className={viewOptions.focalBlurEnabled ? 'view-toggle active' : 'view-toggle'}
+                onClick={() => patchViewOptions({ focalBlurEnabled: !viewOptions.focalBlurEnabled })}
+              >
+                Focal blur
+              </button>
+              <span>{viewOptions.focalBlurEnabled ? 'On' : 'Off'}</span>
+            </div>
+            <div className="view-split-row">
+              <span>Blur</span>
+              <span>{Math.round(viewOptions.focalBlurAmount * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.focalBlurAmount}
+              disabled={!viewOptions.focalBlurEnabled}
+              aria-label="Focal blur amount"
+              onChange={(event) => patchViewOptions({ focalBlurAmount: Number(event.target.value) })}
+            />
+            <div className="view-split-row">
+              <span>Focus</span>
+              <span>{Math.round(viewOptions.focalDepth * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.focalDepth}
+              disabled={!viewOptions.focalBlurEnabled}
+              aria-label="Focal depth"
+              onChange={(event) => patchViewOptions({ focalDepth: Number(event.target.value) })}
             />
 
             <div className="view-split-row">

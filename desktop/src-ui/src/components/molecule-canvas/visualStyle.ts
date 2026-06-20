@@ -350,6 +350,8 @@ export function applyRenderPixelRatio(ctx: SceneCtx, atomCount: number, bondCoun
   const height = canvas.clientHeight || 600;
   ctx.renderer.setPixelRatio(nextPixelRatio);
   ctx.renderer.setSize(width, height, false);
+  ctx.depthCue.composer?.setPixelRatio(nextPixelRatio);
+  ctx.depthCue.composer?.setSize(width, height);
   ctx.perspectiveCamera.aspect = width / height;
   ctx.perspectiveCamera.updateProjectionMatrix();
   if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);
