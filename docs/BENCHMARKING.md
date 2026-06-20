@@ -9,14 +9,14 @@ This guide is for humans and coding agents evaluating Cylform performance claims
 - `averageFps`, `p95FrameMs`, `responsive`: short requestAnimationFrame sampling after render.
 - `interactionAverageFps`, `interactionP95FrameMs`, `interactionPhases`: deterministic orbit, pan, and zoom/scroll-style viewport movement sampling after the passive render sample.
 - `visibleAtoms`, `visibleBonds`, `totalAtoms`, `totalBonds`: rendered structure size.
-- `materialPreset`, `renderQuality`: the material preset and load-derived geometry/pixel-ratio profile used for the measured scene.
+- `renderProfile`, `renderQuality`: the render profile and load-derived geometry/pixel-ratio profile used for the measured scene.
 - `webglRenderer`, `webglVendor`: best-effort browser-reported WebGL strings. Treat these as advisory only; WebKit/WSLg may report misleading values.
 
 The benchmark is meant to justify wording such as "comfortably interactive up to X atoms on this machine" and "normal builds conservatively cap single structures at Y atoms." It is not a chemistry parser benchmark and should not be used alone to claim large-trajectory support.
 
 Treat atom count as only one part of the load axis. The generated lattice fixture uses `ceil(cbrt(N))` and cycles elements by index, so perceived bond count and bonds per atom can change non-smoothly between sample points. Public summaries should report bond count with atom count and should not infer renderer scaling from atom count alone.
 
-Benchmark mode uses the app's current normalized defaults instead of persisted user settings, so stale local preferences do not change capacity results. Record `materialPreset` from the JSON anyway; `CYLviewLegacy`, `CYLview`, and `Houkmol` can produce different render-call and triangle-count profiles in normal interactive use.
+Benchmark mode uses the app's current normalized defaults instead of persisted user settings, so stale local preferences do not change capacity results. Record `renderProfile` from the JSON anyway; `cylview`, `ball-stick`, and `houkmol` can produce different render-call and triangle-count profiles in normal interactive use.
 
 Scene quality is load-derived rather than a single large-scene cutoff. Current builds gradually reduce sphere/cylinder segment counts and pixel ratio as `atomCount + bondCount` rises, so benchmark graphs should show smoother transitions. Always inspect `renderQuality`, `triangles`, `renderCalls`, `sceneObjects`, and bond/atom counts before explaining a step change in FPS.
 

@@ -4,7 +4,7 @@ import type {
   BondStyleOverride,
   BondStyleType,
   ElementColorOverrides,
-  MaterialPresetId,
+  RenderProfileId,
   MoleculeData,
   SelectionMode,
   SelectionSummary,
@@ -53,7 +53,7 @@ interface AppearancePanelProps {
   atomSizeScale: number;
   labelFontScale: number;
   bondSizeScale: number;
-  materialPreset: MaterialPresetId;
+  renderProfile: RenderProfileId;
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   onElementColorChange: (element: string, color: string) => void;
@@ -79,7 +79,7 @@ export function AppearancePanel({
   atomSizeScale,
   labelFontScale,
   bondSizeScale,
-  materialPreset,
+  renderProfile,
   selectionMode,
   selectionSummary,
   onElementColorChange,
@@ -217,7 +217,7 @@ export function AppearancePanel({
         ) : (
           <div className="appearance-color-list">
             {visibleElements.map((element) => {
-              const color = elementColorOverrides[element] ?? defaultElementColorHex(element, materialPreset);
+              const color = elementColorOverrides[element] ?? defaultElementColorHex(element, renderProfile);
               const isCustom = Boolean(elementColorOverrides[element]);
 
               return (

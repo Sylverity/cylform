@@ -48,7 +48,7 @@ The saved-state envelope is intentionally presentation-focused. It belongs to th
 
 The React app owns interaction state and the Three.js scene.
 
-- `App.tsx` coordinates file loading, saved state, annotations, material preset selection, visibility, style overrides, measurements, and exports.
+- `App.tsx` coordinates file loading, saved state, annotations, render profile selection, visibility, style overrides, measurements, and exports.
 - Menu-triggered workspace actions reuse the same frontend handlers as toolbar buttons and tab controls. The Settings view persists preferences through the Rust app-data settings commands.
 - Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
 - Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
@@ -67,8 +67,8 @@ The React app owns interaction state and the Three.js scene.
 |---|---|
 | `types.ts` | Shared interfaces: `SceneCtx`, `BondSelectionData`, `AtomSelectionData`, `PickResult`, etc. |
 | `labels.ts` | Label formatting (`formatDistance`, `formatAngle`), text sanitizing, and rich canvas sub/superscript rendering. |
-| `materialPresets.ts` | Shared element colors and material preset definitions used by the renderer and appearance UI. |
-| `visualStyle.ts` | `applyMaterialPreset`, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
+| `materialPresets.ts` | Shared element colors and profile material definitions used by the renderer and appearance UI. |
+| `visualStyle.ts` | `applyMaterialPreset`, profile behavior helpers, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
 | `camera.ts` | Camera sync, preset application, saved-pose restoration, and floor placement. |
 | `visibility.ts` | `buildMoleculeVisibilityIndex`, `isAtomVisible`, and `labelSourceVisible` for hydrogen/visibility filtering. |
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
@@ -97,7 +97,8 @@ Saved presentation state is versioned so future releases can add fields without 
   "annotations": [],
   "hidden_atoms": [],
   "styles": {
-    "material_preset": "CYLview"
+    "render_profile": "cylview",
+    "material_preset": "CYLviewLegacy"
   },
   "camera": {}
 }
@@ -112,7 +113,7 @@ Global settings follow a separate precedence rule:
 3. Global `settings.json` defaults.
 4. Built-in defaults.
 
-That means global visual and chemistry defaults initialize newly opened molecules when no per-file presentation state exists. Existing `SavedInfo` values continue to win for molecule-specific background, material preset, hydrogen visibility, annotations, hidden atoms, styles, camera, and saved poses. Global export scale, measurement precision, mouse/zoom behavior, keyboard shortcuts, autosave, session restore, drag/drop background behavior, and recent-file limit apply as app preferences.
+That means global visual and chemistry defaults initialize newly opened molecules when no per-file presentation state exists. Existing `SavedInfo` values continue to win for molecule-specific background, render profile, hydrogen visibility, annotations, hidden atoms, styles, camera, and saved poses. Global export scale, measurement precision, mouse/zoom behavior, keyboard shortcuts, autosave, session restore, drag/drop background behavior, and recent-file limit apply as app preferences.
 
 The app-data layout currently includes:
 
@@ -129,22 +130,22 @@ The global Pose Library indexes important saved poses across molecule files. It 
 
 Thumbnail generation reuses the WebView renderer. The frontend mounts a hidden internal preview document at fixed preview dimensions, loads the target molecule and presentation state through the same commands as normal tabs, applies the target pose, captures a small PNG from `MoleculeCanvas`, and then tears the preview document down. This is intentionally not a headless renderer and is not persisted as a user-visible tab.
 
-## Material Presets
+## Render Profiles
 
-Material presets are serializable presentation choices. Current presets are:
+Render profiles are serializable presentation choices. Current profiles are:
 
-- `CYLviewLegacy`: the classic cylindrical-bond look with restrained specular.
-- `CYLview`: a glossy default with brighter specular and shinier finishes.
-- `Houkmol`: a flatter figure-preparation preset with view-space quadrant shading via `onBeforeCompile` shader patch.
+- `cylview`: the primary CYLview cylindrical-bond look with hidden atom spheres, split endpoint bond colors, and restrained specular.
+- `ball-stick`: a traditional visible atom sphere profile with uniform glossy bonds.
+- `houkmol`: a flatter figure-preparation profile with visible atoms and view-space quadrant shading via `onBeforeCompile` shader patch.
 
-The active preset is stored in per-file state and applied when bond and atom materials are created or updated. Future exporters, such as POV-Ray output, should reuse the same preset data rather than inventing separate finish settings.
+The active profile is stored in per-file state as `render_profile`; `material_preset` is still written as a compatibility alias while older saved-state readers exist. Future exporters, such as POV-Ray output, should consume render-profile data rather than inventing separate finish settings.
 
-New molecules use the explicit default material preset from Settings when no per-file presentation state exists. Material presets do not have letter shortcuts; `H` is reserved for cycling hydrogen visibility.
+New molecules use the explicit default render profile from Settings when no per-file presentation state exists. Render profiles do not have letter shortcuts; `H` is reserved for cycling hydrogen visibility.
 
 ## Extension Points
 
 - Add a file format by writing a `FormatParser` implementation and registering it in the built-in parser list.
 - Add trajectory playback by loading additional frames into `Structure.frames` and updating frontend instance matrices by frame index.
 - Add a persisted annotation type by extending the Rust enum, TypeScript union, and annotations panel rendering.
-- Add a material preset by extending `materialPresets.ts`, the `MaterialPresetId` union, and the Settings/native normalization allowlists.
+- Add a render profile by extending `RenderProfileId`, `renderProfiles.ts`, `materialPresets.ts`, renderer profile helpers, and the Settings/native normalization allowlists.
 - Add a bond style by extending `BondKind`, Tauri serialization, TypeScript style mapping, and the existing instanced bond bucket path.

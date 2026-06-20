@@ -40,7 +40,7 @@ Mouse navigation uses left-drag to rotate, right-drag to pan, and scroll to zoom
 | Label Mode | `L` |
 | Cycle Hydrogen Visibility | `H` |
 
-`H` only cycles hydrogen visibility: shown, hidden, then hide C-H. Material presets, including Houkmol, are changed from the View overlay or Settings and do not have default letter shortcuts.
+`H` only cycles hydrogen visibility: shown, hidden, then hide C-H. Render profiles, including CYLview, Ball and stick, and Houkmol, are changed from the View overlay or Settings and do not have default letter shortcuts.
 
 ## Help
 
