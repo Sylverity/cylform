@@ -18,6 +18,10 @@ pub const MIN_BOND_PERCEPTION_TOLERANCE: f32 = 1.1;
 /// Upper bound for configurable bond-perception tolerance.
 pub const MAX_BOND_PERCEPTION_TOLERANCE: f32 = 1.5;
 
+const MIN_BOND_DISTANCE: f32 = 0.4;
+const BOND_PERCEPTION_HEAVY_ATOM_SLACK: f32 = 0.25;
+const BOND_PERCEPTION_HYDROGEN_SLACK: f32 = 0.20;
+
 /// Clamp a user-facing bond-perception tolerance to the supported range.
 pub fn normalize_bond_perception_tolerance(tolerance: f32) -> f32 {
     if tolerance.is_finite() {
@@ -25,6 +29,14 @@ pub fn normalize_bond_perception_tolerance(tolerance: f32) -> f32 {
     } else {
         DEFAULT_BOND_PERCEPTION_TOLERANCE
     }
+}
+
+#[derive(Debug)]
+struct BondCandidate {
+    atom1: usize,
+    atom2: usize,
+    distance: f32,
+    max_distance: f32,
 }
 
 /// An atom in a molecular structure
@@ -451,6 +463,7 @@ impl Structure {
 
         const CELL_SIZE: f32 = 3.6;
         let mut cells = HashMap::<(i32, i32, i32), Vec<usize>>::new();
+        let mut bond_candidates = Vec::<BondCandidate>::new();
 
         for &atom_index in indices {
             let position = self.atoms()[atom_index].position;
@@ -472,16 +485,19 @@ impl Structure {
                             let atom_i = &self.atoms()[candidate_index];
                             let atom_j = &self.atoms()[atom_index];
                             let distance = atom_i.position.distance(atom_j.position);
-                            let max_bond_dist = (Atom::covalent_radius(&atom_i.element)
-                                + Atom::covalent_radius(&atom_j.element))
-                                * tolerance;
+                            let max_distance = bond_perception_max_distance(
+                                &atom_i.element,
+                                &atom_j.element,
+                                tolerance,
+                            );
 
-                            if distance > 0.4 && distance < max_bond_dist {
-                                self.static_bonds.push(Bond::new(
-                                    candidate_index as u32,
-                                    atom_index as u32,
-                                    BondOrder::Single,
-                                ));
+                            if distance > MIN_BOND_DISTANCE && distance < max_distance {
+                                bond_candidates.push(BondCandidate {
+                                    atom1: candidate_index,
+                                    atom2: atom_index,
+                                    distance,
+                                    max_distance,
+                                });
                             }
                         }
                     }
@@ -489,6 +505,42 @@ impl Structure {
             }
 
             cells.entry(cell).or_default().push(atom_index);
+        }
+
+        bond_candidates.sort_by(|left, right| {
+            let left_score = left.distance / left.max_distance;
+            let right_score = right.distance / right.max_distance;
+            left_score.total_cmp(&right_score)
+        });
+
+        let mut bond_counts = vec![0usize; self.atoms().len()];
+        for bond in &self.static_bonds {
+            let atom1 = bond.atom1 as usize;
+            let atom2 = bond.atom2 as usize;
+            if atom1 < bond_counts.len() {
+                bond_counts[atom1] += 1;
+            }
+            if atom2 < bond_counts.len() {
+                bond_counts[atom2] += 1;
+            }
+        }
+
+        for candidate in bond_candidates {
+            let atom1 = &self.atoms()[candidate.atom1];
+            let atom2 = &self.atoms()[candidate.atom2];
+            if bond_counts[candidate.atom1] >= bond_perception_valence_limit(&atom1.element)
+                || bond_counts[candidate.atom2] >= bond_perception_valence_limit(&atom2.element)
+            {
+                continue;
+            }
+
+            self.static_bonds.push(Bond::new(
+                candidate.atom1 as u32,
+                candidate.atom2 as u32,
+                BondOrder::Single,
+            ));
+            bond_counts[candidate.atom1] += 1;
+            bond_counts[candidate.atom2] += 1;
         }
     }
 
@@ -523,6 +575,30 @@ fn atom_metadata_group_key(atom: &Atom) -> Option<String> {
             .unwrap_or_default(),
         metadata.insertion_code.as_deref().unwrap_or("")
     ))
+}
+
+fn bond_perception_max_distance(element_a: &str, element_b: &str, tolerance: f32) -> f32 {
+    let covalent_sum = Atom::covalent_radius(element_a) + Atom::covalent_radius(element_b);
+    let additive_slack = if element_a == "H" || element_b == "H" {
+        BOND_PERCEPTION_HYDROGEN_SLACK
+    } else {
+        BOND_PERCEPTION_HEAVY_ATOM_SLACK
+    };
+
+    (covalent_sum * normalize_bond_perception_tolerance(tolerance))
+        .min(covalent_sum + additive_slack)
+}
+
+fn bond_perception_valence_limit(element: &str) -> usize {
+    match element {
+        "H" | "F" | "Cl" | "Br" | "I" => 1,
+        "O" => 2,
+        "N" => 3,
+        "C" => 4,
+        "P" => 5,
+        "S" => 6,
+        _ => 4,
+    }
 }
 
 /// Optional metadata preserved from the source molecular file.
@@ -607,6 +683,75 @@ mod tests {
     }
 
     #[test]
+    fn test_bond_perception_rejects_long_carbon_contact() {
+        let mut structure = Structure::new("crowded carbon contact");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "C", Vec3::new(1.90, 0.0, 0.0)));
+
+        structure.perceive_bonds();
+
+        assert_eq!(structure.bonds().len(), 0);
+    }
+
+    #[test]
+    fn test_bond_perception_keeps_real_bond_and_rejects_cavity_contact() {
+        let mut structure = Structure::new("crowded natural product fragment");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "C", Vec3::new(1.48, 0.0, 0.0)));
+        structure.add_atom(Atom::new(2, "C", Vec3::new(0.0, 1.90, 0.0)));
+        structure.add_atom(Atom::new(3, "C", Vec3::new(1.48, 1.90, 0.0)));
+
+        structure.perceive_bonds();
+
+        assert_eq!(structure.bonds().len(), 2);
+        assert!(has_bond(&structure, 0, 1));
+        assert!(has_bond(&structure, 2, 3));
+        assert!(!has_bond(&structure, 0, 2));
+        assert!(!has_bond(&structure, 1, 3));
+    }
+
+    #[test]
+    fn test_bond_perception_valence_filter_preserves_common_fragments() {
+        let mut structure = Structure::new("organic valence sanity");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "H", Vec3::new(1.09, 0.0, 0.0)));
+        structure.add_atom(Atom::new(2, "H", Vec3::new(-1.09, 0.0, 0.0)));
+        structure.add_atom(Atom::new(3, "O", Vec3::new(0.0, 1.43, 0.0)));
+        structure.add_atom(Atom::new(4, "N", Vec3::new(0.0, -1.47, 0.0)));
+
+        structure.perceive_bonds();
+
+        assert_eq!(structure.bonds().len(), 4);
+        assert!(has_bond(&structure, 0, 1));
+        assert!(has_bond(&structure, 0, 2));
+        assert!(has_bond(&structure, 0, 3));
+        assert!(has_bond(&structure, 0, 4));
+    }
+
+    #[test]
+    fn test_bond_perception_valence_filter_rejects_overcoordinated_carbon() {
+        let mut structure = Structure::new("overcoordinated carbon");
+        structure.add_atom(Atom::new(0, "C", Vec3::new(0.0, 0.0, 0.0)));
+        structure.add_atom(Atom::new(1, "H", Vec3::new(1.09, 0.0, 0.0)));
+        structure.add_atom(Atom::new(2, "H", Vec3::new(-1.09, 0.0, 0.0)));
+        structure.add_atom(Atom::new(3, "H", Vec3::new(0.0, 1.09, 0.0)));
+        structure.add_atom(Atom::new(4, "H", Vec3::new(0.0, -1.09, 0.0)));
+        structure.add_atom(Atom::new(5, "H", Vec3::new(0.0, 0.0, 1.09)));
+
+        structure.perceive_bonds();
+
+        assert_eq!(structure.bonds().len(), 4);
+        assert_eq!(
+            structure
+                .bonds()
+                .iter()
+                .filter(|bond| bond.atom1 == 0 || bond.atom2 == 0)
+                .count(),
+            4
+        );
+    }
+
+    #[test]
     fn test_bond_kind_defaults_and_serializes() {
         let mut bond = Bond::new(0, 1, BondOrder::Single);
         assert_eq!(bond.kind, BondKind::Normal);
@@ -629,5 +774,12 @@ mod tests {
         assert_eq!(decoded.frames.len(), 1);
         assert_eq!(decoded.atoms().len(), 0);
         assert_eq!(decoded.center(), Vec3::ZERO);
+    }
+
+    fn has_bond(structure: &Structure, atom1: u32, atom2: u32) -> bool {
+        structure.bonds().iter().any(|bond| {
+            (bond.atom1 == atom1 && bond.atom2 == atom2)
+                || (bond.atom1 == atom2 && bond.atom2 == atom1)
+        })
     }
 }
