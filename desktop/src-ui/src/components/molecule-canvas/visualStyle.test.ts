@@ -6,28 +6,30 @@ import {
   atomMaterial,
   atomColorHex,
   legacyElementColorHex,
+  renderProfileShowsAtomSpheres,
+  renderProfileUsesSplitCylinderBonds,
 } from './visualStyle';
 import { defaultElementColorHex } from './materialPresets';
 
-describe('material presets', () => {
-  it('preserves CYLView Legacy element colors and adds fallback colors for extended elements', () => {
+describe('render profiles', () => {
+  it('preserves CYLview element colors and adds fallback colors for extended elements', () => {
     expect(legacyElementColorHex('C')).toBe('#129bdd');
     expect(legacyElementColorHex('O')).toBe('#e86a1a');
     expect(atomColorHex('Fe')).toBe('#c96d43');
-    expect(defaultElementColorHex('C', 'CYLviewLegacy')).toBe('#129bdd');
-    expect(defaultElementColorHex('C', 'CYLview')).toBe('#8d949c');
+    expect(defaultElementColorHex('C', 'cylview')).toBe('#129bdd');
+    expect(defaultElementColorHex('C', 'ball-stick')).toBe('#8d949c');
   });
 
   it('toggles Houkmol shader patch keys on atom materials', () => {
     const material = new MeshPhongMaterial({ color: 0xffffff });
-    applyMaterialPreset(material, 'Houkmol', true);
+    applyMaterialPreset(material, 'houkmol', true);
     expect(material.customProgramCacheKey()).toBe('houkmol-quadrants');
 
-    applyMaterialPreset(material, 'CYLview', true);
+    applyMaterialPreset(material, 'ball-stick', true);
     expect(material.customProgramCacheKey()).toBe('');
   });
 
-  it('uses CYLform Glossy for default atom materials', () => {
+  it('uses ball-and-stick glossy finish for default atom materials', () => {
     const material = atomMaterial('#ffffff');
 
     expect(material.shininess).toBe(175);
@@ -36,9 +38,18 @@ describe('material presets', () => {
 
   it('updates material finish without replacing styled bond colors', () => {
     const material = new MeshPhongMaterial({ color: 0x123456 });
-    applyMaterialFinish(material, 'Houkmol');
+    applyMaterialFinish(material, 'houkmol');
 
     expect(material.color.getHex()).toBe(0x123456);
     expect(material.shininess).toBe(36);
+  });
+
+  it('keeps CYLview geometry-forward while ball-and-stick renders atom spheres', () => {
+    expect(renderProfileUsesSplitCylinderBonds('cylview')).toBe(true);
+    expect(renderProfileShowsAtomSpheres('cylview')).toBe(false);
+    expect(renderProfileUsesSplitCylinderBonds('ball-stick')).toBe(false);
+    expect(renderProfileShowsAtomSpheres('ball-stick')).toBe(true);
+    expect(renderProfileUsesSplitCylinderBonds('houkmol')).toBe(false);
+    expect(renderProfileShowsAtomSpheres('houkmol')).toBe(true);
   });
 });

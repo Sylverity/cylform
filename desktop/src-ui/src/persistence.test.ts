@@ -14,6 +14,7 @@ function testSettings(): AppSettings {
       pngExportScale: 2,
       defaultBackground: 'white',
       customBackgroundHex: '#ffffff',
+      defaultRenderProfile: 'cylview',
       defaultMaterialPreset: 'CYLviewLegacy',
       defaultProjection: 'perspective',
       defaultLighting: 'publication',
@@ -85,7 +86,7 @@ describe('presentation persistence', () => {
       atomSizeScale: 1.2,
       atomStyleOverrides: { '0': { color: '#222222', sizeScale: 1.1 } },
       bondStyleOverrides: { '0-1': { type: 'thin' } },
-      materialPreset: 'Houkmol',
+      renderProfile: 'houkmol',
       viewOptions: testViewOptions(),
     });
 
@@ -109,15 +110,20 @@ describe('presentation persistence', () => {
 
     expect(normalized.camera).toEqual(defaults.camera);
     expect(normalized.styles.hydrogen_visibility).toBe('shown');
+    expect(normalized.styles.render_profile).toBe('cylview');
     expect(normalized.styles.material_preset).toBe('CYLviewLegacy');
     expect(normalized.camera.fogEnabled).toBe(false);
   });
 
-  it('preserves explicit glossy CYLview state but falls back from unknown presets', () => {
+  it('maps legacy material presets to render profiles and falls back from unknown values', () => {
     const settings = testSettings();
-    settings.rendering.defaultMaterialPreset = 'CYLview';
-    const glossy = normalizePresentationState(
+    settings.rendering.defaultRenderProfile = 'ball-stick';
+    const ballStick = normalizePresentationState(
       { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: { material_preset: 'CYLview' } },
+      settings,
+    );
+    const explicitProfile = normalizePresentationState(
+      { version: 1, annotations: [], hidden_atoms: [], poses: [], styles: { render_profile: 'houkmol', material_preset: 'CYLviewLegacy' } },
       settings,
     );
     const unknown = normalizePresentationState(
@@ -125,7 +131,11 @@ describe('presentation persistence', () => {
       settings,
     );
 
-    expect(glossy.styles.material_preset).toBe('CYLview');
+    expect(ballStick.styles.render_profile).toBe('ball-stick');
+    expect(ballStick.styles.material_preset).toBe('CYLview');
+    expect(explicitProfile.styles.render_profile).toBe('houkmol');
+    expect(explicitProfile.styles.material_preset).toBe('Houkmol');
+    expect(unknown.styles.render_profile).toBe('ball-stick');
     expect(unknown.styles.material_preset).toBe('CYLview');
   });
 });

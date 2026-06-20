@@ -301,7 +301,28 @@ fn app_settings_version() -> u32 {
 }
 
 fn default_material_preset() -> String {
-    "CYLview".to_string()
+    "CYLviewLegacy".to_string()
+}
+
+fn default_render_profile() -> String {
+    "cylview".to_string()
+}
+
+fn normalize_render_profile_str(candidate: Option<&str>, fallback: &str) -> String {
+    match candidate {
+        Some("cylview") | Some("CYLviewLegacy") => "cylview".to_string(),
+        Some("ball-stick") | Some("CYLview") => "ball-stick".to_string(),
+        Some("houkmol") | Some("Houkmol") => "houkmol".to_string(),
+        _ => fallback.to_string(),
+    }
+}
+
+fn render_profile_to_material_preset(profile: &str) -> String {
+    match profile {
+        "ball-stick" => "CYLview".to_string(),
+        "houkmol" => "Houkmol".to_string(),
+        _ => "CYLviewLegacy".to_string(),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -383,6 +404,8 @@ struct PresentationStyles {
     atom_style_overrides: Value,
     #[serde(default)]
     bond_style_overrides: Value,
+    #[serde(default = "default_render_profile")]
+    render_profile: String,
     #[serde(default = "default_material_preset")]
     material_preset: String,
 }
@@ -395,6 +418,7 @@ impl Default for PresentationStyles {
             atom_size_scale: None,
             atom_style_overrides: Value::Object(Default::default()),
             bond_style_overrides: Value::Object(Default::default()),
+            render_profile: default_render_profile(),
             material_preset: default_material_preset(),
         }
     }
@@ -427,6 +451,19 @@ impl Default for PresentationStateEnvelope {
             camera: Value::Null,
         }
     }
+}
+
+fn normalize_presentation_envelope(mut envelope: PresentationStateEnvelope) -> Result<Value, String> {
+    let fallback_profile =
+        normalize_render_profile_str(Some(envelope.styles.material_preset.as_str()), "cylview");
+    let render_profile = normalize_render_profile_str(
+        Some(envelope.styles.render_profile.as_str()),
+        &fallback_profile,
+    );
+    envelope.styles.render_profile = render_profile.clone();
+    envelope.styles.material_preset = render_profile_to_material_preset(&render_profile);
+    serde_json::to_value(envelope)
+        .map_err(|error| format!("Could not normalize presentation state: {error}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -942,6 +979,17 @@ fn normalize_app_settings(value: Value) -> Value {
         _ => 2,
     };
     let recent_files_limit = setting_u8_range(files, "recentFilesLimit", 12, 5, 50);
+    let default_render_profile = normalize_render_profile_str(
+        rendering
+            .and_then(|section| section.get("defaultRenderProfile"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                rendering
+                    .and_then(|section| section.get("defaultMaterialPreset"))
+                    .and_then(Value::as_str)
+            }),
+        "cylview",
+    );
 
     json!({
         "version": app_settings_version(),
@@ -949,7 +997,8 @@ fn normalize_app_settings(value: Value) -> Value {
             "pngExportScale": png_export_scale,
             "defaultBackground": setting_string(rendering, "defaultBackground", "white", &["white", "black", "custom"]),
             "customBackgroundHex": normalize_hex_color(rendering.and_then(|section| section.get("customBackgroundHex")), "#ffffff"),
-            "defaultMaterialPreset": setting_string(rendering, "defaultMaterialPreset", "CYLview", &["CYLviewLegacy", "CYLview", "Houkmol"]),
+            "defaultRenderProfile": default_render_profile.clone(),
+            "defaultMaterialPreset": render_profile_to_material_preset(&default_render_profile),
             "defaultProjection": setting_string(rendering, "defaultProjection", "perspective", &["perspective", "orthographic"]),
             "defaultLighting": setting_string(rendering, "defaultLighting", "publication", &["publication", "soft-studio", "high-contrast"]),
             "showFloorGridByDefault": setting_bool(rendering, "showFloorGridByDefault", false),
@@ -1165,17 +1214,23 @@ fn legacy_label_to_annotation(label: &Value) -> Value {
     }
 }
 
-fn normalize_presentation_state(value: Value) -> Result<Value, String> {
+fn normalize_presentation_state(mut value: Value) -> Result<Value, String> {
     if value.get("annotations").is_some()
         || value.get("hidden_atoms").is_some()
         || value.get("styles").is_some()
         || value.get("camera").is_some()
         || value.get("poses").is_some()
     {
+        if let Some(styles) = value.get_mut("styles").and_then(Value::as_object_mut) {
+            if !styles.contains_key("render_profile") {
+                if let Some(material_preset) = styles.get("material_preset").cloned() {
+                    styles.insert("render_profile".to_string(), material_preset);
+                }
+            }
+        }
         let envelope: PresentationStateEnvelope = serde_json::from_value(value)
             .map_err(|error| format!("Saved presentation state is invalid: {error}"))?;
-        return serde_json::to_value(envelope)
-            .map_err(|error| format!("Could not normalize presentation state: {error}"));
+        return normalize_presentation_envelope(envelope);
     }
 
     let legacy_labels = value
@@ -1199,14 +1254,14 @@ fn normalize_presentation_state(value: Value) -> Result<Value, String> {
             "atom_size_scale": value.get("atomSizeScale").cloned(),
             "atom_style_overrides": value_object(value.get("atomStyleOverrides")),
             "bond_style_overrides": value_object(value.get("bondStyleOverrides")),
+            "render_profile": value.get("renderProfile").cloned().or_else(|| value.get("materialPreset").cloned()).unwrap_or_else(|| json!("cylview")),
             "material_preset": value.get("materialPreset").cloned().unwrap_or_else(|| json!("CYLview"))
         },
         "camera": value.get("viewOptions").cloned().unwrap_or(Value::Null)
     });
     let envelope: PresentationStateEnvelope = serde_json::from_value(envelope)
         .map_err(|error| format!("Saved presentation state is invalid: {error}"))?;
-    serde_json::to_value(envelope)
-        .map_err(|error| format!("Could not normalize presentation state: {error}"))
+    normalize_presentation_envelope(envelope)
 }
 
 fn read_app_settings_from_path(path: &Path) -> Result<Value, String> {
@@ -1901,8 +1956,12 @@ mod tests {
             json!("#ffffff")
         );
         assert_eq!(
+            normalized["rendering"]["defaultRenderProfile"],
+            json!("cylview")
+        );
+        assert_eq!(
             normalized["rendering"]["defaultMaterialPreset"],
-            json!("CYLview")
+            json!("CYLviewLegacy")
         );
         assert_eq!(
             normalized["rendering"]["showFloorGridByDefault"],
@@ -2149,7 +2208,11 @@ mod tests {
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
-        assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
+        assert_eq!(normalized["styles"]["render_profile"], json!("cylview"));
+        assert_eq!(
+            normalized["styles"]["material_preset"],
+            json!("CYLviewLegacy")
+        );
     }
 
     #[test]
@@ -2183,9 +2246,45 @@ mod tests {
             normalized["styles"]["hydrogen_visibility"],
             json!("hide-c-h")
         );
+        assert_eq!(normalized["styles"]["render_profile"], json!("houkmol"));
         assert_eq!(normalized["styles"]["material_preset"], json!("Houkmol"));
         assert_eq!(normalized["camera"]["projection"], json!("orthographic"));
         assert_eq!(normalized["poses"][0]["id"], json!("pose-1"));
+    }
+
+    #[test]
+    fn test_presentation_state_maps_legacy_material_aliases_to_render_profiles() {
+        let normalized = normalize_presentation_state(json!({
+            "version": 1,
+            "annotations": [],
+            "hidden_atoms": [],
+            "poses": [],
+            "styles": {
+                "material_preset": "CYLview"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(normalized["styles"]["render_profile"], json!("ball-stick"));
+        assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
+
+        let explicit = normalize_presentation_state(json!({
+            "version": 1,
+            "annotations": [],
+            "hidden_atoms": [],
+            "poses": [],
+            "styles": {
+                "render_profile": "cylview",
+                "material_preset": "CYLview"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(explicit["styles"]["render_profile"], json!("cylview"));
+        assert_eq!(
+            explicit["styles"]["material_preset"],
+            json!("CYLviewLegacy")
+        );
     }
 
     #[test]

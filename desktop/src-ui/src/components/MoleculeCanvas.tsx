@@ -40,7 +40,7 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   BondStyleType,
-  MaterialPresetId,
+  RenderProfileId,
   BenchmarkConfig,
   BenchmarkRenderMetrics,
   SelectionMode,
@@ -80,6 +80,8 @@ import {
   segmentTransform,
   bondTransform,
   bondKey,
+  renderProfileShowsAtomSpheres,
+  renderProfileUsesSplitCylinderBonds,
   applyRenderPixelRatio,
   moleculeBatchGeometries,
   clamp,
@@ -135,7 +137,7 @@ interface Props {
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
-  materialPreset: MaterialPresetId;
+  renderProfile: RenderProfileId;
   viewOptions: ViewOptions;
   distancePrecision: number;
   anglePrecision: number;
@@ -145,7 +147,7 @@ interface Props {
   mouseMode: 'standard' | 'one-button';
   invertScrollZoom: boolean;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
-  onMaterialPresetChange: Dispatch<SetStateAction<MaterialPresetId>>;
+  onRenderProfileChange: Dispatch<SetStateAction<RenderProfileId>>;
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
@@ -189,7 +191,7 @@ export function MoleculeCanvas({
   atomStyleOverrides,
   bondStyleOverrides,
   atomSizeScale,
-  materialPreset,
+  renderProfile,
   viewOptions,
   distancePrecision,
   anglePrecision,
@@ -199,7 +201,7 @@ export function MoleculeCanvas({
   mouseMode,
   invertScrollZoom,
   onViewOptionsChange,
-  onMaterialPresetChange,
+  onRenderProfileChange,
   onElementColorChange,
   onResetElementColor,
   onResetAllElementColors,
@@ -254,7 +256,7 @@ export function MoleculeCanvas({
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
   const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
-  const isLegacyMaterialPreset = materialPreset === 'CYLviewLegacy';
+  const isCylviewProfile = renderProfile === 'cylview';
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -378,9 +380,9 @@ export function MoleculeCanvas({
 
     // Saturated cyan cylinders with enough gloss to read like polished tubes.
     const bondMat = new MeshPhongMaterial({
-      color:     MATERIAL_PRESETS[materialPreset].bondColor,
-      shininess: MATERIAL_PRESETS[materialPreset].shininess,
-      specular:  MATERIAL_PRESETS[materialPreset].specular.clone(),
+      color:     MATERIAL_PRESETS[renderProfile].bondColor,
+      shininess: MATERIAL_PRESETS[renderProfile].shininess,
+      specular:  MATERIAL_PRESETS[renderProfile].specular.clone(),
     });
     const selectedBondMat = new MeshPhongMaterial({
       color:     0xffa24c,
@@ -1057,25 +1059,25 @@ export function MoleculeCanvas({
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    applyMaterialPreset(ctx.bondMat, materialPreset);
+    applyMaterialPreset(ctx.bondMat, renderProfile);
     for (const material of ctx.atomMats.values()) {
-      applyMaterialPreset(material, materialPreset, true);
+      applyMaterialPreset(material, renderProfile, true);
     }
     ctx.molGroup.traverse((object) => {
       if (object instanceof InstancedMesh && object.material instanceof MeshPhongMaterial) {
         const bonds = object.userData.bonds as BondSelectionData[] | undefined;
         if (bonds && object.material === ctx.bondMat) {
-          applyMaterialPreset(object.material, materialPreset);
+          applyMaterialPreset(object.material, renderProfile);
         } else if (bonds) {
-          applyMaterialFinish(object.material, materialPreset);
+          applyMaterialFinish(object.material, renderProfile);
         }
         const atoms = object.userData.atoms as AtomSelectionData[] | undefined;
         if (atoms) {
-          applyMaterialPreset(object.material, materialPreset, true);
+          applyMaterialPreset(object.material, renderProfile, true);
         }
       }
     });
-  }, [materialPreset]);
+  }, [renderProfile]);
 
   // ------------------------------------------------------------------
   // Rebuild molecule meshes when topology or visibility changes.
@@ -1141,7 +1143,8 @@ export function MoleculeCanvas({
       moleculeData.atoms.length,
       moleculeData.bonds.length,
     );
-    const isLegacyPreset = materialPreset === 'CYLviewLegacy';
+    const useSplitCylinderBonds = renderProfileUsesSplitCylinderBonds(renderProfile);
+    const showAtomSpheres = renderProfileShowsAtomSpheres(renderProfile);
     const atomBuckets = new Map<string, { material: MeshPhongMaterial; atoms: AtomSelectionData[] }>();
     const bondBuckets = new Map<string, { material: MeshPhongMaterial; bonds: BondRenderInstance[] }>();
     const legacyBondMats = new Map<string, MeshPhongMaterial>();
@@ -1243,7 +1246,7 @@ export function MoleculeCanvas({
         matrix: bondTransform(start, end, displayRadius, { overlapStart: true, overlapEnd: true }),
       } satisfies BondSelectionData;
 
-      if (isLegacyPreset) {
+      if (useSplitCylinderBonds) {
         addLegacyBond(styleType, bondData, start, end, bond.atom1, bond.atom2, a1.element, a2.element);
       } else {
         addUniformBond(styleType, bondData);
@@ -1274,8 +1277,8 @@ export function MoleculeCanvas({
       let bucket = atomBuckets.get(bucketKey);
       if (!bucket) {
         const material = atomStyle?.color || elementColorOverrides[atom.element]
-          ? atomMaterial(color, materialPreset)
-          : (atomMats.get(atom.element) ?? atomMaterial(color, materialPreset));
+          ? atomMaterial(color, renderProfile)
+          : (atomMats.get(atom.element) ?? atomMaterial(color, renderProfile));
         if (!atomStyle?.color && !elementColorOverrides[atom.element] && !atomMats.has(atom.element)) {
           atomMats.set(atom.element, material);
         }
@@ -1301,7 +1304,7 @@ export function MoleculeCanvas({
       });
       atomBatch.instanceMatrix.needsUpdate = true;
       atomBatch.userData.atoms = bucket.atoms;
-      atomBatch.visible = !isLegacyPreset;
+      atomBatch.visible = showAtomSpheres;
       molGroup.add(atomBatch);
       ctx.atomPickObjects.push(atomBatch);
     }
@@ -1374,7 +1377,7 @@ export function MoleculeCanvas({
           visibleBonds: visibleBondCount,
           totalAtoms: moleculeData.atoms.length,
           totalBonds: moleculeData.bonds.length,
-          materialPreset,
+          renderProfile,
           renderQuality: qualityProfile,
           renderCalls: renderStats.renderCalls,
           triangles: renderStats.triangles,
@@ -1418,7 +1421,7 @@ export function MoleculeCanvas({
     visibilityIndex,
     hydrogenVisibility,
     hiddenAtomIndices,
-    isLegacyMaterialPreset,
+    isCylviewProfile,
     elementColorOverrides,
     atomStyleOverrides,
     atomSizeScale,
@@ -1476,7 +1479,7 @@ export function MoleculeCanvas({
       ctx.scene.fog = null;
     }
 
-    const publicationMood = materialPreset === 'CYLviewLegacy'
+    const publicationMood = renderProfile === 'cylview'
       ? { ambient: 0.78, key: 0.96, fill: 0.68, rim: 0.14, topLight: 0.18 }
       : { ambient: 0.52, key: 1.65, fill: 0.72, rim: 0.24, topLight: 0.35 };
     const moods = {
@@ -1496,7 +1499,7 @@ export function MoleculeCanvas({
     ctx.floorGroup.visible = Boolean(ctx.lastMoleculeBox && (viewOptions.showFloor || viewOptions.showGrid));
     ctx.floorPlane.visible = viewOptions.showFloor;
     ctx.floorGrid.visible = viewOptions.showGrid;
-  }, [materialPreset, viewOptions]);
+  }, [renderProfile, viewOptions]);
 
   useEffect(() => {
     const ctx = ctxRef.current;
@@ -1628,18 +1631,18 @@ export function MoleculeCanvas({
             </label>
 
             <label className="view-control">
-              <span>Material</span>
+              <span>Render style</span>
               <select
-                value={materialPreset}
+                value={renderProfile}
                 onKeyDown={preventMaterialPresetShortcutOverlap}
                 onChange={(event) => {
-                  onMaterialPresetChange(event.target.value as MaterialPresetId);
+                  onRenderProfileChange(event.target.value as RenderProfileId);
                   event.currentTarget.blur();
                 }}
               >
-                <option value="CYLviewLegacy">CYLView Legacy</option>
-                <option value="CYLview">CYLform Glossy</option>
-                <option value="Houkmol">Houkmol</option>
+                <option value="cylview">CYLview</option>
+                <option value="ball-stick">Ball and stick</option>
+                <option value="houkmol">Houkmol</option>
               </select>
             </label>
 
@@ -1719,7 +1722,7 @@ export function MoleculeCanvas({
             atomSizeScale={atomSizeScale}
             labelFontScale={viewOptions.labelFontScale}
             bondSizeScale={viewOptions.bondSizeScale}
-            materialPreset={materialPreset}
+            renderProfile={renderProfile}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
             onElementColorChange={onElementColorChange}

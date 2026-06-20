@@ -27,6 +27,7 @@ Thumbs.db
 *.tmp
 *.log
 benchmark-results/
+visual-results/
 
 # Local reference materials
 /docs/references/
