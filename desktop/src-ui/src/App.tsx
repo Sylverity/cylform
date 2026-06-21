@@ -16,6 +16,7 @@ import {
   normalizeSessionTabs,
   serializePresentationState,
 } from './persistence'
+import { normalizeRenderProfile } from './renderProfiles'
 import { hideGroupAtoms, revealGroupAtoms } from './groupVisibility'
 import {
   effectiveKeyboardShortcuts,
@@ -89,7 +90,9 @@ export type ElementColorOverrides = Record<string, string>;
 export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
 export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
 export type BondKind = 'Normal' | 'Ts' | 'Dative' | 'Interaction' | 'Thin';
-export type MaterialPresetId = 'CYLviewLegacy' | 'CYLview' | 'Houkmol';
+export type LegacyMaterialPresetId = 'CYLviewLegacy' | 'CYLview' | 'Houkmol';
+export type MaterialPresetId = LegacyMaterialPresetId;
+export type RenderProfileId = 'cylview' | 'ball-stick' | 'houkmol';
 
 export interface Annotation {
   id: string;
@@ -122,6 +125,10 @@ export interface ViewOptions {
   lightingMood: LightingMood;
   fogEnabled: boolean;
   fogIntensity: number;
+  fogDepth: number;
+  focalBlurEnabled: boolean;
+  focalBlurAmount: number;
+  focalDepth: number;
   autoRotate: boolean;
   autoRotateSpeed: number;
   labelFontScale: number;
@@ -135,7 +142,8 @@ export interface AppSettings {
     pngExportScale: 1 | 2 | 4;
     defaultBackground: 'white' | 'black' | 'custom';
     customBackgroundHex: string;
-    defaultMaterialPreset: MaterialPresetId;
+    defaultRenderProfile: RenderProfileId;
+    defaultMaterialPreset?: MaterialPresetId;
     defaultProjection: ProjectionMode;
     defaultLighting: LightingMood;
     showFloorGridByDefault: boolean;
@@ -250,6 +258,7 @@ export interface PresentationState {
     atom_size_scale?: number;
     atom_style_overrides?: Record<string, AtomStyleOverride>;
     bond_style_overrides?: Record<string, BondStyleOverride>;
+    render_profile?: RenderProfileId;
     material_preset?: MaterialPresetId;
   };
   camera?: ViewOptions;
@@ -336,7 +345,7 @@ export interface BenchmarkRenderMetrics {
   visibleBonds: number;
   totalAtoms: number;
   totalBonds: number;
-  materialPreset: MaterialPresetId;
+  renderProfile: RenderProfileId;
   renderQuality: {
     primitiveLoad: number;
     qualityT: number;
@@ -405,7 +414,8 @@ function defaultAppSettings(): AppSettings {
       pngExportScale: 2,
       defaultBackground: 'white',
       customBackgroundHex: '#ffffff',
-      defaultMaterialPreset: 'CYLview',
+      defaultRenderProfile: 'cylview',
+      defaultMaterialPreset: 'CYLviewLegacy',
       defaultProjection: 'perspective',
       defaultLighting: 'publication',
       showFloorGridByDefault: false,
@@ -522,6 +532,10 @@ function PosePreviewRenderer({
   if (!job || !moleculeData) return null;
 
   const styles = presentationState?.styles;
+  const previewViewOptions = {
+    ...createDefaultPresentationState(appSettings).camera,
+    ...job.pose.viewOptions,
+  };
   const handlePreviewCaptured = (token: string, dataUrl: string) => {
     if (token === job.jobId) onCaptured(job, dataUrl);
   };
@@ -540,8 +554,8 @@ function PosePreviewRenderer({
           atomStyleOverrides={styles?.atom_style_overrides ?? {}}
           bondStyleOverrides={styles?.bond_style_overrides ?? {}}
           atomSizeScale={styles?.atom_size_scale ?? 1}
-          materialPreset={styles?.material_preset ?? 'CYLview'}
-          viewOptions={job.pose.viewOptions}
+          renderProfile={normalizeRenderProfile(styles?.render_profile ?? styles?.material_preset)}
+          viewOptions={previewViewOptions}
           distancePrecision={appSettings.chemistry.distancePrecision}
           anglePrecision={appSettings.chemistry.anglePrecision}
           useSymbolUnits={appSettings.chemistry.useSymbolUnits}
@@ -550,7 +564,7 @@ function PosePreviewRenderer({
           mouseMode={appSettings.interaction.mouseMode}
           invertScrollZoom={appSettings.interaction.invertScrollZoom}
           onViewOptionsChange={() => undefined}
-          onMaterialPresetChange={() => undefined}
+          onRenderProfileChange={() => undefined}
           onElementColorChange={() => undefined}
           onResetElementColor={() => undefined}
           onResetAllElementColors={() => undefined}
@@ -578,7 +592,7 @@ function PosePreviewRenderer({
           onError={(message) => onFailed(job, message)}
           onToast={() => undefined}
           previewMode
-          previewPose={job.pose}
+          previewPose={{ ...job.pose, viewOptions: previewViewOptions }}
           previewCaptureToken={captureToken}
           onPreviewCaptured={handlePreviewCaptured}
           onPreviewError={handlePreviewError}
@@ -731,7 +745,7 @@ function App() {
   const [atomStyleOverrides, setAtomStyleOverrides] = useState<Record<string, AtomStyleOverride>>({});
   const [bondStyleOverrides, setBondStyleOverrides] = useState<Record<string, BondStyleOverride>>({});
   const [atomSizeScale, setAtomSizeScale] = useState(1);
-  const [materialPreset, setMaterialPreset] = useState<MaterialPresetId>('CYLview');
+  const [renderProfile, setRenderProfile] = useState<RenderProfileId>('cylview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
   const [moleculeTabs, setMoleculeTabs] = useState<MoleculeTab[]>([]);
@@ -778,8 +792,12 @@ function App() {
     customBackdropHex: '#ffffff',
     projection: 'perspective',
     lightingMood: 'publication',
-    fogEnabled: false,
-    fogIntensity: 0.45,
+    fogEnabled: true,
+    fogIntensity: 0.55,
+    fogDepth: 0.58,
+    focalBlurEnabled: false,
+    focalBlurAmount: 0.32,
+    focalDepth: 0.5,
     autoRotate: false,
     autoRotateSpeed: 0.35,
     labelFontScale: 1.0,
@@ -884,7 +902,7 @@ function App() {
     atomSizeScale,
     atomStyleOverrides,
     bondStyleOverrides,
-    materialPreset,
+    renderProfile,
     viewOptions,
   }), [
     atomSizeScale,
@@ -893,7 +911,7 @@ function App() {
     elementColorOverrides,
     hiddenAtomIndices,
     hydrogenVisibility,
-    materialPreset,
+    renderProfile,
     persistentLabels,
     savedPoses,
     viewOptions,
@@ -909,7 +927,7 @@ function App() {
     setAtomSizeScale(normalized.styles.atom_size_scale ?? 1);
     setAtomStyleOverrides(normalized.styles.atom_style_overrides ?? {});
     setBondStyleOverrides(normalized.styles.bond_style_overrides ?? {});
-    setMaterialPreset(normalized.styles.material_preset ?? 'CYLview');
+    setRenderProfile(normalized.styles.render_profile ?? 'cylview');
     setSavedPoses(normalized.poses);
     setViewOptions(normalized.camera ?? defaultPresentationState().camera);
     nextLabelId.current = Math.max(
@@ -1341,7 +1359,7 @@ function App() {
       visibleBonds: renderMetrics.visibleBonds,
       totalAtoms: renderMetrics.totalAtoms,
       totalBonds: renderMetrics.totalBonds,
-      materialPreset: renderMetrics.materialPreset,
+      renderProfile: renderMetrics.renderProfile,
       renderQuality: renderMetrics.renderQuality,
       renderCalls: renderMetrics.renderCalls,
       triangles: renderMetrics.triangles,
@@ -1577,9 +1595,16 @@ function App() {
   }, []);
 
   const handleApplyPose = useCallback((pose: SavedPose) => {
-    setViewOptions(pose.viewOptions);
-    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: pose }));
-  }, []);
+    const completePose = {
+      ...pose,
+      viewOptions: {
+        ...defaultPresentationState().camera,
+        ...pose.viewOptions,
+      },
+    };
+    setViewOptions(completePose.viewOptions);
+    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: completePose }));
+  }, [defaultPresentationState]);
 
   const handleUpdatePose = useCallback((pose: SavedPose) => {
     window.dispatchEvent(new CustomEvent('capture-camera-pose', { detail: { updatePoseId: pose.id } }));
@@ -1750,6 +1775,7 @@ function App() {
     atomSizeScale !== 1 ||
     Object.keys(atomStyleOverrides).length ||
     Object.keys(bondStyleOverrides).length ||
+    renderProfile !== 'cylview' ||
     savedPoses.length
   );
 
@@ -2181,7 +2207,7 @@ function App() {
             atomStyleOverrides={atomStyleOverrides}
             bondStyleOverrides={bondStyleOverrides}
             atomSizeScale={atomSizeScale}
-            materialPreset={materialPreset}
+            renderProfile={renderProfile}
             viewOptions={viewOptions}
             distancePrecision={appSettings.chemistry.distancePrecision}
             anglePrecision={appSettings.chemistry.anglePrecision}
@@ -2191,7 +2217,7 @@ function App() {
             mouseMode={appSettings.interaction.mouseMode}
             invertScrollZoom={appSettings.interaction.invertScrollZoom}
             onViewOptionsChange={setViewOptions}
-            onMaterialPresetChange={setMaterialPreset}
+            onRenderProfileChange={setRenderProfile}
             onElementColorChange={(element, color) => {
               setElementColorOverrides((current) => ({ ...current, [element]: color }));
             }}

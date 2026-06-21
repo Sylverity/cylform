@@ -6,7 +6,6 @@ import {
   CylinderGeometry,
   DirectionalLight,
   DoubleSide,
-  Fog,
   GridHelper,
   Group,
   InstancedMesh,
@@ -28,6 +27,9 @@ import {
   WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
@@ -40,7 +42,7 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   BondStyleType,
-  MaterialPresetId,
+  RenderProfileId,
   BenchmarkConfig,
   BenchmarkRenderMetrics,
   SelectionMode,
@@ -80,6 +82,8 @@ import {
   segmentTransform,
   bondTransform,
   bondKey,
+  renderProfileShowsAtomSpheres,
+  renderProfileUsesSplitCylinderBonds,
   applyRenderPixelRatio,
   moleculeBatchGeometries,
   clamp,
@@ -119,6 +123,10 @@ import {
   pickScene,
 } from './molecule-canvas/picking';
 import { renderCurrentViewDataUrl } from './molecule-canvas/exportPng';
+import {
+  renderScene,
+  updateDepthCueBackground,
+} from './molecule-canvas/depthCue';
 
 function preventMaterialPresetShortcutOverlap(event: ReactKeyboardEvent<HTMLSelectElement>) {
   if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'h') {
@@ -135,7 +143,7 @@ interface Props {
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
   atomSizeScale: number;
-  materialPreset: MaterialPresetId;
+  renderProfile: RenderProfileId;
   viewOptions: ViewOptions;
   distancePrecision: number;
   anglePrecision: number;
@@ -145,7 +153,7 @@ interface Props {
   mouseMode: 'standard' | 'one-button';
   invertScrollZoom: boolean;
   onViewOptionsChange: Dispatch<SetStateAction<ViewOptions>>;
-  onMaterialPresetChange: Dispatch<SetStateAction<MaterialPresetId>>;
+  onRenderProfileChange: Dispatch<SetStateAction<RenderProfileId>>;
   onElementColorChange: (element: string, color: string) => void;
   onResetElementColor: (element: string) => void;
   onResetAllElementColors: () => void;
@@ -189,7 +197,7 @@ export function MoleculeCanvas({
   atomStyleOverrides,
   bondStyleOverrides,
   atomSizeScale,
-  materialPreset,
+  renderProfile,
   viewOptions,
   distancePrecision,
   anglePrecision,
@@ -199,7 +207,7 @@ export function MoleculeCanvas({
   mouseMode,
   invertScrollZoom,
   onViewOptionsChange,
-  onMaterialPresetChange,
+  onRenderProfileChange,
   onElementColorChange,
   onResetElementColor,
   onResetAllElementColors,
@@ -254,7 +262,7 @@ export function MoleculeCanvas({
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
   const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
-  const isLegacyMaterialPreset = materialPreset === 'CYLviewLegacy';
+  const isCylviewProfile = renderProfile === 'cylview';
 
   useEffect(() => {
     selectionModeRef.current = selectionMode;
@@ -309,12 +317,22 @@ export function MoleculeCanvas({
 
     const scene = new Scene();
     scene.background = new Color(0xffffff);
-    scene.fog = new Fog(0xffffff, 42, 120);
+    scene.fog = null;
 
     const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
     const orthographicCamera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
     camera.position.set(0, 0, 25);
     orthographicCamera.position.copy(camera.position);
+
+    const renderPass = new RenderPass(scene, camera);
+    const bokehPass = new BokehPass(scene, camera, {
+      focus: 25,
+      aperture: 0.00002,
+      maxblur: 0.006,
+    });
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderPass);
+    composer.addPass(bokehPass);
 
     // Bright, print-oriented lighting tuned toward the CYLview reference.
     const ambient = new AmbientLight(0xffffff, 0.52);
@@ -378,9 +396,9 @@ export function MoleculeCanvas({
 
     // Saturated cyan cylinders with enough gloss to read like polished tubes.
     const bondMat = new MeshPhongMaterial({
-      color:     MATERIAL_PRESETS[materialPreset].bondColor,
-      shininess: MATERIAL_PRESETS[materialPreset].shininess,
-      specular:  MATERIAL_PRESETS[materialPreset].specular.clone(),
+      color:     MATERIAL_PRESETS[renderProfile].bondColor,
+      shininess: MATERIAL_PRESETS[renderProfile].shininess,
+      specular:  MATERIAL_PRESETS[renderProfile].specular.clone(),
     });
     const selectedBondMat = new MeshPhongMaterial({
       color:     0xffa24c,
@@ -514,7 +532,12 @@ export function MoleculeCanvas({
         if (ctx2d) ctx2d.clearRect(0, 0, linkCanvas.width, linkCanvas.height);
       }
 
-      renderer.render(scene, activeCamera);
+      const current = ctxRef.current;
+      if (current) {
+        renderScene(current);
+      } else {
+        renderer.render(scene, activeCamera);
+      }
     }
     animate();
 
@@ -522,6 +545,13 @@ export function MoleculeCanvas({
       renderer, scene, camera, perspectiveCamera: camera, orthographicCamera, controls,
       molGroup, floorGroup, floorPlane, floorGrid, floorMat,
       lights: { ambient, key, fill, rim, topLight },
+      depthCue: {
+        options: viewOptionsRef.current,
+        backgroundColor: 0xffffff,
+        composer,
+        renderPass,
+        bokehPass,
+      },
       lastCameraDistance: 25,
       lastMoleculeBox: null,
       animId,
@@ -541,7 +571,10 @@ export function MoleculeCanvas({
       const current = ctxRef.current;
       camera.aspect = cw / ch;
       camera.updateProjectionMatrix();
-      if (current) syncOrthographicCamera(current);
+      if (current) {
+        current.depthCue.composer?.setSize(cw, ch);
+        syncOrthographicCamera(current);
+      }
     });
     ro.observe(container);
 
@@ -994,6 +1027,8 @@ export function MoleculeCanvas({
       selectedBondMat.dispose();
       selectedAtomMat.dispose();
       atomMats.forEach(m => m.dispose());
+      composer.dispose();
+      bokehPass.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
       ctxRef.current = null;
@@ -1057,25 +1092,25 @@ export function MoleculeCanvas({
   useEffect(() => {
     const ctx = ctxRef.current;
     if (!ctx) return;
-    applyMaterialPreset(ctx.bondMat, materialPreset);
+    applyMaterialPreset(ctx.bondMat, renderProfile);
     for (const material of ctx.atomMats.values()) {
-      applyMaterialPreset(material, materialPreset, true);
+      applyMaterialPreset(material, renderProfile, true);
     }
     ctx.molGroup.traverse((object) => {
       if (object instanceof InstancedMesh && object.material instanceof MeshPhongMaterial) {
         const bonds = object.userData.bonds as BondSelectionData[] | undefined;
         if (bonds && object.material === ctx.bondMat) {
-          applyMaterialPreset(object.material, materialPreset);
+          applyMaterialPreset(object.material, renderProfile);
         } else if (bonds) {
-          applyMaterialFinish(object.material, materialPreset);
+          applyMaterialFinish(object.material, renderProfile);
         }
         const atoms = object.userData.atoms as AtomSelectionData[] | undefined;
         if (atoms) {
-          applyMaterialPreset(object.material, materialPreset, true);
+          applyMaterialPreset(object.material, renderProfile, true);
         }
       }
     });
-  }, [materialPreset]);
+  }, [renderProfile]);
 
   // ------------------------------------------------------------------
   // Rebuild molecule meshes when topology or visibility changes.
@@ -1141,7 +1176,8 @@ export function MoleculeCanvas({
       moleculeData.atoms.length,
       moleculeData.bonds.length,
     );
-    const isLegacyPreset = materialPreset === 'CYLviewLegacy';
+    const useSplitCylinderBonds = renderProfileUsesSplitCylinderBonds(renderProfile);
+    const showAtomSpheres = renderProfileShowsAtomSpheres(renderProfile);
     const atomBuckets = new Map<string, { material: MeshPhongMaterial; atoms: AtomSelectionData[] }>();
     const bondBuckets = new Map<string, { material: MeshPhongMaterial; bonds: BondRenderInstance[] }>();
     const legacyBondMats = new Map<string, MeshPhongMaterial>();
@@ -1243,7 +1279,7 @@ export function MoleculeCanvas({
         matrix: bondTransform(start, end, displayRadius, { overlapStart: true, overlapEnd: true }),
       } satisfies BondSelectionData;
 
-      if (isLegacyPreset) {
+      if (useSplitCylinderBonds) {
         addLegacyBond(styleType, bondData, start, end, bond.atom1, bond.atom2, a1.element, a2.element);
       } else {
         addUniformBond(styleType, bondData);
@@ -1274,8 +1310,8 @@ export function MoleculeCanvas({
       let bucket = atomBuckets.get(bucketKey);
       if (!bucket) {
         const material = atomStyle?.color || elementColorOverrides[atom.element]
-          ? atomMaterial(color, materialPreset)
-          : (atomMats.get(atom.element) ?? atomMaterial(color, materialPreset));
+          ? atomMaterial(color, renderProfile)
+          : (atomMats.get(atom.element) ?? atomMaterial(color, renderProfile));
         if (!atomStyle?.color && !elementColorOverrides[atom.element] && !atomMats.has(atom.element)) {
           atomMats.set(atom.element, material);
         }
@@ -1301,7 +1337,7 @@ export function MoleculeCanvas({
       });
       atomBatch.instanceMatrix.needsUpdate = true;
       atomBatch.userData.atoms = bucket.atoms;
-      atomBatch.visible = !isLegacyPreset;
+      atomBatch.visible = showAtomSpheres;
       molGroup.add(atomBatch);
       ctx.atomPickObjects.push(atomBatch);
     }
@@ -1339,7 +1375,7 @@ export function MoleculeCanvas({
 
     previousMoleculeDataRef.current = moleculeData;
     const rebuildSceneMs = performance.now() - perfStart;
-    ctx.renderer.render(ctx.scene, ctx.camera);
+    renderScene(ctx);
     const renderStats = sceneRenderStats(ctx);
     if (perfLoggingEnabled()) {
       console.info(
@@ -1374,7 +1410,7 @@ export function MoleculeCanvas({
           visibleBonds: visibleBondCount,
           totalAtoms: moleculeData.atoms.length,
           totalBonds: moleculeData.bonds.length,
-          materialPreset,
+          renderProfile,
           renderQuality: qualityProfile,
           renderCalls: renderStats.renderCalls,
           triangles: renderStats.triangles,
@@ -1418,7 +1454,7 @@ export function MoleculeCanvas({
     visibilityIndex,
     hydrogenVisibility,
     hiddenAtomIndices,
-    isLegacyMaterialPreset,
+    isCylviewProfile,
     elementColorOverrides,
     atomStyleOverrides,
     atomSizeScale,
@@ -1458,25 +1494,10 @@ export function MoleculeCanvas({
     setActiveCamera(ctx, viewOptions.projection);
 
     const bg = backdropColor(viewOptions.backdropTone, viewOptions.customBackdropHex);
-    ctx.scene.background = new Color(bg);
+    ctx.depthCue.options = viewOptions;
+    updateDepthCueBackground(ctx, bg);
 
-    const distance = Math.max(
-      ctx.camera.position.distanceTo(ctx.controls.target),
-      ctx.lastCameraDistance,
-      12,
-    );
-    if (viewOptions.fogEnabled) {
-      const intensity = clamp(viewOptions.fogIntensity, 0.1, 1);
-      ctx.scene.fog = new Fog(
-        bg,
-        distance * (2.5 - intensity * 1.9),
-        distance * (5.5 - intensity * 3.8),
-      );
-    } else {
-      ctx.scene.fog = null;
-    }
-
-    const publicationMood = materialPreset === 'CYLviewLegacy'
+    const publicationMood = renderProfile === 'cylview'
       ? { ambient: 0.78, key: 0.96, fill: 0.68, rim: 0.14, topLight: 0.18 }
       : { ambient: 0.52, key: 1.65, fill: 0.72, rim: 0.24, topLight: 0.35 };
     const moods = {
@@ -1496,7 +1517,7 @@ export function MoleculeCanvas({
     ctx.floorGroup.visible = Boolean(ctx.lastMoleculeBox && (viewOptions.showFloor || viewOptions.showGrid));
     ctx.floorPlane.visible = viewOptions.showFloor;
     ctx.floorGrid.visible = viewOptions.showGrid;
-  }, [materialPreset, viewOptions]);
+  }, [renderProfile, viewOptions]);
 
   useEffect(() => {
     const ctx = ctxRef.current;
@@ -1628,18 +1649,18 @@ export function MoleculeCanvas({
             </label>
 
             <label className="view-control">
-              <span>Material</span>
+              <span>Render style</span>
               <select
-                value={materialPreset}
+                value={renderProfile}
                 onKeyDown={preventMaterialPresetShortcutOverlap}
                 onChange={(event) => {
-                  onMaterialPresetChange(event.target.value as MaterialPresetId);
+                  onRenderProfileChange(event.target.value as RenderProfileId);
                   event.currentTarget.blur();
                 }}
               >
-                <option value="CYLviewLegacy">CYLView Legacy</option>
-                <option value="CYLview">CYLform Glossy</option>
-                <option value="Houkmol">Houkmol</option>
+                <option value="cylview">CYLview</option>
+                <option value="ball-stick">Ball and stick</option>
+                <option value="houkmol">Houkmol</option>
               </select>
             </label>
 
@@ -1665,18 +1686,78 @@ export function MoleculeCanvas({
               >
                 Depth cue
               </button>
+              <span>{viewOptions.fogEnabled ? 'On' : 'Off'}</span>
+            </div>
+            <div className="view-split-row">
+              <span>Fog</span>
               <span>{Math.round(viewOptions.fogIntensity * 100)}%</span>
             </div>
             <input
               className="view-range"
               type="range"
-              min="0.15"
+              min="0"
               max="1"
               step="0.05"
               value={viewOptions.fogIntensity}
               disabled={!viewOptions.fogEnabled}
-              aria-label="Depth cue intensity"
+              aria-label="Fog amount"
               onChange={(event) => patchViewOptions({ fogIntensity: Number(event.target.value) })}
+            />
+            <div className="view-split-row">
+              <span>Depth</span>
+              <span>{Math.round(viewOptions.fogDepth * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.fogDepth}
+              disabled={!viewOptions.fogEnabled}
+              aria-label="Fog depth"
+              onChange={(event) => patchViewOptions({ fogDepth: Number(event.target.value) })}
+            />
+
+            <div className="view-split-row">
+              <button
+                type="button"
+                className={viewOptions.focalBlurEnabled ? 'view-toggle active' : 'view-toggle'}
+                onClick={() => patchViewOptions({ focalBlurEnabled: !viewOptions.focalBlurEnabled })}
+              >
+                Focal blur
+              </button>
+              <span>{viewOptions.focalBlurEnabled ? 'On' : 'Off'}</span>
+            </div>
+            <div className="view-split-row">
+              <span>Blur</span>
+              <span>{Math.round(viewOptions.focalBlurAmount * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.focalBlurAmount}
+              disabled={!viewOptions.focalBlurEnabled}
+              aria-label="Focal blur amount"
+              onChange={(event) => patchViewOptions({ focalBlurAmount: Number(event.target.value) })}
+            />
+            <div className="view-split-row">
+              <span>Focus</span>
+              <span>{Math.round(viewOptions.focalDepth * 100)}%</span>
+            </div>
+            <input
+              className="view-range"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={viewOptions.focalDepth}
+              disabled={!viewOptions.focalBlurEnabled}
+              aria-label="Focal depth"
+              onChange={(event) => patchViewOptions({ focalDepth: Number(event.target.value) })}
             />
 
             <div className="view-split-row">
@@ -1719,7 +1800,7 @@ export function MoleculeCanvas({
             atomSizeScale={atomSizeScale}
             labelFontScale={viewOptions.labelFontScale}
             bondSizeScale={viewOptions.bondSizeScale}
-            materialPreset={materialPreset}
+            renderProfile={renderProfile}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
             onElementColorChange={onElementColorChange}

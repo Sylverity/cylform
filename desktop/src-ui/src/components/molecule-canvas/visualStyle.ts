@@ -9,7 +9,7 @@ import {
 } from 'three';
 import { syncOrthographicCamera } from './camera';
 import type {
-  MaterialPresetId,
+  RenderProfileId,
   BondStyleType,
   BondKind,
   AtomStyleOverride,
@@ -93,15 +93,15 @@ const MAX_SPHERE_HEIGHT_SEGMENTS = 16;
 const MIN_CYLINDER_RADIAL_SEGMENTS = 8;
 const MAX_CYLINDER_RADIAL_SEGMENTS = 24;
 
-export function applyMaterialPreset(material: MeshPhongMaterial, presetId: MaterialPresetId, isAtom = false) {
-  const preset = MATERIAL_PRESETS[presetId];
+export function applyMaterialPreset(material: MeshPhongMaterial, renderProfile: RenderProfileId, isAtom = false) {
+  const preset = MATERIAL_PRESETS[renderProfile];
   if (!isAtom) {
     material.color.set(preset.bondColor);
   }
   material.specular.copy(preset.specular);
   material.shininess = preset.shininess;
 
-  if (isAtom && presetId === 'Houkmol') {
+  if (isAtom && renderProfile === 'houkmol') {
     material.onBeforeCompile = (shader) => {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <color_fragment>',
@@ -123,8 +123,8 @@ export function applyMaterialPreset(material: MeshPhongMaterial, presetId: Mater
   material.needsUpdate = true;
 }
 
-export function applyMaterialFinish(material: MeshPhongMaterial, presetId: MaterialPresetId): void {
-  const preset = MATERIAL_PRESETS[presetId];
+export function applyMaterialFinish(material: MeshPhongMaterial, renderProfile: RenderProfileId): void {
+  const preset = MATERIAL_PRESETS[renderProfile];
   material.specular.copy(preset.specular);
   material.shininess = preset.shininess;
   material.needsUpdate = true;
@@ -164,6 +164,14 @@ export function bondKindToStyleType(kind: BondKind | undefined): BondStyleType {
   return 'full';
 }
 
+export function renderProfileShowsAtomSpheres(renderProfile: RenderProfileId): boolean {
+  return renderProfile !== 'cylview';
+}
+
+export function renderProfileUsesSplitCylinderBonds(renderProfile: RenderProfileId): boolean {
+  return renderProfile === 'cylview';
+}
+
 export function updateAngleSelection(
   selection: AtomSelectionData[],
   clickedAtom: AtomSelectionData,
@@ -183,15 +191,15 @@ export function updateAngleSelection(
   return [...selection, clickedAtom];
 }
 
-export function atomMaterial(color: string, presetId: MaterialPresetId = 'CYLview'): MeshPhongMaterial {
-  const preset = MATERIAL_PRESETS[presetId];
+export function atomMaterial(color: string, renderProfile: RenderProfileId = 'ball-stick'): MeshPhongMaterial {
+  const preset = MATERIAL_PRESETS[renderProfile];
   const mat = new MeshPhongMaterial({
     color,
     shininess: preset.shininess,
     specular: preset.specular.clone(),
   });
-  if (presetId === 'Houkmol') {
-    applyMaterialPreset(mat, presetId, true);
+  if (renderProfile === 'houkmol') {
+    applyMaterialPreset(mat, renderProfile, true);
   }
   return mat;
 }
@@ -199,8 +207,8 @@ export function atomMaterial(color: string, presetId: MaterialPresetId = 'CYLvie
 export function legacyBondMaterial(color: string, styleType: BondStyleType): MeshPhongMaterial {
   const material = new MeshPhongMaterial({
     color,
-    shininess: MATERIAL_PRESETS.CYLviewLegacy.shininess,
-    specular: MATERIAL_PRESETS.CYLviewLegacy.specular.clone(),
+    shininess: MATERIAL_PRESETS.cylview.shininess,
+    specular: MATERIAL_PRESETS.cylview.specular.clone(),
   });
   material.userData = { ...material.userData, legacyBondStyleType: styleType };
   if (styleType === 'ts') {
@@ -342,6 +350,8 @@ export function applyRenderPixelRatio(ctx: SceneCtx, atomCount: number, bondCoun
   const height = canvas.clientHeight || 600;
   ctx.renderer.setPixelRatio(nextPixelRatio);
   ctx.renderer.setSize(width, height, false);
+  ctx.depthCue.composer?.setPixelRatio(nextPixelRatio);
+  ctx.depthCue.composer?.setSize(width, height);
   ctx.perspectiveCamera.aspect = width / height;
   ctx.perspectiveCamera.updateProjectionMatrix();
   if (ctx.camera instanceof OrthographicCamera) syncOrthographicCamera(ctx);

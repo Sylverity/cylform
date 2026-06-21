@@ -5,12 +5,13 @@ import type {
   BondStyleOverride,
   ElementColorOverrides,
   HydrogenVisibility,
-  MaterialPresetId,
   PresentationState,
+  RenderProfileId,
   SavedPose,
   SessionTabsEnvelope,
   ViewOptions,
 } from './App';
+import { normalizeRenderProfile, renderProfileToLegacyMaterialPreset } from './renderProfiles';
 
 export interface PresentationStateParts {
   poses: SavedPose[];
@@ -21,7 +22,7 @@ export interface PresentationStateParts {
   atomSizeScale: number;
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
-  materialPreset: MaterialPresetId;
+  renderProfile: RenderProfileId;
   viewOptions: ViewOptions;
 }
 
@@ -29,19 +30,13 @@ export type NormalizedPresentationState = PresentationState & {
   camera: ViewOptions;
 };
 
-const DEFAULT_MATERIAL_PRESET: MaterialPresetId = 'CYLview';
-const MATERIAL_PRESET_IDS = new Set<MaterialPresetId>(['CYLviewLegacy', 'CYLview', 'Houkmol']);
-
-function normalizeMaterialPreset(value: unknown, fallback = DEFAULT_MATERIAL_PRESET): MaterialPresetId {
-  return typeof value === 'string' && MATERIAL_PRESET_IDS.has(value as MaterialPresetId)
-    ? value as MaterialPresetId
-    : fallback;
-}
-
 export function createDefaultPresentationState(
   settings: AppSettings,
 ): NormalizedPresentationState {
-  const defaultMaterial = normalizeMaterialPreset(settings.rendering.defaultMaterialPreset);
+  const defaultRenderProfile = normalizeRenderProfile(
+    settings.rendering.defaultRenderProfile ?? settings.rendering.defaultMaterialPreset,
+  );
+  const defaultFogEnabled = defaultRenderProfile === 'cylview';
   const showFloorGrid = settings.rendering.showFloorGridByDefault;
   const backdropTone =
     settings.rendering.defaultBackground === 'black'
@@ -60,7 +55,8 @@ export function createDefaultPresentationState(
       atom_size_scale: 1,
       atom_style_overrides: {},
       bond_style_overrides: {},
-      material_preset: defaultMaterial,
+      render_profile: defaultRenderProfile,
+      material_preset: renderProfileToLegacyMaterialPreset(defaultRenderProfile),
     },
     poses: [],
     camera: {
@@ -70,8 +66,12 @@ export function createDefaultPresentationState(
       customBackdropHex: settings.rendering.customBackgroundHex,
       projection: settings.rendering.defaultProjection,
       lightingMood: settings.rendering.defaultLighting,
-      fogEnabled: false,
-      fogIntensity: 0.45,
+      fogEnabled: defaultFogEnabled,
+      fogIntensity: defaultFogEnabled ? 0.55 : 0.45,
+      fogDepth: defaultFogEnabled ? 0.58 : 0.5,
+      focalBlurEnabled: false,
+      focalBlurAmount: 0.32,
+      focalDepth: 0.5,
       autoRotate: false,
       autoRotateSpeed: 0.35,
       labelFontScale: 1.0,
@@ -87,12 +87,23 @@ export function normalizePresentationState(
 ): NormalizedPresentationState {
   const defaults = createDefaultPresentationState(settings);
   const styles = state?.styles ?? {};
+  const renderProfile = normalizeRenderProfile(
+    styles.render_profile ?? styles.material_preset,
+    defaults.styles.render_profile ?? 'cylview',
+  );
+  const cameraDefaults = createDefaultPresentationState({
+    ...settings,
+    rendering: {
+      ...settings.rendering,
+      defaultRenderProfile: renderProfile,
+    },
+  }).camera;
   const camera = state?.camera
     ? {
-        ...defaults.camera,
+        ...cameraDefaults,
         ...state.camera,
       }
-    : defaults.camera;
+    : cameraDefaults;
 
   return {
     version: 1,
@@ -106,7 +117,8 @@ export function normalizePresentationState(
       atom_size_scale: styles.atom_size_scale ?? defaults.styles.atom_size_scale,
       atom_style_overrides: styles.atom_style_overrides ?? defaults.styles.atom_style_overrides,
       bond_style_overrides: styles.bond_style_overrides ?? defaults.styles.bond_style_overrides,
-      material_preset: normalizeMaterialPreset(styles.material_preset, defaults.styles.material_preset),
+      render_profile: renderProfile,
+      material_preset: renderProfileToLegacyMaterialPreset(renderProfile),
     },
     camera,
   };
@@ -124,7 +136,8 @@ export function serializePresentationState(parts: PresentationStateParts): Prese
       atom_size_scale: parts.atomSizeScale,
       atom_style_overrides: parts.atomStyleOverrides,
       bond_style_overrides: parts.bondStyleOverrides,
-      material_preset: parts.materialPreset,
+      render_profile: parts.renderProfile,
+      material_preset: renderProfileToLegacyMaterialPreset(parts.renderProfile),
     },
     camera: parts.viewOptions,
   };

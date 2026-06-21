@@ -213,7 +213,7 @@ function summarize(results) {
     bonds: result.totalBonds ?? result.bonds ?? '',
     status: result.status,
     responsive: Boolean(result.responsive),
-    material: result.materialPreset ?? '',
+    profile: result.renderProfile ?? result.materialPreset ?? '',
     quality: result.renderQuality?.qualityT?.toFixed?.(2) ?? '',
     cylSegments: result.renderQuality?.cylinderRadialSegments ?? '',
     pixelRatio: result.renderQuality?.pixelRatio?.toFixed?.(2) ?? '',
