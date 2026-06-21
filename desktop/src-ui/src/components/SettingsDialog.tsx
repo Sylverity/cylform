@@ -202,18 +202,18 @@ export function SettingsDialog({
                 />
               </label>
               <label className="settings-row">
-                <span>Default material</span>
+                <span>Default render style</span>
                 <select
-                  value={settings.rendering.defaultMaterialPreset}
+                  value={settings.rendering.defaultRenderProfile}
                   onKeyDown={preventMaterialPresetShortcutOverlap}
                   onChange={(event) => {
-                    update('rendering', { defaultMaterialPreset: event.target.value as AppSettings['rendering']['defaultMaterialPreset'] });
+                    update('rendering', { defaultRenderProfile: event.target.value as AppSettings['rendering']['defaultRenderProfile'] });
                     event.currentTarget.blur();
                   }}
                 >
-                  <option value="CYLviewLegacy">CYLView Legacy</option>
-                  <option value="CYLview">CYLform Glossy</option>
-                  <option value="Houkmol">Houkmol</option>
+                  <option value="cylview">CYLview</option>
+                  <option value="ball-stick">Ball and stick</option>
+                  <option value="houkmol">Houkmol</option>
                 </select>
               </label>
               <label className="settings-row">

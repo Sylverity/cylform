@@ -1,5 +1,5 @@
 import { Color } from 'three';
-import type { MaterialPresetId } from '../../App';
+import type { RenderProfileId } from '../../App';
 
 export const ATOM_COLORS: Record<string, number> = {
   H: 0xcfd3d7,
@@ -44,22 +44,22 @@ export const LEGACY_ELEMENT_COLORS: Record<string, number> = {
 };
 
 export const MATERIAL_PRESETS = {
-  CYLviewLegacy: {
+  cylview: {
     specular: new Color(0.28, 0.32, 0.36),
     shininess: 68,
     bondColor: 0x129bdd,
   },
-  CYLview: {
+  'ball-stick': {
     specular: new Color(0.86, 0.9, 0.96),
     shininess: 175,
     bondColor: 0x2f9df4,
   },
-  Houkmol: {
+  houkmol: {
     specular: new Color(0.18, 0.18, 0.18),
     shininess: 36,
     bondColor: 0x6f8796,
   },
-} satisfies Record<MaterialPresetId, { specular: Color; shininess: number; bondColor: number }>;
+} satisfies Record<RenderProfileId, { specular: Color; shininess: number; bondColor: number }>;
 
 export function colorNumberToHex(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
@@ -77,8 +77,8 @@ export function legacyElementColorHex(element: string): string {
   return colorNumberToHex(LEGACY_ELEMENT_COLORS[element] ?? atomColor(element));
 }
 
-export function defaultElementColorHex(element: string, materialPreset: MaterialPresetId): string {
-  return materialPreset === 'CYLviewLegacy'
+export function defaultElementColorHex(element: string, renderProfile: RenderProfileId): string {
+  return renderProfile === 'cylview'
     ? legacyElementColorHex(element)
     : atomColorHex(element);
 }

@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-Cylform is a desktop molecular figure editor. Its default CYLView Legacy preset recreates the colored cylindrical-stick style used in natural products chemistry publications — cyan carbon framework, orange oxygen endpoints, pale hydrogen termini, 4-point lighting, and depth cues — for figures that remain readable in black-and-white print.
+Cylform is a desktop molecular figure editor. Its default CYLview render profile recreates the colored cylindrical-stick style used in natural products chemistry publications — cyan carbon framework, orange oxygen endpoints, pale hydrogen termini, 4-point lighting, and depth cues — for figures that remain readable in black-and-white print.
 
 Open a structure, set the view, measure, annotate, export a PNG.
 
@@ -28,7 +28,7 @@ See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for the current def
 
 ## What's Included
 
-- **CYLView Legacy rendering** — colored cylindrical-stick default with cyan carbon framework, orange oxygen endpoints, and pale gray hydrogens; CYLform Glossy and Houkmol (with quadrant shading) alternatives for print
+- **CYLview rendering** — colored cylindrical-stick default with cyan carbon framework, orange oxygen endpoints, and pale gray hydrogens; Ball and stick and Houkmol alternatives remain separate render profiles
 - **3-D navigation** — orbit, pan, zoom with damping; camera presets (front, top, right, iso)
 - **Measurements** — distance, angle, dihedral with persistent labels, angle arcs, and Å / ° symbol units
 - **Annotations** — persistent atom/bond labels with subscript / superscript support and adjustable font scale
@@ -55,7 +55,7 @@ The developer benchmark can raise the internal atom limit and stress the real de
 | 350,000 | 1,029,184 | 35.2 / 31 ms | 26.5 / 39 ms |
 | 500,000 | 1,648,764 | 33.8 / 53 ms | 27.1 / 41 ms |
 
-Benchmarks run on WSL2/WSLg with the benchmark environment selecting the RTX 4070 Ti through D3D12/Mesa and the current default `CYLview` material preset. Your numbers will vary by GPU, driver, material preset, and molecule topology.
+Benchmarks run on WSL2/WSLg with the benchmark environment selecting the RTX 4070 Ti through D3D12/Mesa and the current default `cylview` render profile. Your numbers will vary by GPU, driver, render profile, and molecule topology.
 
 For reproducible performance claims, record the exact benchmark command, platform, GPU/renderer path, atom count, perceived bond count, passive FPS/p95, interaction FPS/p95, and per-phase orbit/pan/zoom results.
 
@@ -83,7 +83,7 @@ For reproducible performance claims, record the exact benchmark command, platfor
 │  • Three.js / WebGL renders to <canvas>      │
 │  • OrbitControls — rotate / pan / zoom       │
 │  • Instanced atom and bond rendering         │
-│  • Annotations, material presets, PNG export │
+│  • Annotations, render profiles, PNG export  │
 │  • ResizeObserver keeps canvas crisp         │
 └──────────────────────────────────────────────┘
 ```

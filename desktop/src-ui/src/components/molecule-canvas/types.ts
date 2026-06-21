@@ -20,7 +20,10 @@ import type {
   InstancedMesh,
 } from 'three';
 import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { MoleculeData } from '../../App';
+import type { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import type { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import type { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import type { MoleculeData, ViewOptions } from '../../App';
 
 export interface BondSelectionData {
   atom1Element: string;
@@ -102,6 +105,13 @@ export interface SceneCtx {
     fill: DirectionalLight;
     rim: DirectionalLight;
     topLight: DirectionalLight;
+  };
+  depthCue: {
+    options: ViewOptions;
+    backgroundColor: number;
+    composer: EffectComposer | null;
+    renderPass: RenderPass | null;
+    bokehPass: BokehPass | null;
   };
   lastCameraDistance: number;
   lastMoleculeBox: Box3 | null;
