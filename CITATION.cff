@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use Cylform in your research, please cite it as below."
 type: software
 title: "Cylform: A modern open-source molecular visualization tool"
-version: "0.5.2"
+version: "0.6.0"
 authors:
   - family-names: "Marston"
     given-names: "Sumner K."
@@ -10,4 +10,4 @@ authors:
   - name: "Sylverity Research"
 repository-code: "https://github.com/Summykai/Cylform"
 license: Apache-2.0
-date-released: 2026-06-19
+date-released: 2026-06-24
