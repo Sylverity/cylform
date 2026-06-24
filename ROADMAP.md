@@ -2,11 +2,11 @@
 
 This roadmap tracks completed milestones and upcoming feature work. The main project overview lives in [README.md](README.md).
 
-## Released — v0.5.2
+## Released — v0.6.0
 
-Cylform **0.5.2** adds the CYLview parity milestone: annotations, rendering refinements, and frontend architecture cleanup.
+Cylform **0.6.0** adds the CYLview parity milestone: annotations, rendering refinements, frontend architecture cleanup, and release hardening.
 
-### What's new in 0.5.2
+### What's new in 0.6.0
 
 - **Label font scale** — adjustable label size in the Appearance panel
 - **Å / ° symbol units** — chemistry-style unit symbols with a Settings toggle
@@ -16,6 +16,9 @@ Cylform **0.5.2** adds the CYLview parity milestone: annotations, rendering refi
 - **Angle arcs** — 3D arc visualization for angle measurements
 - **Houkmol quadrant shading** — view-space quadrant tinting in the Houkmol preset
 - **PNG export scale quick-access** — 1× / 2× / 4× dropdown in the View panel
+- **CYLview render profile** — first-class rendering mode with persisted profile selection
+- **Crowded-structure bond perception** — valence-aware filtering avoids long through-space bonds
+- **Release hardening** — age-gated frontend dependency updates for safer installs
 - **Frontend architecture cleanup** — `MoleculeCanvas.tsx` refactored into 9 focused domain modules
 
 ## Released — v0.5.0

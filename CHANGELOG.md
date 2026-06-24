@@ -4,18 +4,15 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
-### Fixed
-- **XYZ bond perception for crowded organic structures** — bounded inferred-bond cutoffs and valence-aware candidate filtering now reject long through-space C-C contacts while preserving ordinary covalent bonds.
-
 ### Planned
 - Multi-frame XYZ trajectory playback, PDB residue-level colouring, and Gaussian output support.
 - Expanded file-format support, animation authoring, and offline render export.
 
 ---
 
-## [0.5.2] - 2026-06-19
+## [0.6.0] - 2026-06-24
 
-CYLview parity milestone — annotations, rendering refinements, and frontend architecture cleanup.
+CYLview parity milestone — annotations, rendering refinements, frontend architecture cleanup, and release hardening.
 
 ### Added
 - **Label font scale slider** (0.75–1.5×) in the Appearance panel.
@@ -26,13 +23,23 @@ CYLview parity milestone — annotations, rendering refinements, and frontend ar
 - **Angle arc mesh** — orange 3D arc appears when 3 atoms are selected for angle measurement.
 - **Houkmol quadrant shading** — view-space quadrant tinting via shader patch when the Houkmol preset is active.
 - **PNG export scale quick-access** dropdown in the View panel (1× / 2× / 4×).
+- **CYLview render profile** promoted as a first-class rendering mode with persisted profile selection and snapshot tooling.
+- **Keyboard shortcut defaults** consolidated around reusable shortcut definitions and documented material-preset shortcuts.
+- **Render profile snapshot tooling** for comparing visual profiles and depth-cue behavior.
 
 ### Changed
 - Refactored `MoleculeCanvas.tsx` (2820 → ~1790 lines) into focused domain modules under `components/molecule-canvas/`:
   `types.ts`, `labels.ts`, `visualStyle.ts`, `camera.ts`, `visibility.ts`, `benchmark.ts`, `geometry.ts`, `picking.ts`, `exportPng.ts`.
 - `renderCurrentViewDataUrl` converted from a long `useCallback` closure to a pure exported function.
+- CYLview depth cues now use profile-specific depth-cue math for clearer publication-style atom and bond separation.
+- Material preset handling now uses centralized preset definitions for UI state, persistence, tests, and shortcuts.
+- Frontend dependencies were refreshed to age-gated current stable releases, with pnpm configured to reject packages published in the last 14 days.
+
+### Fixed
+- **XYZ bond perception for crowded organic structures** — bounded inferred-bond cutoffs and valence-aware candidate filtering now reject long through-space C-C contacts while preserving ordinary covalent bonds.
 - Fixed duplicate `capture-camera-pose` listener registration.
 - Fixed missing `bondSizeScale` dependency in the mesh rebuild effect.
+- Fixed material preset shortcuts and defaults so shortcut labels, persisted settings, and rendered presets stay aligned.
 
 ---
 
