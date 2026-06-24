@@ -25,8 +25,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
 # Tauri (desktop only)
-tauri = { version = "2.0", features = ["wry"] }
-tauri-build = { version = "2.0" }
+tauri = { version = "2.11", features = ["wry"] }
+tauri-build = { version = "2.5" }
 
 [profile.release]
 opt-level = 3
