@@ -55,9 +55,9 @@ export const MATERIAL_PRESETS = {
     bondColor: 0x2f9df4,
   },
   houkmol: {
-    specular: new Color(0.18, 0.18, 0.18),
-    shininess: 36,
-    bondColor: 0x6f8796,
+    specular: new Color(0.4, 0.4, 0.4),
+    shininess: 32,
+    bondColor: 0x000000,
   },
 } satisfies Record<RenderProfileId, { specular: Color; shininess: number; bondColor: number }>;
 

@@ -56,6 +56,8 @@ The React app owns interaction state and the Three.js scene.
 - It is intentionally an orchestrating React component: scene init, event handlers, effects, and JSX live here, while pure helpers and scene internals live in `components/molecule-canvas/`.
 - Atoms are rendered with instanced sphere geometry.
 - Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
+- Render profile behavior is explicit in the renderer: CYLview owns hidden-but-pickable atom spheres and split endpoint-colored cylinders, ball-and-stick owns visible glossy atom spheres and uniform glossy bonds, and Houkmol owns visible glossy atom spheres, black normal bonds, and shader-drawn atom quadrants.
+- All WebGL draws that need final scene output should go through `renderScene(ctx)` so animation, export, preview, and benchmark paths share the same fog and focal-blur behavior.
 - Selection and measurement overlays use separate transient objects.
 - Angle measurements display a 3D arc mesh in the plane of the three selected atoms.
 
@@ -69,6 +71,7 @@ The React app owns interaction state and the Three.js scene.
 | `labels.ts` | Label formatting (`formatDistance`, `formatAngle`), text sanitizing, and rich canvas sub/superscript rendering. |
 | `materialPresets.ts` | Shared element colors and profile material definitions used by the renderer and appearance UI. |
 | `visualStyle.ts` | `applyMaterialPreset`, profile behavior helpers, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
+| `depthCue.ts` | Molecule-relative fog and optional focal-blur rendering. It projects the molecule bounding box along the active camera direction, applies Three.js fog, updates `BokehPass`, and exposes `renderScene(ctx)` as the shared render entry point. |
 | `camera.ts` | Camera sync, preset application, saved-pose restoration, and floor placement. |
 | `visibility.ts` | `buildMoleculeVisibilityIndex`, `isAtomVisible`, and `labelSourceVisible` for hydrogen/visibility filtering. |
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
@@ -100,11 +103,20 @@ Saved presentation state is versioned so future releases can add fields without 
     "render_profile": "cylview",
     "material_preset": "CYLviewLegacy"
   },
-  "camera": {}
+  "camera": {
+    "fogEnabled": true,
+    "fogIntensity": 0.55,
+    "fogDepth": 0.58,
+    "focalBlurEnabled": false,
+    "focalBlurAmount": 0.32,
+    "focalDepth": 0.5
+  }
 }
 ```
 
-Every field has defaults on the Rust side and the TypeScript side. Persisted annotations use one model for atom labels, distances, angles, and dihedrals. Active measurement picking remains transient UI state until the user chooses to save an annotation.
+Every field has defaults on the Rust side and the TypeScript side. Camera defaults are profile-aware: CYLview enables publication-style fog by default, while ball-and-stick and Houkmol keep fog off unless the user enables it. Legacy camera objects that predate `fogDepth`, `focalBlurEnabled`, `focalBlurAmount`, and `focalDepth` are normalized by merging with the resolved render profile's defaults.
+
+Persisted annotations use one model for atom labels, distances, angles, and dihedrals. Active measurement picking remains transient UI state until the user chooses to save an annotation.
 
 Global settings follow a separate precedence rule:
 
@@ -136,11 +148,13 @@ Render profiles are serializable presentation choices. Current profiles are:
 
 - `cylview`: the primary CYLview cylindrical-bond look with hidden atom spheres, split endpoint bond colors, and restrained specular.
 - `ball-stick`: a traditional visible atom sphere profile with uniform glossy bonds.
-- `houkmol`: a flatter figure-preparation profile with visible atoms and view-space quadrant shading via `onBeforeCompile` shader patch.
+- `houkmol`: a flatter figure-preparation profile with a white publication-style background, visible glossy element-colored atoms, black normal bonds, and black view-space quadrant markings via an `onBeforeCompile` shader patch.
 
 The active profile is stored in per-file state as `render_profile`; `material_preset` is still written as a compatibility alias while older saved-state readers exist. Future exporters, such as POV-Ray output, should consume render-profile data rather than inventing separate finish settings.
 
 New molecules use the explicit default render profile from Settings when no per-file presentation state exists. Render profiles do not have letter shortcuts; `H` is reserved for cycling hydrogen visibility.
+
+CYLview's depth cues are part of its primary publication rendering path, not a legacy material effect. Fog is computed from `lastMoleculeBox` projected through the active perspective or orthographic camera, so the Fog and Depth controls act across the molecule's visible depth span instead of camera distance. Optional focal blur uses Three.js `EffectComposer` and `BokehPass` only when enabled; otherwise the renderer draws directly for performance.
 
 ## Extension Points
 
@@ -148,4 +162,5 @@ New molecules use the explicit default render profile from Settings when no per-
 - Add trajectory playback by loading additional frames into `Structure.frames` and updating frontend instance matrices by frame index.
 - Add a persisted annotation type by extending the Rust enum, TypeScript union, and annotations panel rendering.
 - Add a render profile by extending `RenderProfileId`, `renderProfiles.ts`, `materialPresets.ts`, renderer profile helpers, and the Settings/native normalization allowlists.
+- Add or change depth-cue behavior in `depthCue.ts`, then keep `SceneCtx.depthCue`, `ViewOptions`, Rust saved-state normalization, export rendering, preview rendering, and benchmark rendering aligned through `renderScene(ctx)`.
 - Add a bond style by extending `BondKind`, Tauri serialization, TypeScript style mapping, and the existing instanced bond bucket path.

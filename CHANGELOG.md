@@ -21,7 +21,7 @@ CYLview parity milestone — annotations, rendering refinements, frontend archit
 - **Label link lines** — dashed canvas overlay connecting persistent labels to their atom/bond anchors.
 - **Bond size scale slider** (0.5–1.5×) in the Appearance panel.
 - **Angle arc mesh** — orange 3D arc appears when 3 atoms are selected for angle measurement.
-- **Houkmol quadrant shading** — view-space quadrant tinting via shader patch when the Houkmol preset is active.
+- **Houkmol profile tuning** — separate approximate publication-style profile with white background defaults, black normal bonds, glossy element-colored atoms, and shader-drawn black atom quadrants.
 - **PNG export scale quick-access** dropdown in the View panel (1× / 2× / 4×).
 - **CYLview render profile** promoted as a first-class rendering mode with persisted profile selection and snapshot tooling.
 - **Keyboard shortcut defaults** consolidated around reusable shortcut definitions and documented material-preset shortcuts.

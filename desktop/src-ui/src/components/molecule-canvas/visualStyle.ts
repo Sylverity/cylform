@@ -107,11 +107,13 @@ export function applyMaterialPreset(material: MeshPhongMaterial, renderProfile: 
         '#include <color_fragment>',
         `
         #include <color_fragment>
-        // Houkmol quadrant shading
-        float qx = step(0.0, normal.x);
-        float qy = step(0.0, normal.y);
-        float quadrantShade = 0.86 + 0.14 * (qx * 0.6 + qy * 0.4);
-        diffuseColor.rgb *= quadrantShade;
+        // Houkmol-style view-space quadrant markings drawn on the atom surface.
+        float quadrantWidth = 0.055;
+        float quadrantSoftness = 0.018;
+        float verticalMark = 1.0 - smoothstep(quadrantWidth, quadrantWidth + quadrantSoftness, abs(normal.x));
+        float horizontalMark = 1.0 - smoothstep(quadrantWidth, quadrantWidth + quadrantSoftness, abs(normal.y));
+        float quadrantMark = clamp(max(verticalMark, horizontalMark) * 0.92, 0.0, 1.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.0), quadrantMark);
         `
       );
     };

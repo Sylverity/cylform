@@ -136,6 +136,22 @@ describe('presentation persistence', () => {
     expect(defaults.camera.fogDepth).toBe(0.5);
   });
 
+  it('uses Houkmol publication defaults for new presentation state', () => {
+    const settings = testSettings();
+    settings.rendering.defaultRenderProfile = 'houkmol';
+    settings.rendering.defaultMaterialPreset = 'Houkmol';
+
+    const defaults = createDefaultPresentationState(settings);
+
+    expect(defaults.styles.render_profile).toBe('houkmol');
+    expect(defaults.styles.material_preset).toBe('Houkmol');
+    expect(defaults.styles.atom_size_scale).toBe(0.75);
+    expect(defaults.camera.backdropTone).toBe('clean');
+    expect(defaults.camera.fogEnabled).toBe(false);
+    expect(defaults.camera.focalBlurEnabled).toBe(false);
+    expect(defaults.camera.showLabelLinkLines).toBe(true);
+  });
+
   it('uses the resolved render profile for missing camera depth defaults', () => {
     const settings = testSettings();
     const normalized = normalizePresentationState(
@@ -175,6 +191,7 @@ describe('presentation persistence', () => {
     expect(ballStick.styles.material_preset).toBe('CYLview');
     expect(explicitProfile.styles.render_profile).toBe('houkmol');
     expect(explicitProfile.styles.material_preset).toBe('Houkmol');
+    expect(explicitProfile.styles.atom_size_scale).toBe(0.75);
     expect(unknown.styles.render_profile).toBe('ball-stick');
     expect(unknown.styles.material_preset).toBe('CYLview');
   });

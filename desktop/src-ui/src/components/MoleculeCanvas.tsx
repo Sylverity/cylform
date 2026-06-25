@@ -34,6 +34,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
 import { LoadingSpinner } from './LoadingSpinner';
+import { profileViewOptionPatch } from '../persistence';
 import type {
   ElementColorOverrides,
   HydrogenVisibility,
@@ -257,6 +258,7 @@ export function MoleculeCanvas({
   const distancePrecisionRef = useRef(distancePrecision);
   const anglePrecisionRef = useRef(anglePrecision);
   const useSymbolUnitsRef = useRef(useSymbolUnits);
+  const renderProfileRef = useRef<RenderProfileId>(renderProfile);
   const visibilityIndexRef = useRef<MoleculeVisibilityIndex | null>(null);
   const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
@@ -294,6 +296,10 @@ export function MoleculeCanvas({
     anglePrecisionRef.current = anglePrecision;
     useSymbolUnitsRef.current = useSymbolUnits;
   }, [anglePrecision, distancePrecision, useSymbolUnits]);
+
+  useEffect(() => {
+    renderProfileRef.current = renderProfile;
+  }, [renderProfile]);
 
   useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
@@ -512,7 +518,9 @@ export function MoleculeCanvas({
         if (ctx2d) {
           ctx2d.clearRect(0, 0, w, h);
           ctx2d.setLineDash([4, 3]);
-          ctx2d.strokeStyle = 'rgba(180, 160, 120, 0.5)';
+          ctx2d.strokeStyle = renderProfileRef.current === 'houkmol'
+            ? 'rgba(0, 0, 0, 0.72)'
+            : 'rgba(180, 160, 120, 0.5)';
           ctx2d.lineWidth = 1;
           for (const label of persistentLabelsRef.current) {
             if (!label.visible) continue;
@@ -1499,7 +1507,9 @@ export function MoleculeCanvas({
 
     const publicationMood = renderProfile === 'cylview'
       ? { ambient: 0.78, key: 0.96, fill: 0.68, rim: 0.14, topLight: 0.18 }
-      : { ambient: 0.52, key: 1.65, fill: 0.72, rim: 0.24, topLight: 0.35 };
+      : renderProfile === 'houkmol'
+        ? { ambient: 0.65, key: 1.08, fill: 0.5, rim: 0.1, topLight: 0.18 }
+        : { ambient: 0.52, key: 1.65, fill: 0.72, rim: 0.24, topLight: 0.35 };
     const moods = {
       publication: publicationMood,
       'soft-studio': { ambient: 0.72, key: 1.12, fill: 0.92, rim: 0.2, topLight: 0.46 },
@@ -1569,7 +1579,11 @@ export function MoleculeCanvas({
   return (
     <div
       ref={containerRef}
-      className={previewMode ? 'molecule-canvas preview-render-canvas' : 'molecule-canvas'}
+      className={[
+        'molecule-canvas',
+        `render-profile-${renderProfile}`,
+        previewMode ? 'preview-render-canvas' : '',
+      ].filter(Boolean).join(' ')}
       style={{ '--label-font-scale': viewOptions.labelFontScale } as React.CSSProperties}
     >
       {!previewMode && (
@@ -1654,7 +1668,9 @@ export function MoleculeCanvas({
                 value={renderProfile}
                 onKeyDown={preventMaterialPresetShortcutOverlap}
                 onChange={(event) => {
-                  onRenderProfileChange(event.target.value as RenderProfileId);
+                  const nextProfile = event.target.value as RenderProfileId;
+                  onRenderProfileChange(nextProfile);
+                  patchViewOptions(profileViewOptionPatch(nextProfile));
                   event.currentTarget.blur();
                 }}
               >
