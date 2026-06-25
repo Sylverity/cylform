@@ -327,10 +327,11 @@ fn render_profile_to_material_preset(profile: &str) -> String {
 
 fn default_presentation_camera(render_profile: &str) -> Value {
     let cylview = render_profile == "cylview";
+    let houkmol = render_profile == "houkmol";
     json!({
         "showFloor": false,
         "showGrid": false,
-        "backdropTone": "paper",
+        "backdropTone": if houkmol { "clean" } else { "paper" },
         "customBackdropHex": "#ffffff",
         "projection": "perspective",
         "lightingMood": "publication",
@@ -344,7 +345,7 @@ fn default_presentation_camera(render_profile: &str) -> Value {
         "autoRotateSpeed": 0.35,
         "labelFontScale": 1.0,
         "bondSizeScale": 1.0,
-        "showLabelLinkLines": false
+        "showLabelLinkLines": houkmol
     })
 }
 
@@ -499,6 +500,13 @@ fn normalize_presentation_envelope(
     );
     envelope.styles.render_profile = render_profile.clone();
     envelope.styles.material_preset = render_profile_to_material_preset(&render_profile);
+    if envelope.styles.atom_size_scale.is_none() {
+        envelope.styles.atom_size_scale = Some(if render_profile == "houkmol" {
+            0.75
+        } else {
+            1.0
+        });
+    }
     envelope.camera = normalize_presentation_camera(envelope.camera, &render_profile);
     serde_json::to_value(envelope)
         .map_err(|error| format!("Could not normalize presentation state: {error}"))
@@ -2246,6 +2254,7 @@ mod tests {
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
+        assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["styles"]["render_profile"], json!("cylview"));
         assert_eq!(
             normalized["styles"]["material_preset"],
@@ -2292,6 +2301,8 @@ mod tests {
         );
         assert_eq!(normalized["styles"]["render_profile"], json!("houkmol"));
         assert_eq!(normalized["styles"]["material_preset"], json!("Houkmol"));
+        assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.25));
+        assert_eq!(normalized["camera"]["backdropTone"], json!("clean"));
         assert_eq!(normalized["camera"]["projection"], json!("orthographic"));
         assert_eq!(normalized["camera"]["fogEnabled"], json!(false));
         assert_eq!(normalized["camera"]["fogIntensity"], json!(0.45));
@@ -2299,6 +2310,7 @@ mod tests {
         assert_eq!(normalized["camera"]["focalBlurEnabled"], json!(false));
         assert_eq!(normalized["camera"]["focalBlurAmount"], json!(0.32));
         assert_eq!(normalized["camera"]["focalDepth"], json!(0.5));
+        assert_eq!(normalized["camera"]["showLabelLinkLines"], json!(true));
         assert_eq!(normalized["poses"][0]["id"], json!("pose-1"));
     }
 
@@ -2317,6 +2329,7 @@ mod tests {
 
         assert_eq!(normalized["styles"]["render_profile"], json!("ball-stick"));
         assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
+        assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["camera"]["fogEnabled"], json!(false));
         assert_eq!(normalized["camera"]["fogDepth"], json!(0.5));
 
@@ -2339,6 +2352,23 @@ mod tests {
         );
         assert_eq!(explicit["camera"]["fogEnabled"], json!(true));
         assert_eq!(explicit["camera"]["fogDepth"], json!(0.58));
+
+        let houkmol = normalize_presentation_state(json!({
+            "version": 1,
+            "annotations": [],
+            "hidden_atoms": [],
+            "poses": [],
+            "styles": {
+                "render_profile": "houkmol"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(houkmol["styles"]["material_preset"], json!("Houkmol"));
+        assert_eq!(houkmol["styles"]["atom_size_scale"], json!(0.75));
+        assert_eq!(houkmol["camera"]["fogEnabled"], json!(false));
+        assert_eq!(houkmol["camera"]["focalBlurEnabled"], json!(false));
+        assert_eq!(houkmol["camera"]["showLabelLinkLines"], json!(true));
     }
 
     #[test]

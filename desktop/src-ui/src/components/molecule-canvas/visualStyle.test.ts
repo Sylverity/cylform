@@ -9,7 +9,7 @@ import {
   renderProfileShowsAtomSpheres,
   renderProfileUsesSplitCylinderBonds,
 } from './visualStyle';
-import { defaultElementColorHex } from './materialPresets';
+import { defaultElementColorHex, MATERIAL_PRESETS } from './materialPresets';
 
 describe('render profiles', () => {
   it('preserves CYLview element colors and adds fallback colors for extended elements', () => {
@@ -41,7 +41,13 @@ describe('render profiles', () => {
     applyMaterialFinish(material, 'houkmol');
 
     expect(material.color.getHex()).toBe(0x123456);
-    expect(material.shininess).toBe(36);
+    expect(material.shininess).toBe(32);
+  });
+
+  it('keeps Houkmol normal bonds black without changing the other profiles', () => {
+    expect(MATERIAL_PRESETS.houkmol.bondColor).toBe(0x000000);
+    expect(MATERIAL_PRESETS.cylview.bondColor).toBe(0x129bdd);
+    expect(MATERIAL_PRESETS['ball-stick'].bondColor).toBe(0x2f9df4);
   });
 
   it('keeps CYLview geometry-forward while ball-and-stick renders atom spheres', () => {

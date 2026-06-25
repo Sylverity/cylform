@@ -179,6 +179,21 @@
   color: #25517d;
 }
 
+.render-profile-houkmol .bond-distance-label,
+.render-profile-houkmol .angle-measure-label,
+.render-profile-houkmol .dihedral-measure-label,
+.render-profile-houkmol .persistent-label,
+.render-profile-houkmol .persistent-label-distance,
+.render-profile-houkmol .persistent-label-angle,
+.render-profile-houkmol .persistent-label-dihedral {
+  padding: 0;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #000000;
+  box-shadow: none;
+}
+
 /* --------------------------------------------------------------------------
    Canvas placeholder (no molecule loaded)
    -------------------------------------------------------------------------- */

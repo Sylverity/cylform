@@ -30,13 +30,15 @@ export type NormalizedPresentationState = PresentationState & {
   camera: ViewOptions;
 };
 
-export function createDefaultPresentationState(
+export function defaultAtomSizeScaleForProfile(renderProfile: RenderProfileId): number {
+  return renderProfile === 'houkmol' ? 0.75 : 1;
+}
+
+export function defaultViewOptionsForProfile(
+  renderProfile: RenderProfileId,
   settings: AppSettings,
-): NormalizedPresentationState {
-  const defaultRenderProfile = normalizeRenderProfile(
-    settings.rendering.defaultRenderProfile ?? settings.rendering.defaultMaterialPreset,
-  );
-  const defaultFogEnabled = defaultRenderProfile === 'cylview';
+): ViewOptions {
+  const defaultFogEnabled = renderProfile === 'cylview';
   const showFloorGrid = settings.rendering.showFloorGridByDefault;
   const backdropTone =
     settings.rendering.defaultBackground === 'black'
@@ -46,38 +48,72 @@ export function createDefaultPresentationState(
         : 'clean';
 
   return {
+    showFloor: showFloorGrid,
+    showGrid: showFloorGrid,
+    backdropTone,
+    customBackdropHex: settings.rendering.customBackgroundHex,
+    projection: settings.rendering.defaultProjection,
+    lightingMood: settings.rendering.defaultLighting,
+    fogEnabled: defaultFogEnabled,
+    fogIntensity: defaultFogEnabled ? 0.55 : 0.45,
+    fogDepth: defaultFogEnabled ? 0.58 : 0.5,
+    focalBlurEnabled: false,
+    focalBlurAmount: 0.32,
+    focalDepth: 0.5,
+    autoRotate: false,
+    autoRotateSpeed: 0.35,
+    labelFontScale: 1.0,
+    bondSizeScale: 1.0,
+    showLabelLinkLines: renderProfile === 'houkmol',
+  };
+}
+
+export function profileViewOptionPatch(renderProfile: RenderProfileId): Partial<ViewOptions> {
+  if (renderProfile === 'cylview') {
+    return {
+      backdropTone: 'clean',
+      fogEnabled: true,
+      fogIntensity: 0.55,
+      fogDepth: 0.58,
+      focalBlurEnabled: false,
+      showLabelLinkLines: false,
+    };
+  }
+  if (renderProfile === 'houkmol') {
+    return {
+      backdropTone: 'clean',
+      fogEnabled: false,
+      fogIntensity: 0.45,
+      fogDepth: 0.5,
+      focalBlurEnabled: false,
+      showLabelLinkLines: true,
+    };
+  }
+  return {};
+}
+
+export function createDefaultPresentationState(
+  settings: AppSettings,
+): NormalizedPresentationState {
+  const defaultRenderProfile = normalizeRenderProfile(
+    settings.rendering.defaultRenderProfile ?? settings.rendering.defaultMaterialPreset,
+  );
+
+  return {
     version: 1,
     annotations: [],
     hidden_atoms: [],
     styles: {
       hydrogen_visibility: settings.chemistry.defaultHydrogenVisibility,
       element_color_overrides: {},
-      atom_size_scale: 1,
+      atom_size_scale: defaultAtomSizeScaleForProfile(defaultRenderProfile),
       atom_style_overrides: {},
       bond_style_overrides: {},
       render_profile: defaultRenderProfile,
       material_preset: renderProfileToLegacyMaterialPreset(defaultRenderProfile),
     },
     poses: [],
-    camera: {
-      showFloor: showFloorGrid,
-      showGrid: showFloorGrid,
-      backdropTone,
-      customBackdropHex: settings.rendering.customBackgroundHex,
-      projection: settings.rendering.defaultProjection,
-      lightingMood: settings.rendering.defaultLighting,
-      fogEnabled: defaultFogEnabled,
-      fogIntensity: defaultFogEnabled ? 0.55 : 0.45,
-      fogDepth: defaultFogEnabled ? 0.58 : 0.5,
-      focalBlurEnabled: false,
-      focalBlurAmount: 0.32,
-      focalDepth: 0.5,
-      autoRotate: false,
-      autoRotateSpeed: 0.35,
-      labelFontScale: 1.0,
-      bondSizeScale: 1.0,
-      showLabelLinkLines: false,
-    },
+    camera: defaultViewOptionsForProfile(defaultRenderProfile, settings),
   };
 }
 
@@ -114,7 +150,7 @@ export function normalizePresentationState(
       hydrogen_visibility: styles.hydrogen_visibility ?? defaults.styles.hydrogen_visibility,
       element_color_overrides:
         styles.element_color_overrides ?? defaults.styles.element_color_overrides,
-      atom_size_scale: styles.atom_size_scale ?? defaults.styles.atom_size_scale,
+      atom_size_scale: styles.atom_size_scale ?? defaultAtomSizeScaleForProfile(renderProfile),
       atom_style_overrides: styles.atom_style_overrides ?? defaults.styles.atom_style_overrides,
       bond_style_overrides: styles.bond_style_overrides ?? defaults.styles.bond_style_overrides,
       render_profile: renderProfile,
