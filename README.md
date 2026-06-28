@@ -155,7 +155,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev
 
 ```bash
 # Clone the repository
-git clone https://github.com/Summykai/Cylform.git
+git clone https://github.com/Sylverity/cylform.git
 cd cylform
 
 # Install frontend dependencies
@@ -189,6 +189,8 @@ Cylform parses `.xyz` and `.pdb` files as plain text. No embedded scripts or mac
 
 Apache 2.0. See [LICENSE](LICENSE).
 
+Dependency license scan: Cylform's Rust and frontend dependencies are primarily MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, or similar permissive licenses, with MPL-2.0 components present in the build/runtime toolchain. No GPL or AGPL dependencies were found in the current dependency metadata.
+
 ---
 
 ## Citation
@@ -200,13 +202,12 @@ cff-version: 1.2.0
 message: "If you use Cylform in your research, please cite it as below."
 type: software
 title: "Cylform: A modern open-source molecular visualization tool"
-version: "0.6.0"
+version: "0.6.1"
 authors:
   - family-names: "Marston"
     given-names: "Sumner K."
     affiliation: "Sylverity Research"
   - name: "Sylverity Research"
-repository-code: "https://github.com/Summykai/Cylform"
+repository-code: "https://github.com/Sylverity/cylform"
 license: Apache-2.0
-date-released: 2026-06-24
 ```

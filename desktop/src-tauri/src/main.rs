@@ -1767,7 +1767,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
             "Publication-minded molecular viewing for XYZ and PDB structures.",
         ))
         .license(Some("Apache-2.0"))
-        .website(Some("https://github.com/Sylverity/Cylform"))
+        .website(Some("https://github.com/Sylverity/cylform"))
         .website_label(Some("Cylform on GitHub"))
         .build();
 

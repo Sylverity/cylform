@@ -4,6 +4,18 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
+### Changed
+- Bumped the development version to 0.6.1 across Rust, Tauri, frontend, and citation metadata.
+- Removed the citation release date while 0.6.1 remains unreleased on main.
+- Normalized repository metadata and source links to `https://github.com/Sylverity/cylform`.
+- Updated the Apache 2.0 appendix copyright holder to Sylverity LLC.
+- Documented dependency-license scan results in the README.
+
+### Verified
+- Confirmed Rust workspace packages inherit the `Apache-2.0` SPDX license declaration.
+- Confirmed repository license, README license section and badge, and community health files remain present.
+- Checked Rust and frontend dependency license metadata; no GPL or AGPL dependencies were found.
+
 ### Planned
 - Multi-frame XYZ trajectory playback, PDB residue-level colouring, and Gaussian output support.
 - Expanded file-format support, animation authoring, and offline render export.
