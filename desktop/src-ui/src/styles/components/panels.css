@@ -265,6 +265,11 @@
   background: var(--c-bg-primary);
 }
 
+.group-row.highlighted {
+  border-color: var(--c-accent-border);
+  background: var(--c-accent-subtle);
+}
+
 .group-row-main {
   min-width: 0;
 }
@@ -297,6 +302,18 @@
 .group-actions {
   display: flex;
   gap: var(--space-1);
+}
+
+.group-actions .toggle-active {
+  border-color: var(--c-accent-border);
+  background: var(--c-accent);
+  color: #fff;
+}
+
+.group-actions .toggle-active:hover:not(:disabled) {
+  border-color: var(--c-accent-border);
+  background: var(--c-accent-strong);
+  color: #fff;
 }
 
 /* Label lists */
