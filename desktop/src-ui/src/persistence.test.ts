@@ -85,6 +85,8 @@ describe('presentation persistence', () => {
       poses: [],
       annotations: [annotation],
       hiddenAtomIndices: [4],
+      hiddenGroupIds: ['A:ALA:1:', 'A:GLY:2:'],
+      highlightedGroupIds: ['A:GLY:2:'],
       hydrogenVisibility: 'hide-c-h',
       elementColorOverrides: { O: '#ff0000' },
       atomSizeScale: 1.2,
@@ -101,6 +103,10 @@ describe('presentation persistence', () => {
 
     expect(normalized.annotations).toEqual([annotation]);
     expect(normalized.hidden_atoms).toEqual([4]);
+    expect(normalized.group_state).toEqual({
+      hidden_group_ids: ['A:ALA:1:', 'A:GLY:2:'],
+      highlighted_group_ids: ['A:GLY:2:'],
+    });
     expect(normalized.styles.hydrogen_visibility).toBe('hide-c-h');
     expect(normalized.styles.bond_style_overrides?.['0-1']).toEqual({ type: 'thin' });
   });
@@ -113,6 +119,10 @@ describe('presentation persistence', () => {
     );
 
     expect(normalized.camera).toEqual(defaults.camera);
+    expect(normalized.group_state).toEqual({
+      hidden_group_ids: [],
+      highlighted_group_ids: [],
+    });
     expect(normalized.styles.hydrogen_visibility).toBe('shown');
     expect(normalized.styles.render_profile).toBe('cylview');
     expect(normalized.styles.material_preset).toBe('CYLviewLegacy');
@@ -121,6 +131,28 @@ describe('presentation persistence', () => {
     expect(normalized.camera.focalBlurEnabled).toBe(false);
     expect(normalized.camera.focalBlurAmount).toBe(0.32);
     expect(normalized.camera.focalDepth).toBe(0.5);
+  });
+
+  it('normalizes malformed group state ids without rejecting saved presentation state', () => {
+    const normalized = normalizePresentationState(
+      {
+        version: 1,
+        annotations: [],
+        hidden_atoms: [],
+        poses: [],
+        group_state: {
+          hidden_group_ids: ['A:ALA:1:', '', 'A:ALA:1:', 42 as never],
+          highlighted_group_ids: ['A:GLY:2:', null as never, ' A:SER:3: '],
+        },
+        styles: {},
+      },
+      testSettings(),
+    );
+
+    expect(normalized.group_state).toEqual({
+      hidden_group_ids: ['A:ALA:1:'],
+      highlighted_group_ids: ['A:GLY:2:', 'A:SER:3:'],
+    });
   });
 
   it('keeps alternate render profile defaults free of automatic fog', () => {

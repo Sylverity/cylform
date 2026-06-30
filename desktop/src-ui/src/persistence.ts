@@ -4,6 +4,7 @@ import type {
   AtomStyleOverride,
   BondStyleOverride,
   ElementColorOverrides,
+  GroupPresentationState,
   HydrogenVisibility,
   PresentationState,
   RenderProfileId,
@@ -17,6 +18,8 @@ export interface PresentationStateParts {
   poses: SavedPose[];
   annotations: Annotation[];
   hiddenAtomIndices: number[];
+  hiddenGroupIds: string[];
+  highlightedGroupIds: string[];
   hydrogenVisibility: HydrogenVisibility;
   elementColorOverrides: ElementColorOverrides;
   atomSizeScale: number;
@@ -28,6 +31,7 @@ export interface PresentationStateParts {
 
 export type NormalizedPresentationState = PresentationState & {
   camera: ViewOptions;
+  group_state: GroupPresentationState;
 };
 
 export function defaultAtomSizeScaleForProfile(renderProfile: RenderProfileId): number {
@@ -103,6 +107,10 @@ export function createDefaultPresentationState(
     version: 1,
     annotations: [],
     hidden_atoms: [],
+    group_state: {
+      hidden_group_ids: [],
+      highlighted_group_ids: [],
+    },
     styles: {
       hydrogen_visibility: settings.chemistry.defaultHydrogenVisibility,
       element_color_overrides: {},
@@ -114,6 +122,31 @@ export function createDefaultPresentationState(
     },
     poses: [],
     camera: defaultViewOptionsForProfile(defaultRenderProfile, settings),
+  };
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    normalized.push(id);
+  }
+
+  return normalized;
+}
+
+function normalizeGroupState(
+  groupState: PresentationState['group_state'] | null | undefined,
+): GroupPresentationState {
+  return {
+    hidden_group_ids: normalizeStringList(groupState?.hidden_group_ids),
+    highlighted_group_ids: normalizeStringList(groupState?.highlighted_group_ids),
   };
 }
 
@@ -145,6 +178,7 @@ export function normalizePresentationState(
     version: 1,
     annotations: Array.isArray(state?.annotations) ? state.annotations : defaults.annotations,
     hidden_atoms: Array.isArray(state?.hidden_atoms) ? state.hidden_atoms : defaults.hidden_atoms,
+    group_state: normalizeGroupState(state?.group_state),
     poses: Array.isArray(state?.poses) ? state.poses : defaults.poses,
     styles: {
       hydrogen_visibility: styles.hydrogen_visibility ?? defaults.styles.hydrogen_visibility,
@@ -166,6 +200,10 @@ export function serializePresentationState(parts: PresentationStateParts): Prese
     poses: parts.poses,
     annotations: parts.annotations,
     hidden_atoms: parts.hiddenAtomIndices,
+    group_state: {
+      hidden_group_ids: parts.hiddenGroupIds,
+      highlighted_group_ids: parts.highlightedGroupIds,
+    },
     styles: {
       hydrogen_visibility: parts.hydrogenVisibility,
       element_color_overrides: parts.elementColorOverrides,
