@@ -460,6 +460,14 @@ impl Default for PresentationStyles {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+struct PresentationGroupState {
+    #[serde(default)]
+    hidden_group_ids: Vec<String>,
+    #[serde(default)]
+    highlighted_group_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct PresentationStateEnvelope {
     #[serde(default = "presentation_state_version")]
@@ -470,6 +478,8 @@ struct PresentationStateEnvelope {
     annotations: Vec<Annotation>,
     #[serde(default)]
     hidden_atoms: Vec<usize>,
+    #[serde(default)]
+    group_state: PresentationGroupState,
     #[serde(default)]
     styles: PresentationStyles,
     #[serde(default)]
@@ -483,6 +493,7 @@ impl Default for PresentationStateEnvelope {
             poses: Value::Array(Vec::new()),
             annotations: Vec::new(),
             hidden_atoms: Vec::new(),
+            group_state: PresentationGroupState::default(),
             styles: PresentationStyles::default(),
             camera: Value::Null,
         }
@@ -1263,6 +1274,7 @@ fn legacy_label_to_annotation(label: &Value) -> Value {
 fn normalize_presentation_state(mut value: Value) -> Result<Value, String> {
     if value.get("annotations").is_some()
         || value.get("hidden_atoms").is_some()
+        || value.get("group_state").is_some()
         || value.get("styles").is_some()
         || value.get("camera").is_some()
         || value.get("poses").is_some()
@@ -1294,6 +1306,10 @@ fn normalize_presentation_state(mut value: Value) -> Result<Value, String> {
         "poses": value_array(value.get("savedPoses")),
         "annotations": legacy_labels,
         "hidden_atoms": value.get("hiddenAtomIndices").cloned().unwrap_or_else(|| json!([])),
+        "group_state": {
+            "hidden_group_ids": [],
+            "highlighted_group_ids": []
+        },
         "styles": {
             "hydrogen_visibility": value.get("hydrogenVisibility").cloned(),
             "element_color_overrides": value_object(value.get("elementColorOverrides")),
@@ -2253,6 +2269,11 @@ mod tests {
         assert_eq!(normalized["poses"], json!([]));
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
+        assert_eq!(normalized["group_state"]["hidden_group_ids"], json!([]));
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!([])
+        );
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
         assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["styles"]["render_profile"], json!("cylview"));
@@ -2295,6 +2316,11 @@ mod tests {
         assert_eq!(normalized["annotations"][0]["type"], json!("Distance"));
         assert_eq!(normalized["annotations"][0]["atoms"], json!([0, 1]));
         assert_eq!(normalized["hidden_atoms"], json!([3, 5]));
+        assert_eq!(normalized["group_state"]["hidden_group_ids"], json!([]));
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!([])
+        );
         assert_eq!(
             normalized["styles"]["hydrogen_visibility"],
             json!("hide-c-h")
@@ -2320,6 +2346,10 @@ mod tests {
             "version": 1,
             "annotations": [],
             "hidden_atoms": [],
+            "group_state": {
+                "hidden_group_ids": ["A:ALA:1:"],
+                "highlighted_group_ids": ["A:GLY:2:"]
+            },
             "poses": [],
             "styles": {
                 "material_preset": "CYLview"
@@ -2328,6 +2358,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(normalized["styles"]["render_profile"], json!("ball-stick"));
+        assert_eq!(
+            normalized["group_state"]["hidden_group_ids"],
+            json!(["A:ALA:1:"])
+        );
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!(["A:GLY:2:"])
+        );
         assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
         assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["camera"]["fogEnabled"], json!(false));

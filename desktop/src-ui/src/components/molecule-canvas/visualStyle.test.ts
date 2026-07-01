@@ -4,11 +4,14 @@ import {
   applyMaterialFinish,
   applyMaterialPreset,
   atomMaterial,
+  atomDisplayRadius,
   atomColorHex,
   legacyElementColorHex,
+  moleculeBatchGeometries,
   renderProfileShowsAtomSpheres,
   renderProfileUsesSplitCylinderBonds,
 } from './visualStyle';
+import type { SceneCtx } from './types';
 import { defaultElementColorHex, MATERIAL_PRESETS } from './materialPresets';
 
 describe('render profiles', () => {
@@ -57,5 +60,21 @@ describe('render profiles', () => {
     expect(renderProfileShowsAtomSpheres('ball-stick')).toBe(true);
     expect(renderProfileUsesSplitCylinderBonds('houkmol')).toBe(false);
     expect(renderProfileShowsAtomSpheres('houkmol')).toBe(true);
+  });
+
+  it('uses capped cylinders so straight-on tube ends are not hollow', () => {
+    const ctx = {
+      sphereGeometryCache: new Map(),
+      cylinderGeometryCache: new Map(),
+    } as unknown as SceneCtx;
+    const { cylGeom } = moleculeBatchGeometries(ctx, 20, 20);
+
+    expect(cylGeom.parameters.openEnded).toBe(false);
+  });
+
+  it('keeps default carbon atoms large enough to cover normal bond ends', () => {
+    const normalBondRadius = 0.08 * 0.82;
+
+    expect(atomDisplayRadius('C')).toBeGreaterThan(normalBondRadius * 2);
   });
 });

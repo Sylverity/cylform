@@ -4,7 +4,6 @@ import type {
   HydrogenVisibility,
   MoleculeData,
   PersistentLabel,
-  MoleculeGroup,
   PoseLibraryEntry,
   SavedPose,
   SelectionMode,
@@ -13,6 +12,7 @@ import type {
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
 } from '../App';
+import { summarizeMoleculeGroups } from '../groupVisibility';
 
 function clearSelection(): void {
   window.dispatchEvent(new CustomEvent('clear-selection'));
@@ -89,43 +89,12 @@ function metadataSummary(moleculeData: MoleculeData) {
   };
 }
 
-function summarizeGroups(groups: MoleculeGroup[], hiddenAtomSet: Set<number>) {
-  const summaries = new Map<string, {
-    ids: string[];
-    label: string;
-    residueName: string;
-    moleculeCount: number;
-    atomCount: number;
-    hiddenCount: number;
-  }>();
-
-  for (const group of groups) {
-    const residueName = group.residueName ?? 'Group';
-    const summary = summaries.get(residueName) ?? {
-      ids: [],
-      label: residueName,
-      residueName,
-      moleculeCount: 0,
-      atomCount: 0,
-      hiddenCount: 0,
-    };
-    summary.ids.push(group.id);
-    summary.moleculeCount += 1;
-    summary.atomCount += group.atomIndices.length;
-    if (group.atomIndices.every((atomIndex) => hiddenAtomSet.has(atomIndex))) {
-      summary.hiddenCount += 1;
-    }
-    summaries.set(residueName, summary);
-  }
-
-  return Array.from(summaries.values())
-    .sort((a, b) => b.moleculeCount - a.moleculeCount || a.label.localeCompare(b.label));
-}
-
 interface InfoPanelProps {
   moleculeData: MoleculeData | null;
   hydrogenVisibility: HydrogenVisibility;
   hiddenAtomIndices: number[];
+  hiddenGroupIds: string[];
+  highlightedGroupIds: string[];
   selectedBond: SelectedBondMeasurement | null;
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
@@ -267,6 +236,8 @@ export function InfoPanel({
   moleculeData,
   hydrogenVisibility,
   hiddenAtomIndices,
+  hiddenGroupIds,
+  highlightedGroupIds,
   selectedBond,
   selectedAngle,
   selectedDihedral,
@@ -363,7 +334,9 @@ export function InfoPanel({
     selectionSummary.bondCount > 0,
   );
   const sourceMetadata = moleculeData ? metadataSummary(moleculeData) : null;
-  const groupSummaries = moleculeData ? summarizeGroups(moleculeData.groups, hiddenAtomSet) : [];
+  const groupSummaries = moleculeData
+    ? summarizeMoleculeGroups(moleculeData.groups, hiddenGroupIds, highlightedGroupIds)
+    : [];
   const canAddMeasurementLabel = Boolean(
     selectedBond ||
     (selectedAngle?.stage === 3 && selectedAngle.anchor) ||
@@ -837,22 +810,33 @@ export function InfoPanel({
           </div>
           <div className="group-list">
             {groupSummaries.slice(0, 200).map((group) => (
-              <div key={group.residueName} className="group-row">
+              <div key={group.key} className={group.allHighlighted ? 'group-row highlighted' : 'group-row'}>
                 <div className="group-row-main">
-                  <span className={group.hiddenCount === group.moleculeCount ? 'group-name muted' : 'group-name'}>
+                  <span className={group.allHidden ? 'group-name muted' : 'group-name'}>
                     {group.label}
                   </span>
                   <span className="group-detail">
                     {group.moleculeCount.toLocaleString()} mol · {group.atomCount.toLocaleString()} atoms
                     {group.hiddenCount > 0 && ` · ${group.hiddenCount.toLocaleString()} hidden`}
+                    {group.highlightedCount > 0 && ` · ${group.highlightedCount.toLocaleString()} highlighted`}
                   </span>
                 </div>
                 <div className="group-actions">
-                  <button type="button" className="color-reset" onClick={() => onHighlightGroups(group.ids)}>
-                    Highlight
+                  <button
+                    type="button"
+                    className={group.allHighlighted ? 'color-reset toggle-active' : 'color-reset'}
+                    aria-pressed={group.partiallyHighlighted ? 'mixed' : group.allHighlighted}
+                    onClick={() => onHighlightGroups(group.ids)}
+                  >
+                    {group.allHighlighted ? 'Unhighlight' : 'Highlight'}
                   </button>
-                  <button type="button" className="color-reset" onClick={() => onHideGroups(group.ids)}>
-                    Hide
+                  <button
+                    type="button"
+                    className={group.allHidden ? 'color-reset toggle-active' : 'color-reset'}
+                    aria-pressed={group.partiallyHidden ? 'mixed' : group.allHidden}
+                    onClick={() => onHideGroups(group.ids)}
+                  >
+                    {group.allHidden ? 'Show' : 'Hide'}
                   </button>
                 </div>
               </div>
