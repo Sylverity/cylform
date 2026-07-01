@@ -561,3 +561,22 @@
 .export-action-row button:last-child:nth-child(3) {
   grid-column: 1 / -1;
 }
+
+.frame-transport {
+  display: grid;
+  gap: var(--space-1-5);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--c-border-subtle);
+}
+
+.frame-button-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+.frame-button-row button {
+  min-width: 0;
+  white-space: nowrap;
+}

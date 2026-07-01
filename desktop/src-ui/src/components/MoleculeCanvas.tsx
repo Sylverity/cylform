@@ -181,6 +181,13 @@ interface Props {
   selectedDihedral: SelectedDihedralMeasurement | null;
   persistentLabels: PersistentLabel[];
   savedPoses: SavedPose[];
+  frameIndex: number;
+  frameCount: number;
+  isFramePlaying: boolean;
+  framePlaybackSpeed: number;
+  onFrameChange: (frameIndex: number) => Promise<MoleculeData | null>;
+  onFramePlaybackToggle: () => void;
+  onFramePlaybackSpeedChange: (speed: number) => void;
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
@@ -236,6 +243,13 @@ export function MoleculeCanvas({
   selectedDihedral,
   persistentLabels,
   savedPoses,
+  frameIndex,
+  frameCount,
+  isFramePlaying,
+  framePlaybackSpeed,
+  onFrameChange,
+  onFramePlaybackToggle,
+  onFramePlaybackSpeedChange,
   selectionMode,
   selectionSummary,
   onBondSelected,
@@ -322,6 +336,16 @@ export function MoleculeCanvas({
   useEffect(() => {
     visibilityIndexRef.current = visibilityIndex;
   }, [visibilityIndex]);
+
+  useEffect(() => {
+    setExportSettings((current) => ({
+      ...current,
+      frameStart: Math.min(Math.max(1, current.frameStart), Math.max(1, frameCount)),
+      frameEnd: current.frameEnd <= 1
+        ? Math.max(1, frameCount)
+        : Math.min(Math.max(1, current.frameEnd), Math.max(1, frameCount)),
+    }));
+  }, [frameCount]);
 
   // ------------------------------------------------------------------
   // Init Three.js once
@@ -1128,7 +1152,7 @@ export function MoleculeCanvas({
     const {
       molGroup, perspectiveCamera, camera, controls, atomMats, bondMat, selectedBondMat, selectedAtomMat,
     } = ctx;
-    const shouldFitCamera = moleculeData !== previousMoleculeDataRef.current;
+    const shouldFitCamera = moleculeData?.path !== previousMoleculeDataRef.current?.path;
 
     // Clear previous molecule batches while keeping shared base materials alive.
     const sharedAtomMaterials = new Set(atomMats.values());
@@ -1577,12 +1601,12 @@ export function MoleculeCanvas({
     setExportSettings((current) => ({ ...current, ...patch }));
   };
 
-  const currentPublicationState = () => {
+  const currentPublicationState = (data: MoleculeData | null = moleculeData) => {
     const ctx = ctxRef.current;
-    if (!ctx || !moleculeData) return null;
+    if (!ctx || !data) return null;
     return capturePublicationRenderState({
       ctx,
-      moleculeData,
+      moleculeData: data,
       renderProfile,
       viewOptions,
       hydrogenVisibility,
@@ -1596,6 +1620,37 @@ export function MoleculeCanvas({
     });
   };
 
+  const frameIndicesForExport = () => {
+    if (frameCount <= 1 || exportSettings.frameSelection === 'current') return [frameIndex];
+    const count = Math.max(1, frameCount);
+    const start = Math.min(count - 1, Math.max(0, Math.round(exportSettings.frameStart) - 1));
+    const end = Math.min(count - 1, Math.max(0, Math.round(exportSettings.frameEnd) - 1));
+    const step = exportSettings.frameSelection === 'range'
+      ? 1
+      : Math.max(1, Math.round(exportSettings.frameStep));
+    const first = Math.min(start, end);
+    const last = Math.max(start, end);
+    const indices: number[] = [];
+    for (let index = first; index <= last; index += step) {
+      indices.push(index);
+    }
+    return indices.length > 0 ? indices : [frameIndex];
+  };
+
+  const waitForFrameRender = async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  };
+
+  const numberedPngPath = (targetPath: string, frame: number, sequenceIndex: number, sequenceLength: number) => {
+    if (sequenceLength <= 1) return targetPath;
+    const extensionIndex = targetPath.toLowerCase().endsWith('.png') ? targetPath.length - 4 : targetPath.length;
+    const base = targetPath.slice(0, extensionIndex);
+    const suffix = String(frame + 1).padStart(4, '0');
+    const collisionSuffix = sequenceIndex > 0 ? '' : '';
+    return `${base}_${suffix}${collisionSuffix}.png`;
+  };
+
   const runPublicationRender = async (purpose: 'preview' | 'save') => {
     const ctx = ctxRef.current;
     const renderState = currentPublicationState();
@@ -1607,6 +1662,7 @@ export function MoleculeCanvas({
     exportCancelRef.current = false;
     try {
       let targetPath: string | null = null;
+      const frameIndices = purpose === 'save' ? frameIndicesForExport() : [frameIndex];
       if (purpose === 'save') {
         const defaultName = `${moleculeData.name || 'molecule'}.png`
           .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
@@ -1621,25 +1677,78 @@ export function MoleculeCanvas({
       }
 
       setExportProgress({ progress: 0, label: purpose === 'preview' ? 'Preparing preview' : 'Preparing export' });
-      const result = await renderPublicationExport({
-        ctx,
-        host: containerRef.current,
-        settings: exportSettings,
-        renderState,
-        onProgress: (progress, label) => setExportProgress({ progress, label }),
-        shouldCancel: () => exportCancelRef.current,
-      });
-      setExportPreviewDataUrl(result.previewDataUrl);
+      const fixedCameraPose = exportSettings.fixedCameraForSequence
+        ? {
+            position: ctx.camera.position.clone(),
+            target: ctx.controls.target.clone(),
+          }
+        : null;
+      let fixedCropBox = exportSettings.fixedCropBoundsForSequence && frameIndices.length > 1 && ctx.lastMoleculeBox
+        ? ctx.lastMoleculeBox.clone().makeEmpty()
+        : null;
+      if (fixedCropBox) {
+        for (const index of frameIndices) {
+          if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
+          await onFrameChange(index);
+          await waitForFrameRender();
+          if (ctx.lastMoleculeBox) fixedCropBox.union(ctx.lastMoleculeBox);
+        }
+      }
+
+      let lastPreview: string | null = null;
+      let savedCount = 0;
+      for (const [sequenceIndex, index] of frameIndices.entries()) {
+        if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
+        const frameData = frameCount > 1 ? await onFrameChange(index) : moleculeData;
+        await waitForFrameRender();
+        if (fixedCameraPose) {
+          ctx.camera.position.copy(fixedCameraPose.position);
+          ctx.controls.target.copy(fixedCameraPose.target);
+          ctx.controls.update();
+        }
+        const frameRenderState = currentPublicationState(frameData ?? moleculeData);
+        if (!frameRenderState) throw new Error('Frame renderer is not ready.');
+        const frameOffset = sequenceIndex / frameIndices.length;
+        const frameSpan = 1 / frameIndices.length;
+        const result = await renderPublicationExport({
+          ctx,
+          host: containerRef.current,
+          settings: exportSettings,
+          renderState: frameRenderState,
+          fixedCropBox,
+          onProgress: (progress, label) => {
+            const totalProgress = Math.min(1, frameOffset + progress * frameSpan);
+            setExportProgress({
+              progress: totalProgress,
+              label: frameIndices.length > 1 ? `Frame ${index + 1}: ${label}` : label,
+            });
+          },
+          shouldCancel: () => exportCancelRef.current,
+        });
+        lastPreview = result.previewDataUrl;
+
+        if (purpose === 'save') {
+          if (!targetPath) throw new Error('Export path was not selected.');
+          const framePath = numberedPngPath(targetPath, index, sequenceIndex, frameIndices.length);
+          const pngBytes = dataUrlToBytes(result.dataUrl);
+          await invoke('export_png', { path: framePath, bytes: Array.from(pngBytes) });
+          if (result.metadataJson) {
+            const sidecarPath = framePath.replace(/\.png$/i, '') + '.cylform-render.json';
+            await invoke('export_text_sidecar', { path: sidecarPath, contents: result.metadataJson });
+          }
+          savedCount += 1;
+        }
+      }
+
+      if (lastPreview) setExportPreviewDataUrl(lastPreview);
 
       if (purpose === 'save') {
-        if (!targetPath) throw new Error('Export path was not selected.');
-        const pngBytes = dataUrlToBytes(result.dataUrl);
-        await invoke('export_png', { path: targetPath, bytes: Array.from(pngBytes) });
-        if (result.metadataJson) {
-          const sidecarPath = targetPath.replace(/\.png$/i, '') + '.cylform-render.json';
-          await invoke('export_text_sidecar', { path: sidecarPath, contents: result.metadataJson });
-        }
-        onToast(`Exported ${result.width} x ${result.height} PNG`, 'success');
+        onToast(
+          savedCount === 1
+            ? 'Exported current frame PNG'
+            : `Exported ${savedCount} frame PNGs`,
+          'success',
+        );
       } else {
         onToast('Export preview refreshed', 'success');
       }
@@ -1654,6 +1763,38 @@ export function MoleculeCanvas({
   const cancelPublicationExport = () => {
     exportCancelRef.current = true;
     setExportProgress((current) => current ? { ...current, label: 'Cancelling export' } : current);
+  };
+
+  const requestFrame = (nextFrameIndex: number) => {
+    const count = Math.max(1, frameCount);
+    const normalized = ((nextFrameIndex % count) + count) % count;
+    void onFrameChange(normalized);
+  };
+
+  const exportCurrentFrameXyz = async () => {
+    if (!moleculeData) {
+      onError('Load a molecule before exporting a frame.');
+      return;
+    }
+    try {
+      const defaultName = `${moleculeData.name || 'frame'}_${String(frameIndex + 1).padStart(4, '0')}.xyz`
+        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+        .replace(/\s+/g, '_');
+      const targetPath = await save({
+        title: 'Export Current Frame as XYZ',
+        defaultPath: defaultName,
+        filters: [{ name: 'XYZ Structure', extensions: ['xyz'] }],
+      });
+      if (!targetPath) return;
+      await invoke('export_xyz_frame', {
+        path: targetPath,
+        sourcePath: moleculeData.path,
+        frameIndex,
+      });
+      onToast(`Exported frame ${frameIndex + 1} XYZ`, 'success');
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
@@ -1678,6 +1819,48 @@ export function MoleculeCanvas({
               <span>View</span>
               <span className="view-panel-status">Session</span>
             </div>
+
+            {frameCount > 1 && (
+              <div className="frame-transport" aria-label="Frame controls">
+                <div className="view-split-row">
+                  <span>Frame</span>
+                  <span>{frameIndex + 1} / {frameCount}</span>
+                </div>
+                <input
+                  className="view-range"
+                  type="range"
+                  min="0"
+                  max={Math.max(0, frameCount - 1)}
+                  step="1"
+                  value={frameIndex}
+                  aria-label="Current frame"
+                  onChange={(event) => requestFrame(Number(event.target.value))}
+                />
+                <div className="frame-button-row">
+                  <button type="button" onClick={() => requestFrame(frameIndex - 1)}>Prev</button>
+                  <button type="button" className={isFramePlaying ? 'view-toggle active' : 'view-toggle'} onClick={onFramePlaybackToggle}>
+                    {isFramePlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <button type="button" onClick={() => requestFrame(frameIndex + 1)}>Next</button>
+                </div>
+                <label className="view-control">
+                  <span>Speed</span>
+                  <select
+                    value={framePlaybackSpeed}
+                    onChange={(event) => onFramePlaybackSpeedChange(Number(event.target.value))}
+                  >
+                    <option value={0.5}>0.5 fps</option>
+                    <option value={1}>1 fps</option>
+                    <option value={2}>2 fps</option>
+                    <option value={5}>5 fps</option>
+                    <option value={10}>10 fps</option>
+                  </select>
+                </label>
+                <button type="button" className="panel-action compact" onClick={() => void exportCurrentFrameXyz()}>
+                  Export XYZ
+                </button>
+              </div>
+            )}
 
             <div className="view-toggle-row">
               <button
@@ -2004,6 +2187,80 @@ export function MoleculeCanvas({
                   <option value="current">Current</option>
                 </select>
               </label>
+
+              {frameCount > 1 && (
+                <>
+                  <label className="view-control">
+                    <span>Frames</span>
+                    <select
+                      value={exportSettings.frameSelection}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ frameSelection: event.target.value as PublicationExportSettings['frameSelection'] })}
+                    >
+                      <option value="current">Current</option>
+                      <option value="range">Range</option>
+                      <option value="every-nth">Every Nth</option>
+                    </select>
+                  </label>
+                  {exportSettings.frameSelection !== 'current' && (
+                    <>
+                      <div className="export-pair-row">
+                        <label>
+                          <span>Start</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max={frameCount}
+                            value={exportSettings.frameStart}
+                            disabled={Boolean(exportProgress)}
+                            onChange={(event) => patchExportSettings({ frameStart: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          <span>End</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max={frameCount}
+                            value={exportSettings.frameEnd}
+                            disabled={Boolean(exportProgress)}
+                            onChange={(event) => patchExportSettings({ frameEnd: Number(event.target.value) })}
+                          />
+                        </label>
+                      </div>
+                      <label className="view-control">
+                        <span>Every</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={frameCount}
+                          value={exportSettings.frameStep}
+                          disabled={Boolean(exportProgress) || exportSettings.frameSelection === 'range'}
+                          onChange={(event) => patchExportSettings({ frameStep: Number(event.target.value) })}
+                        />
+                      </label>
+                      <div className="view-toggle-row">
+                        <button
+                          type="button"
+                          className={exportSettings.fixedCameraForSequence ? 'view-toggle active' : 'view-toggle'}
+                          disabled={Boolean(exportProgress)}
+                          onClick={() => patchExportSettings({ fixedCameraForSequence: !exportSettings.fixedCameraForSequence })}
+                        >
+                          Fixed camera
+                        </button>
+                        <button
+                          type="button"
+                          className={exportSettings.fixedCropBoundsForSequence ? 'view-toggle active' : 'view-toggle'}
+                          disabled={Boolean(exportProgress)}
+                          onClick={() => patchExportSettings({ fixedCropBoundsForSequence: !exportSettings.fixedCropBoundsForSequence })}
+                        >
+                          Fixed crop
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
 
               <div className="view-toggle-row">
                 <button

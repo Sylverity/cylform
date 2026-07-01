@@ -6,6 +6,22 @@ High-level project history for Cylform.
 
 - No unreleased changes yet.
 
+## [0.7.1] - 2026-07-01
+
+Multi-frame foundation milestone.
+
+### Added
+- **Multi-frame XYZ loading** stores all frames in `Structure.frames` and exposes selected-frame coordinates through `load_molecule(frameIndex)`.
+- **Frame metadata** parses each XYZ frame title/comment and optional energy/unit metadata.
+- **Frame transport controls** in the View panel: frame slider, previous/next, play/pause, and playback speed.
+- **Frame-aware rendering** preserves camera, projection, render profile, styles, and annotations while swapping frame coordinates.
+- **Current-frame XYZ export** writes the selected frame as a standalone `.xyz` file.
+- **Frame sequence PNG export** supports current frame, explicit ranges, every-Nth frame sampling, numbered PNG output, fixed camera, and fixed crop bounds.
+
+### Changed
+- Bumped the development version to 0.7.1 across Rust, Tauri, frontend, and citation metadata.
+- Documentation now describes trajectory display/export rather than first-frame-only XYZ handling.
+
 ## [0.7.0] - 2026-07-01
 
 Publication rendering pipeline milestone.
