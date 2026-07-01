@@ -1674,8 +1674,18 @@ export function MoleculeCanvas({
       onError('Load a molecule before exporting a PNG.');
       return;
     }
+    if (isFramePlaying) {
+      onError('Pause trajectory playback before exporting frames.');
+      return;
+    }
 
     exportCancelRef.current = false;
+    const originalFrameIndex = frameIndex;
+    let changedFrameForExport = false;
+    const changeFrameForExport = async (index: number) => {
+      changedFrameForExport = changedFrameForExport || index !== originalFrameIndex;
+      return onFrameChange(index);
+    };
     try {
       let targetPath: string | null = null;
       const frameIndices = purpose === 'save' ? frameIndicesForExport() : [frameIndex];
@@ -1705,7 +1715,7 @@ export function MoleculeCanvas({
       if (fixedCropBox) {
         for (const index of frameIndices) {
           if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
-          await onFrameChange(index);
+          await changeFrameForExport(index);
           await waitForFrameRender();
           if (ctx.lastMoleculeBox) fixedCropBox.union(ctx.lastMoleculeBox);
         }
@@ -1715,7 +1725,7 @@ export function MoleculeCanvas({
       let savedCount = 0;
       for (const [sequenceIndex, index] of frameIndices.entries()) {
         if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
-        const frameData = frameCount > 1 ? await onFrameChange(index) : moleculeData;
+        const frameData = frameCount > 1 ? await changeFrameForExport(index) : moleculeData;
         await waitForFrameRender();
         if (fixedCameraPose) {
           ctx.camera.position.copy(fixedCameraPose.position);
@@ -1771,8 +1781,18 @@ export function MoleculeCanvas({
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {
-      setExportProgress(null);
-      exportCancelRef.current = false;
+      try {
+        if (changedFrameForExport) {
+          setExportProgress((current) => current ? { ...current, label: 'Restoring active frame' } : current);
+          await onFrameChange(originalFrameIndex);
+          await waitForFrameRender();
+        }
+      } catch (restoreError) {
+        onError(restoreError instanceof Error ? restoreError.message : String(restoreError));
+      } finally {
+        setExportProgress(null);
+        exportCancelRef.current = false;
+      }
     }
   };
 
@@ -2422,10 +2442,10 @@ export function MoleculeCanvas({
               )}
 
               <div className="export-action-row">
-                <button type="button" disabled={Boolean(exportProgress) || !moleculeData} onClick={() => void runPublicationRender('preview')}>
+                <button type="button" disabled={Boolean(exportProgress) || !moleculeData || isFramePlaying} onClick={() => void runPublicationRender('preview')}>
                   Preview
                 </button>
-                <button type="button" className="primary" disabled={Boolean(exportProgress) || !moleculeData} onClick={() => void runPublicationRender('save')}>
+                <button type="button" className="primary" disabled={Boolean(exportProgress) || !moleculeData || isFramePlaying} onClick={() => void runPublicationRender('save')}>
                   Save PNG
                 </button>
                 {exportProgress && (
