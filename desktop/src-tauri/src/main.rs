@@ -718,6 +718,38 @@ fn export_png(path: String, bytes: Vec<u8>) -> Result<(), String> {
     export_png_to_path(Path::new(&path), &bytes)
 }
 
+fn export_text_sidecar_to_path(path: &Path, contents: &str) -> Result<(), String> {
+    if contents.trim().is_empty() {
+        return Err("Metadata sidecar was empty.".to_string());
+    }
+    if serde_json::from_str::<Value>(contents).is_err() {
+        return Err("Metadata sidecar must be valid JSON.".to_string());
+    }
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.eq_ignore_ascii_case("json"))
+        != Some(true)
+    {
+        return Err("Metadata sidecar path must end with .json.".to_string());
+    }
+    if path.exists() && !path.is_file() {
+        return Err("Metadata sidecar path is not a file.".to_string());
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            return Err("Metadata sidecar directory does not exist.".to_string());
+        }
+    }
+
+    fs::write(path, contents).map_err(|error| format!("Could not export metadata sidecar: {error}"))
+}
+
+#[tauri::command]
+fn export_text_sidecar(path: String, contents: String) -> Result<(), String> {
+    export_text_sidecar_to_path(Path::new(&path), &contents)
+}
+
 fn build_molecule_groups(structure: &Structure, center: glam::Vec3) -> Vec<SerialMoleculeGroup> {
     #[derive(Clone)]
     struct GroupAccumulator {
@@ -1743,7 +1775,7 @@ fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Resul
     let close_current = MenuItemBuilder::with_id(MENU_FILE_CLOSE_CURRENT, "Close Current Molecule")
         .accelerator("CommandOrControl+W")
         .build(manager)?;
-    let export_png = MenuItemBuilder::with_id(MENU_FILE_EXPORT_PNG, "Export PNG...")
+    let export_png = MenuItemBuilder::with_id(MENU_FILE_EXPORT_PNG, "Export Figure...")
         .accelerator("CommandOrControl+E")
         .build(manager)?;
     let settings = MenuItemBuilder::with_id(MENU_FILE_SETTINGS, "Settings...")
@@ -1899,7 +1931,8 @@ fn main() {
             delete_pose_library_entry,
             rename_pose_library_entry,
             list_supported_files_near,
-            export_png
+            export_png,
+            export_text_sidecar
         ])
         .setup(|app| {
             #[cfg(not(debug_assertions))]
@@ -2149,6 +2182,19 @@ mod tests {
 
         assert!(export_png_to_path(&path.with_extension("txt"), b"\x89PNG\r\n\x1a\ntest").is_err());
         assert!(export_png_to_path(&path, b"not png").is_err());
+    }
+
+    #[test]
+    fn test_export_text_sidecar_to_path_validates_json_and_extension() {
+        let path = std::env::temp_dir().join(format!("cylform-test-{}.json", now_timestamp()));
+        let contents = r#"{"kind":"cylform-publication-render"}"#;
+
+        export_text_sidecar_to_path(&path, contents).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), contents);
+        fs::remove_file(&path).unwrap();
+
+        assert!(export_text_sidecar_to_path(&path.with_extension("txt"), contents).is_err());
+        assert!(export_text_sidecar_to_path(&path, "not json").is_err());
     }
 
     #[test]

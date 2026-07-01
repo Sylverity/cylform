@@ -87,8 +87,8 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 6. Use the top molecule tabs to switch between open structures, and use **Open Recent** in the tab bar or **File → Open Recent…** to reopen recent files. Dropping files onto an existing session adds background tabs and keeps the current active view in place.
 7. Use **Poses** to save reusable camera views for the current molecule, then add important views to the global **Pose Library**.
 8. Use the **View** overlay to switch between CYLview, Ball and stick, and Houkmol render profiles when preparing figures.
-9. Click **Export PNG** or use **File → Export PNG…** to save the current view, including visible annotations, as an image.
-10. Use **File → Settings…** to configure export scale, default appearance, measurement precision, shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and app-data diagnostics.
+9. Click **Export Figure** or use **File → Export Figure…** to open the publication export workflow for viewport, raster, or experimental path-traced PNG output with visible annotations.
+10. Use **File → Settings…** to configure default appearance, measurement precision, shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and app-data diagnostics.
 
 See [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) for the current default shortcuts. `H` cycles hydrogen visibility only; render profiles are selected from the View overlay or Settings.
 
