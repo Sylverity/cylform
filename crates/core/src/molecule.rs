@@ -252,12 +252,38 @@ impl Bond {
 pub struct Frame {
     /// Atoms in the structure
     pub atoms: Vec<Atom>,
+    /// Source title/comment for this frame
+    pub title: Option<String>,
+    /// Parsed scalar energy for this frame
+    pub energy: Option<f64>,
+    /// Parsed energy unit for this frame when present
+    pub energy_unit: Option<String>,
 }
 
 impl Frame {
     /// Create an empty coordinate frame.
     pub fn new() -> Self {
-        Self { atoms: Vec::new() }
+        Self {
+            atoms: Vec::new(),
+            title: None,
+            energy: None,
+            energy_unit: None,
+        }
+    }
+
+    /// Create a frame from atoms and source metadata.
+    pub fn with_metadata(
+        atoms: Vec<Atom>,
+        title: Option<String>,
+        energy: Option<f64>,
+        energy_unit: Option<String>,
+    ) -> Self {
+        Self {
+            atoms,
+            title,
+            energy,
+            energy_unit,
+        }
     }
 }
 
@@ -327,6 +353,11 @@ impl Structure {
         self.frames.get(index)
     }
 
+    /// Atoms in a specific frame.
+    pub fn frame_atoms(&self, index: usize) -> Option<&[Atom]> {
+        self.frame(index).map(|frame| frame.atoms.as_slice())
+    }
+
     /// Get the currently displayed frame. Today this is always frame 0.
     pub fn active_frame(&self) -> &Frame {
         self.frames
@@ -375,7 +406,14 @@ impl Structure {
 
     /// Get center of geometry
     pub fn center(&self) -> Vec3 {
-        let atoms = self.atoms();
+        self.center_for_frame(0)
+    }
+
+    /// Get center of geometry for a specific frame.
+    pub fn center_for_frame(&self, frame_index: usize) -> Vec3 {
+        let Some(atoms) = self.frame_atoms(frame_index) else {
+            return Vec3::ZERO;
+        };
         if atoms.is_empty() {
             return Vec3::ZERO;
         }
@@ -386,7 +424,14 @@ impl Structure {
 
     /// Compute bounding box
     pub fn bounding_box(&self) -> (Vec3, Vec3) {
-        let atoms = self.atoms();
+        self.bounding_box_for_frame(0)
+    }
+
+    /// Compute bounding box for a specific frame.
+    pub fn bounding_box_for_frame(&self, frame_index: usize) -> (Vec3, Vec3) {
+        let Some(atoms) = self.frame_atoms(frame_index) else {
+            return (Vec3::ZERO, Vec3::ONE);
+        };
         if atoms.is_empty() {
             return (Vec3::ZERO, Vec3::ONE);
         }

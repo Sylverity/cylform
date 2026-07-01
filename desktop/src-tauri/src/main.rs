@@ -10,10 +10,10 @@
 use base64::{engine::general_purpose, Engine as _};
 use cylform_core::{
     io::{
-        read_structure_with_options, supported_read_extensions, FileFormat, IoError, ReadOptions,
-        MAX_ATOMS,
+        read_structure_with_options, supported_read_extensions, write_xyz_frame, FileFormat,
+        IoError, ReadOptions, MAX_ATOMS,
     },
-    molecule::{normalize_bond_perception_tolerance, BondKind, Structure},
+    molecule::{normalize_bond_perception_tolerance, Atom, BondKind, Structure},
     CoreError,
 };
 use parking_lot::Mutex;
@@ -546,19 +546,22 @@ fn load_molecule(
 
     let mut structure = read_structure_with_options(&path, FileFormat::Auto, read_options)
         .map_err(format_load_error)?;
-    if structure.frame(frame_index).is_none() {
-        return Err(format!(
+    let frame = structure.frame(frame_index).cloned().ok_or_else(|| {
+        format!(
             "Frame index {} is out of range for {} frame(s).",
             frame_index,
             structure.frames.len()
-        ));
-    }
+        )
+    })?;
     structure.metadata.loaded_frame_index = Some(frame_index);
+    structure.metadata.title = frame.title.clone().or_else(|| structure.metadata.title.clone());
+    structure.metadata.energy = frame.energy;
+    structure.metadata.energy_unit = frame.energy_unit.clone();
 
-    let center = structure.center();
+    let center = structure.center_for_frame(frame_index);
 
-    let atoms = structure
-        .atoms()
+    let atoms = frame
+        .atoms
         .iter()
         .map(|a| SerialAtom {
             x: a.position.x - center.x,
@@ -582,7 +585,7 @@ fn load_molecule(
         })
         .collect();
 
-    let groups = build_molecule_groups(&structure, center);
+    let groups = build_molecule_groups_for_atoms(&frame.atoms, center);
 
     let bonds = structure
         .bonds()
@@ -598,7 +601,7 @@ fn load_molecule(
     log::info!(
         "Loaded '{}': {} atoms, {} bonds",
         structure.name(),
-        structure.atom_count(),
+        frame.atoms.len(),
         structure.bond_count()
     );
 
@@ -622,6 +625,35 @@ fn load_molecule(
     *state.structure.lock() = Some(structure);
 
     Ok(data)
+}
+
+fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) -> Result<(), String> {
+    if path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.eq_ignore_ascii_case("xyz"))
+        != Some(true)
+    {
+        return Err("XYZ export path must end with .xyz.".to_string());
+    }
+    if path.exists() && !path.is_file() {
+        return Err("XYZ export path is not a file.".to_string());
+    }
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            return Err("XYZ export directory does not exist.".to_string());
+        }
+    }
+
+    let structure = read_structure_with_options(source_path, FileFormat::Auto, read_options_from_env())
+        .map_err(format_load_error)?;
+    write_xyz_frame(path, &structure, frame_index)
+        .map_err(|error| format!("Could not export XYZ frame: {error}"))
+}
+
+#[tauri::command]
+fn export_xyz_frame(path: String, source_path: String, frame_index: usize) -> Result<(), String> {
+    export_xyz_frame_to_path(Path::new(&path), &source_path, frame_index)
 }
 
 fn benchmark_enabled() -> bool {
@@ -761,7 +793,7 @@ fn export_text_sidecar(path: String, contents: String) -> Result<(), String> {
     export_text_sidecar_to_path(Path::new(&path), &contents)
 }
 
-fn build_molecule_groups(structure: &Structure, center: glam::Vec3) -> Vec<SerialMoleculeGroup> {
+fn build_molecule_groups_for_atoms(atoms: &[Atom], center: glam::Vec3) -> Vec<SerialMoleculeGroup> {
     #[derive(Clone)]
     struct GroupAccumulator {
         residue_name: Option<String>,
@@ -774,7 +806,7 @@ fn build_molecule_groups(structure: &Structure, center: glam::Vec3) -> Vec<Seria
 
     let mut groups = std::collections::BTreeMap::<String, GroupAccumulator>::new();
 
-    for (atom_index, atom) in structure.atoms().iter().enumerate() {
+    for (atom_index, atom) in atoms.iter().enumerate() {
         let Some(metadata) = atom.metadata.as_ref() else {
             continue;
         };
@@ -1948,7 +1980,8 @@ fn main() {
             rename_pose_library_entry,
             list_supported_files_near,
             export_png,
-            export_text_sidecar
+            export_text_sidecar,
+            export_xyz_frame
         ])
         .setup(|app| {
             #[cfg(not(debug_assertions))]
@@ -2211,6 +2244,26 @@ mod tests {
 
         assert!(export_text_sidecar_to_path(&path.with_extension("txt"), contents).is_err());
         assert!(export_text_sidecar_to_path(&path, "not json").is_err());
+    }
+
+    #[test]
+    fn test_export_xyz_frame_to_path_exports_selected_frame() {
+        let input_path = std::env::temp_dir().join(format!("cylform-input-{}.xyz", now_timestamp()));
+        let output_path = std::env::temp_dir().join(format!("cylform-frame-{}.xyz", now_timestamp()));
+        fs::write(
+            &input_path,
+            "1\nframe 1\nC 0.0 0.0 0.0\n1\nframe 2\nC 4.0 5.0 6.0\n",
+        )
+        .unwrap();
+
+        export_xyz_frame_to_path(&output_path, input_path.to_str().unwrap(), 1).unwrap();
+        let exported = fs::read_to_string(&output_path).unwrap();
+
+        assert!(exported.contains("frame 2"));
+        assert!(exported.contains("C     4.000000     5.000000     6.000000"));
+        fs::remove_file(&input_path).unwrap();
+        fs::remove_file(&output_path).unwrap();
+        assert!(export_xyz_frame_to_path(&output_path.with_extension("txt"), input_path.to_str().unwrap(), 0).is_err());
     }
 
     #[test]
