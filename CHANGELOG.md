@@ -18,6 +18,7 @@ High-level project history for Cylform.
 ### Fixed
 - Fixed Molecules panel residue highlight buttons getting stuck by separating highlight state from atom style overrides.
 - Fixed residue group Hide so it behaves as a true Hide/Show toggle instead of permanently adding atoms to the manual hidden-atom list.
+- Fixed hollow-looking cylinder ends and reduced small bond-junction gaps by capping cylinders, increasing junction overlap, and scaling default visible atom radii to cover bond ends.
 
 ### Verified
 - Confirmed Rust workspace packages inherit the `Apache-2.0` SPDX license declaration.
