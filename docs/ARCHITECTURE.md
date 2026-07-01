@@ -7,8 +7,8 @@ This note is for contributors who want to understand where molecule data enters 
 ```text
 molecule file
   -> cylform-core parser registry
-  -> Structure { frames, static_bonds, metadata }
-  -> Tauri load_molecule command
+  -> Structure { frames, static_bonds, per-frame metadata }
+  -> Tauri load_molecule(frameIndex) command
   -> React MoleculeData state
   -> Three.js instanced atoms and bond batches
 ```
@@ -20,10 +20,10 @@ The product rule is simple: computational file handling stays in Rust, while int
 `crates/core` owns molecule data, parsing, metadata, and chemistry-oriented helpers.
 
 - `molecule.rs` defines `Atom`, `Frame`, `Bond`, `BondOrder`, `BondKind`, `SourceMetadata`, and `Structure`.
-- `Structure` stores `frames: Vec<Frame>` even though current release builds display frame 0 only.
+- `Structure` stores `frames: Vec<Frame>` for XYZ trajectories. Each frame carries atoms, source title/comment text, and optional energy/unit metadata.
 - `static_bonds` stores bonds perceived or imported from frame 0 and reused for the current single-frame UI.
 - `BondKind` captures figure-oriented bond styles at the data-model level: normal, transition-state, dative, interaction, and thin.
-- Compatibility helpers such as `atoms()`, `bonds()`, `frame(index)`, `center()`, `atom_count()`, and `bond_count()` keep older call sites readable while the frame model settles.
+- Compatibility helpers such as `atoms()`, `bonds()`, `frame(index)`, `frame_atoms(index)`, `center_for_frame(index)`, `atom_count()`, and `bond_count()` keep call sites readable while frame-aware paths use explicit frame indices.
 
 `io.rs` provides the built-in parser registry. New read formats should implement `FormatParser`, expose their supported extensions, and be added to the built-in parser list. `read_structure_with_options(path, FileFormat::Auto, options)` remains the compatibility entry point and dispatches through the registry after reading file content once.
 
@@ -33,14 +33,14 @@ Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not b
 
 `desktop/src-tauri/src/main.rs` is the native bridge.
 
-- `load_molecule` accepts a path and optional `frameIndex`, defaults to frame 0, and returns the existing frontend `MoleculeData` shape.
+- `load_molecule` accepts a path and optional `frameIndex`, defaults to frame 0, and returns `MoleculeData` for the selected frame. It preserves static topology while updating current-frame atom coordinates, frame title, and frame energy metadata.
 - `get_supported_read_extensions` exposes the parser registry to the frontend so the native open dialog does not hardcode supported formats.
 - The native menu stays thin: custom menu items emit `menu:*` events to the WebView for workspace actions, while Rust handles native window actions and debug-build DevTools.
 - Per-file presentation state is stored under app data in a versioned JSON envelope.
 - `settings.json` stores versioned global app settings for defaults and preferences. These are app-level defaults, not molecule data.
 - `session-tabs.json` stores the visible workspace tab list, while `recent-files.json` remains the global open history.
 - `pose-library.json` stores global Pose Library entries, and `PosePreviews/` stores generated thumbnail PNGs by library-entry id.
-- `export_png` writes validated PNG bytes, while `export_text_sidecar` writes validated JSON metadata sidecars for publication exports.
+- `export_png` writes validated PNG bytes, `export_text_sidecar` writes validated JSON metadata sidecars for publication exports, and `export_xyz_frame` writes the selected source frame as standalone XYZ.
 - Legacy saved keys such as `labels`, `hiddenAtomIndices`, `savedPoses`, and older style maps are normalized into the v1 envelope when loaded.
 
 The saved-state envelope is intentionally presentation-focused. It belongs to the desktop app, not `cylform-core`.
@@ -60,7 +60,8 @@ The React app owns interaction state and the Three.js scene.
 - Render profile behavior is explicit in the renderer: CYLview owns hidden-but-pickable atom spheres and split endpoint-colored cylinders, ball-and-stick owns visible glossy atom spheres and uniform glossy bonds, and Houkmol owns visible glossy atom spheres, black normal bonds, and shader-drawn atom quadrants.
 - All WebGL draws that need final scene output should go through `renderScene(ctx)` so animation, export, preview, and benchmark paths share the same fog and focal-blur behavior.
 - Publication export is state-first: `capturePublicationRenderState` snapshots molecule geometry, atom/bond styles, render profile, camera/projection, lighting, background, fog/depth cue, labels, link lines, angle arcs, residue groups, hidden atoms, and saved poses before rendering.
-- `renderPublicationExport` owns the deliberate export workflow: viewport-exact raster, supersampled publication raster, and the experimental progressive path-traced path. It composites DOM labels and link-line canvas output after the 3-D render so annotations stay consistent across modes.
+- Frame changes call `load_molecule(frameIndex)` and replace displayed coordinates without resetting presentation state, camera, projection, or render profile.
+- `renderPublicationExport` owns the deliberate export workflow: viewport-exact raster, supersampled publication raster, experimental progressive path-traced output, and numbered frame sequence output. It composites DOM labels and link-line canvas output after the 3-D render so annotations stay consistent across modes.
 - Selection and measurement overlays use separate transient objects.
 - Angle measurements display a 3D arc mesh in the plane of the three selected atoms.
 
@@ -80,7 +81,7 @@ The React app owns interaction state and the Three.js scene.
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
 | `geometry.ts` | Angle-arc mesh creation/removal and selection overlay creation/removal. |
 | `picking.ts` | Raycast resolution: `pickScene`, `resolveAtomHit`, `resolveBondHit`. |
-| `exportPng.ts` | Publication export state, settings, viewport-exact PNG, supersampled/tiled raster export, experimental path-traced export, metadata JSON, preview thumbnails, and the legacy `renderCurrentViewDataUrl(ctx, host, options)` helper used by pose previews. |
+| `exportPng.ts` | Publication export state, settings, viewport-exact PNG, supersampled/tiled raster export, experimental path-traced export, numbered frame sequence settings, metadata JSON, preview thumbnails, and the legacy `renderCurrentViewDataUrl(ctx, host, options)` helper used by pose previews. |
 
 This split keeps `MoleculeCanvas.tsx` focused on React lifecycle and Three.js mutable state, while the modules remain mostly pure and easy to test by typecheck.
 
@@ -162,7 +163,7 @@ CYLview's depth cues are part of its primary publication rendering path, not a l
 ## Extension Points
 
 - Add a file format by writing a `FormatParser` implementation and registering it in the built-in parser list.
-- Add trajectory playback by loading additional frames into `Structure.frames` and updating frontend instance matrices by frame index.
+- Extend trajectory support by adding additional formats or interpolation on top of the existing `Structure.frames` and `load_molecule(frameIndex)` path.
 - Add a persisted annotation type by extending the Rust enum, TypeScript union, and annotations panel rendering.
 - Add a render profile by extending `RenderProfileId`, `renderProfiles.ts`, `materialPresets.ts`, renderer profile helpers, and the Settings/native normalization allowlists.
 - Add or change depth-cue behavior in `depthCue.ts`, then keep `SceneCtx.depthCue`, `ViewOptions`, Rust saved-state normalization, export rendering, preview rendering, and benchmark rendering aligned through `renderScene(ctx)`.

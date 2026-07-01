@@ -580,6 +580,13 @@ function PosePreviewRenderer({
           selectedDihedral={null}
           persistentLabels={presentationState?.annotations ?? []}
           savedPoses={presentationState?.poses ?? []}
+          frameIndex={moleculeData.metadata.loadedFrameIndex ?? 0}
+          frameCount={moleculeData.metadata.frameCount ?? 1}
+          isFramePlaying={false}
+          framePlaybackSpeed={1}
+          onFrameChange={async () => moleculeData}
+          onFramePlaybackToggle={() => undefined}
+          onFramePlaybackSpeedChange={() => undefined}
           selectionMode="view"
           selectionSummary={{ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] }}
           onBondSelected={() => undefined}
@@ -725,6 +732,8 @@ function OpenRecentDialog({
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [isFramePlaying, setIsFramePlaying] = useState(false);
+  const [framePlaybackSpeed, setFramePlaybackSpeed] = useState(2);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState<string>('Preparing molecular workspace');
   const [error, setError] = useState<string | null>(null);
@@ -814,6 +823,9 @@ function App() {
     return createDefaultPresentationState(appSettingsRef.current);
   }, []);
   const activeShortcuts = effectiveKeyboardShortcuts(appSettings);
+
+  const currentFrameIndex = moleculeData?.metadata.loadedFrameIndex ?? 0;
+  const currentFrameCount = moleculeData?.metadata.frameCount ?? 1;
 
   const refreshRecentFiles = useCallback(async () => {
     try {
@@ -948,6 +960,7 @@ function App() {
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
     setCurrentPath(data.path);
+    setIsFramePlaying(false);
     setError(null);
     setSelectedBond(null);
     setSelectedAngle(null);
@@ -956,6 +969,50 @@ function App() {
     hasLoadedPresentationState.current = false;
     applyPresentationState(null, false);
   }, [applyPresentationState]);
+
+  const loadMoleculeFrame = useCallback(async (frameIndex: number): Promise<MoleculeData | null> => {
+    if (!currentPath || !moleculeData?.metadata.frameCount || moleculeData.metadata.frameCount <= 1) {
+      return moleculeData;
+    }
+    const frameCount = moleculeData.metadata.frameCount;
+    const normalizedFrameIndex = ((frameIndex % frameCount) + frameCount) % frameCount;
+    try {
+      const data = await invoke<MoleculeData>('load_molecule', {
+        path: currentPath,
+        frameIndex: normalizedFrameIndex,
+        bondPerceptionTolerance: appSettingsRef.current.chemistry.bondPerceptionTolerance,
+      });
+      setMoleculeData(data);
+      setSelectedBond(null);
+      setSelectedAngle(null);
+      setSelectedDihedral(null);
+      setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
+      setMoleculeTabs((current) => current.map((tab) => (
+        tab.id === activeTabId ? { ...tab, molecule: data } : tab
+      )));
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setIsFramePlaying(false);
+      return null;
+    }
+  }, [activeTabId, currentPath, moleculeData]);
+
+  useEffect(() => {
+    if (currentFrameCount <= 1 && isFramePlaying) {
+      setIsFramePlaying(false);
+    }
+  }, [currentFrameCount, isFramePlaying]);
+
+  useEffect(() => {
+    if (!isFramePlaying || currentFrameCount <= 1) return;
+    const delayMs = Math.max(50, Math.round(1000 / Math.max(0.1, framePlaybackSpeed)));
+    const id = window.setInterval(() => {
+      void loadMoleculeFrame((moleculeData?.metadata.loadedFrameIndex ?? 0) + 1);
+    }, delayMs);
+    return () => window.clearInterval(id);
+  }, [currentFrameCount, framePlaybackSpeed, isFramePlaying, loadMoleculeFrame, moleculeData?.metadata.loadedFrameIndex]);
 
   const handleError = useCallback((err: string) => {
     setError(err);
@@ -2242,6 +2299,13 @@ function App() {
             selectedDihedral={selectedDihedral}
             persistentLabels={persistentLabels}
             savedPoses={savedPoses}
+            frameIndex={currentFrameIndex}
+            frameCount={currentFrameCount}
+            isFramePlaying={isFramePlaying}
+            framePlaybackSpeed={framePlaybackSpeed}
+            onFrameChange={loadMoleculeFrame}
+            onFramePlaybackToggle={() => setIsFramePlaying((current) => !current)}
+            onFramePlaybackSpeedChange={setFramePlaybackSpeed}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
             onBondSelected={setSelectedBond}
