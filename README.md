@@ -8,7 +8,7 @@
 
 Cylform is a desktop molecular figure editor. Its default CYLview render profile recreates the colored cylindrical-stick style used in natural products chemistry publications — cyan carbon framework, orange oxygen endpoints, pale hydrogen termini, 4-point lighting, and depth cues — for figures that remain readable in black-and-white print.
 
-Open a structure, set the view, measure, annotate, export a PNG.
+Open a structure, set the view, measure, annotate, and export a publication figure.
 
 > Cylform is an independent project and is not affiliated with or endorsed by the original CYLview.
 
@@ -20,7 +20,7 @@ Open a structure, set the view, measure, annotate, export a PNG.
 2. **Open** an `.xyz` or `.pdb` file via drag-and-drop or the file dialog
 3. **Rotate** with left-drag, **pan** with right-drag, **zoom** with scroll
 4. **Measure** distances, angles, and dihedrals by clicking atoms
-5. **Export** a high-resolution PNG for your manuscript
+5. **Export** a viewport-exact, publication raster, or experimental path-traced PNG for your manuscript
 
 See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for the current default shortcuts.
 
@@ -34,7 +34,7 @@ See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for the current def
 - **Annotations** — persistent atom/bond labels with subscript / superscript support and adjustable font scale
 - **Session state** — saved views, annotations, styles per file
 - **Tabs** — multiple structures open simultaneously
-- **PNG export** — label-aware, high resolution, with quick-access export scale
+- **Publication export** — shared render-state capture, viewport-exact PNG, supersampled publication raster PNG, experimental progressive path-traced PNG, preview thumbnails, crop/background/scale presets, and optional metadata sidecars
 
 See [ROADMAP.md](ROADMAP.md) for completed milestones and upcoming features.
 
@@ -83,7 +83,7 @@ For reproducible performance claims, record the exact benchmark command, platfor
 │  • Three.js / WebGL renders to <canvas>      │
 │  • OrbitControls — rotate / pan / zoom       │
 │  • Instanced atom and bond rendering         │
-│  • Annotations, render profiles, PNG export  │
+│  • Annotations, render profiles, publication export │
 │  • ResizeObserver keeps canvas crisp         │
 └──────────────────────────────────────────────┘
 ```
@@ -202,7 +202,7 @@ cff-version: 1.2.0
 message: "If you use Cylform in your research, please cite it as below."
 type: software
 title: "Cylform: A modern open-source molecular visualization tool"
-version: "0.6.1"
+version: "0.7.0"
 authors:
   - family-names: "Marston"
     given-names: "Sumner K."
