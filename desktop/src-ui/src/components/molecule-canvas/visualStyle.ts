@@ -31,18 +31,18 @@ import {
   legacyElementColorHex,
 } from './materialPresets';
 
-// Keep spheres understated so the render reads as a CYLview-style tube drawing.
+// Visible atom spheres should comfortably cover capped bond ends at the default scale.
 export const ATOM_DISPLAY_RADIUS: Record<string, number> = {
-  H: 0.075,
-  C: 0.078,
-  N: 0.095,
-  O: 0.118,
-  F: 0.09,
-  P: 0.118,
-  S: 0.118,
-  Cl: 0.108,
-  Br: 0.13,
-  I: 0.145,
+  H: 0.105,
+  C: 0.145,
+  N: 0.15,
+  O: 0.158,
+  F: 0.145,
+  P: 0.18,
+  S: 0.18,
+  Cl: 0.175,
+  Br: 0.19,
+  I: 0.205,
 };
 
 export function bondKey(atom1: number, atom2: number): string {
@@ -50,7 +50,7 @@ export function bondKey(atom1: number, atom2: number): string {
 }
 
 export function atomDisplayRadius(element: string): number {
-  return ATOM_DISPLAY_RADIUS[element] ?? 0.12;
+  return ATOM_DISPLAY_RADIUS[element] ?? 0.16;
 }
 
 export function dataUrlToBytes(dataUrl: string): Uint8Array {
@@ -281,9 +281,9 @@ export function bondTransform(
 
   const dir = axis.clone().normalize();
 
-  // Overlap at junction ends to eliminate rasterization gaps.
-  // Tuned so tight junctions don't look swollen.
-  const overlap = Math.min(radius * 0.35, len * 0.06);
+  // Push cylinder ends slightly through atom junctions to eliminate rasterization gaps.
+  // The length cap keeps very short perceived bonds from visibly swelling.
+  const overlap = Math.min(radius * 0.95, len * 0.12);
   const startOver = overlapStart ? overlap : 0;
   const endOver = overlapEnd ? overlap : 0;
   const renderLength = len + startOver + endOver;
@@ -318,7 +318,7 @@ function evenSegmentCount(value: number, min: number, max: number): number {
 export function renderQualityProfileForScene(atomCount: number, bondCount: number): RenderQualityProfile {
   const primitiveLoad = atomCount + bondCount;
   const qualityT = smoothstep((primitiveLoad - QUALITY_RAMP_START) / (QUALITY_RAMP_END - QUALITY_RAMP_START));
-  const nativePixelRatio = Math.min(window.devicePixelRatio, 2);
+  const nativePixelRatio = Math.min(globalThis.window?.devicePixelRatio ?? 1, 2);
   const pixelRatio = Math.max(1, nativePixelRatio - (nativePixelRatio - 1) * qualityT);
 
   return {
@@ -380,7 +380,7 @@ export function moleculeBatchGeometries(
 
   let cylGeom = ctx.cylinderGeometryCache.get(cylinderKey);
   if (!cylGeom) {
-    cylGeom = new CylinderGeometry(1, 1, 1, qualityProfile.cylinderRadialSegments, 1, true);
+    cylGeom = new CylinderGeometry(1, 1, 1, qualityProfile.cylinderRadialSegments, 1, false);
     ctx.cylinderGeometryCache.set(cylinderKey, cylGeom);
   }
 
