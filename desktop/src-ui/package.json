@@ -1,7 +1,7 @@
 {
   "name": "cylform-ui",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -21,7 +21,10 @@
     "@types/three": "^0.184.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "three-gpu-pathtracer": "^0.0.24",
+    "three-mesh-bvh": "^0.9.10",
+    "xatlas-web": "^0.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",

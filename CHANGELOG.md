@@ -4,9 +4,23 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
+- No unreleased changes yet.
+
+## [0.7.0] - 2026-07-01
+
+Publication rendering pipeline milestone.
+
+### Added
+- **Shared publication render state** for molecule geometry, styles, render profile, camera/projection, lighting, background, depth cue, labels, link lines, angle arcs, residue groups, hidden atoms, and saved poses.
+- **Deliberate export workflow** in the canvas with Viewport Exact, Publication Raster, and Experimental Progressive Path-Traced modes.
+- **Publication export settings** for 1x/2x/4x/custom scale, manuscript/slide/poster/custom sizes, white/transparent/current background, crop-to-molecule padding, absolute scale, print-safe annotation scaling, preview thumbnails, and optional JSON metadata sidecars.
+- **Publication raster renderer** with high-resolution offscreen rendering, supersampling, tiled canvas compositing, export shadows, ambient-occlusion style enhancement, depth-aware outline option, tone mapping, and annotation parity.
+- **Experimental path-traced export** using `three-gpu-pathtracer` with draft/standard/final sample presets, progress, cancellation, shared Cylform render state, and annotation compositing after accumulation.
+- Native metadata sidecar export command with JSON and `.json` validation.
+
 ### Changed
-- Bumped the development version to 0.6.1 across Rust, Tauri, frontend, and citation metadata.
-- Removed the citation release date while 0.6.1 remains unreleased on main.
+- Export actions now open the publication workflow instead of immediately saving the current viewport PNG.
+- Bumped the development version to 0.7.0 across Rust, Tauri, frontend, and citation metadata.
 - Normalized repository metadata and source links to `https://github.com/Sylverity/cylform`.
 - Updated the Apache 2.0 appendix copyright holder to Sylverity LLC.
 - Documented dependency-license scan results in the README.
@@ -15,10 +29,6 @@ High-level project history for Cylform.
 - Confirmed Rust workspace packages inherit the `Apache-2.0` SPDX license declaration.
 - Confirmed repository license, README license section and badge, and community health files remain present.
 - Checked Rust and frontend dependency license metadata; no GPL or AGPL dependencies were found.
-
-### Planned
-- Multi-frame XYZ trajectory playback, PDB residue-level colouring, and Gaussian output support.
-- Expanded file-format support, animation authoring, and offline render export.
 
 ---
 
