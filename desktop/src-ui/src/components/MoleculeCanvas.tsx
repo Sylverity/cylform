@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react';
 import {
   AmbientLight,
   Box3,
@@ -123,7 +123,18 @@ import {
 import {
   pickScene,
 } from './molecule-canvas/picking';
-import { renderCurrentViewDataUrl } from './molecule-canvas/exportPng';
+import {
+  DEFAULT_PUBLICATION_EXPORT_SETTINGS,
+  capturePublicationRenderState,
+  renderCurrentViewDataUrl,
+  renderPublicationExport,
+  type ExportMode,
+  type ExportScalePreset,
+  type ExportSizePreset,
+  type ExportToneMapping,
+  type PathTraceQuality,
+  type PublicationExportSettings,
+} from './molecule-canvas/exportPng';
 import {
   renderScene,
   updateDepthCueBackground,
@@ -171,6 +182,7 @@ interface Props {
   selectedAngle: SelectedAngleMeasurement | null;
   selectedDihedral: SelectedDihedralMeasurement | null;
   persistentLabels: PersistentLabel[];
+  savedPoses: SavedPose[];
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
@@ -226,6 +238,7 @@ export function MoleculeCanvas({
   selectedAngle,
   selectedDihedral,
   persistentLabels,
+  savedPoses,
   selectionMode,
   selectionSummary,
   onBondSelected,
@@ -266,6 +279,11 @@ export function MoleculeCanvas({
   const viewOptionsForPoseRef = useRef<ViewOptions>(viewOptions);
   const persistentLabelRefs = useRef(new Map<string, HTMLDivElement>());
   const previousMoleculeDataRef = useRef<MoleculeData | null>(null);
+  const exportCancelRef = useRef(false);
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportSettings, setExportSettings] = useState<PublicationExportSettings>(DEFAULT_PUBLICATION_EXPORT_SETTINGS);
+  const [exportPreviewDataUrl, setExportPreviewDataUrl] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<{ progress: number; label: string } | null>(null);
   const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
   const isCylviewProfile = renderProfile === 'cylview';
 
@@ -319,7 +337,7 @@ export function MoleculeCanvas({
     const h = container.clientHeight || 600;
 
     // preserveDrawingBuffer is required for toDataURL PNG export
-    const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    const renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     container.appendChild(renderer.domElement);
@@ -981,34 +999,13 @@ export function MoleculeCanvas({
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
 
-    // PNG export
-    const onExport = async () => {
-      if (!moleculeData) {
+    // Publication export workflow
+    const onExport = () => {
+      if (!moleculeDataRef.current) {
         onError('Load a molecule before exporting a PNG.');
         return;
       }
-
-      try {
-        const defaultName = `${moleculeData.name || 'molecule'}.png`
-          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-          .replace(/\s+/g, '_');
-
-        const targetPath = await save({
-          title: 'Export Current View as PNG',
-          defaultPath: defaultName,
-          filters: [{ name: 'PNG Image', extensions: ['png'] }],
-        });
-
-        if (!targetPath) return;
-
-        const current = ctxRef.current;
-        if (!current) return;
-        const pngBytes = dataUrlToBytes(renderCurrentViewDataUrl(current, containerRef.current, { moleculeData, pngExportScale }));
-        await invoke('export_png', { path: targetPath, bytes: Array.from(pngBytes) });
-        onToast(`Exported PNG to ${targetPath.split(/[\\/]/).pop() ?? 'file'}`, 'success');
-      } catch (error) {
-        onError(error instanceof Error ? error.message : String(error));
-      }
+      setExportPanelOpen(true);
     };
     if (!previewMode) {
       window.addEventListener('export-png', onExport);
@@ -1592,6 +1589,89 @@ export function MoleculeCanvas({
     applyCameraPreset(ctx, preset);
   };
 
+  const patchExportSettings = (patch: Partial<PublicationExportSettings>) => {
+    setExportSettings((current) => ({ ...current, ...patch }));
+  };
+
+  const currentPublicationState = () => {
+    const ctx = ctxRef.current;
+    if (!ctx || !moleculeData) return null;
+    return capturePublicationRenderState({
+      ctx,
+      moleculeData,
+      renderProfile,
+      viewOptions,
+      hydrogenVisibility,
+      hiddenAtomIndices,
+      elementColorOverrides,
+      atomStyleOverrides,
+      bondStyleOverrides,
+      atomSizeScale,
+      persistentLabels,
+      savedPoses,
+    });
+  };
+
+  const runPublicationRender = async (purpose: 'preview' | 'save') => {
+    const ctx = ctxRef.current;
+    const renderState = currentPublicationState();
+    if (!ctx || !moleculeData || !renderState) {
+      onError('Load a molecule before exporting a PNG.');
+      return;
+    }
+
+    exportCancelRef.current = false;
+    try {
+      let targetPath: string | null = null;
+      if (purpose === 'save') {
+        const defaultName = `${moleculeData.name || 'molecule'}.png`
+          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+          .replace(/\s+/g, '_');
+
+        targetPath = await save({
+          title: 'Export Publication Figure',
+          defaultPath: defaultName,
+          filters: [{ name: 'PNG Image', extensions: ['png'] }],
+        });
+        if (!targetPath) return;
+      }
+
+      setExportProgress({ progress: 0, label: purpose === 'preview' ? 'Preparing preview' : 'Preparing export' });
+      const result = await renderPublicationExport({
+        ctx,
+        host: containerRef.current,
+        settings: exportSettings,
+        renderState,
+        onProgress: (progress, label) => setExportProgress({ progress, label }),
+        shouldCancel: () => exportCancelRef.current,
+      });
+      setExportPreviewDataUrl(result.previewDataUrl);
+
+      if (purpose === 'save') {
+        if (!targetPath) throw new Error('Export path was not selected.');
+        const pngBytes = dataUrlToBytes(result.dataUrl);
+        await invoke('export_png', { path: targetPath, bytes: Array.from(pngBytes) });
+        if (result.metadataJson) {
+          const sidecarPath = targetPath.replace(/\.png$/i, '') + '.cylform-render.json';
+          await invoke('export_text_sidecar', { path: sidecarPath, contents: result.metadataJson });
+        }
+        onToast(`Exported ${result.width} x ${result.height} PNG`, 'success');
+      } else {
+        onToast('Export preview refreshed', 'success');
+      }
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExportProgress(null);
+      exportCancelRef.current = false;
+    }
+  };
+
+  const cancelPublicationExport = () => {
+    exportCancelRef.current = true;
+    setExportProgress((current) => current ? { ...current, label: 'Cancelling export' } : current);
+  };
+
   return (
     <div
       ref={containerRef}
@@ -1821,6 +1901,284 @@ export function MoleculeCanvas({
               <button type="button" disabled={!moleculeData} onClick={() => handleCameraPreset('iso')}>Iso</button>
             </div>
           </aside>
+
+          {exportPanelOpen && (
+            <aside className="publication-export-panel" aria-label="Publication export">
+              <div className="view-panel-header">
+                <span>Export</span>
+                <button
+                  type="button"
+                  className="panel-close-button"
+                  onClick={() => setExportPanelOpen(false)}
+                  aria-label="Close export panel"
+                >
+                  x
+                </button>
+              </div>
+
+              <div className="export-mode-grid" aria-label="Export mode">
+                {([
+                  ['viewport', 'Viewport'],
+                  ['publication-raster', 'Raster'],
+                  ['path-traced', 'Path trace'],
+                ] as Array<[ExportMode, string]>).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={exportSettings.mode === mode ? 'view-toggle active' : 'view-toggle'}
+                    onClick={() => patchExportSettings({ mode })}
+                    disabled={Boolean(exportProgress)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="view-control">
+                <span>Size</span>
+                <select
+                  value={exportSettings.sizePreset}
+                  disabled={Boolean(exportProgress)}
+                  onChange={(event) => patchExportSettings({ sizePreset: event.target.value as ExportSizePreset })}
+                >
+                  <option value="viewport">Viewport</option>
+                  <option value="manuscript">Manuscript</option>
+                  <option value="slide">Slide</option>
+                  <option value="poster">Poster</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+
+              {exportSettings.sizePreset === 'custom' && (
+                <div className="export-pair-row">
+                  <label>
+                    <span>W</span>
+                    <input
+                      type="number"
+                      min="16"
+                      max="24000"
+                      value={exportSettings.customWidth}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ customWidth: Number(event.target.value) })}
+                    />
+                  </label>
+                  <label>
+                    <span>H</span>
+                    <input
+                      type="number"
+                      min="16"
+                      max="24000"
+                      value={exportSettings.customHeight}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ customHeight: Number(event.target.value) })}
+                    />
+                  </label>
+                </div>
+              )}
+
+              <label className="view-control">
+                <span>Scale</span>
+                <select
+                  value={exportSettings.scalePreset}
+                  disabled={Boolean(exportProgress)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    patchExportSettings({ scalePreset: value === 'custom' ? 'custom' : Number(value) as ExportScalePreset });
+                  }}
+                >
+                  <option value={1}>1x</option>
+                  <option value={2}>2x</option>
+                  <option value={4}>4x</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+
+              {exportSettings.scalePreset === 'custom' && (
+                <label className="view-control">
+                  <span>Custom scale</span>
+                  <input
+                    type="number"
+                    min="0.25"
+                    max="12"
+                    step="0.25"
+                    value={exportSettings.customScale}
+                    disabled={Boolean(exportProgress)}
+                    onChange={(event) => patchExportSettings({ customScale: Number(event.target.value) })}
+                  />
+                </label>
+              )}
+
+              <label className="view-control">
+                <span>Background</span>
+                <select
+                  value={exportSettings.background}
+                  disabled={Boolean(exportProgress)}
+                  onChange={(event) => patchExportSettings({ background: event.target.value as PublicationExportSettings['background'] })}
+                >
+                  <option value="white">White</option>
+                  <option value="transparent">Transparent</option>
+                  <option value="current">Current</option>
+                </select>
+              </label>
+
+              <div className="view-toggle-row">
+                <button
+                  type="button"
+                  className={exportSettings.cropToMolecule ? 'view-toggle active' : 'view-toggle'}
+                  disabled={Boolean(exportProgress)}
+                  onClick={() => patchExportSettings({ cropToMolecule: !exportSettings.cropToMolecule })}
+                >
+                  Crop
+                </button>
+                <button
+                  type="button"
+                  className={exportSettings.absoluteScaleEnabled ? 'view-toggle active' : 'view-toggle'}
+                  disabled={Boolean(exportProgress)}
+                  onClick={() => patchExportSettings({ absoluteScaleEnabled: !exportSettings.absoluteScaleEnabled })}
+                >
+                  Absolute
+                </button>
+              </div>
+
+              {exportSettings.cropToMolecule && (
+                <label className="view-control">
+                  <span>Padding</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="800"
+                    value={exportSettings.cropPaddingPx}
+                    disabled={Boolean(exportProgress)}
+                    onChange={(event) => patchExportSettings({ cropPaddingPx: Number(event.target.value) })}
+                  />
+                </label>
+              )}
+
+              {exportSettings.absoluteScaleEnabled && (
+                <label className="view-control">
+                  <span>px / A</span>
+                  <input
+                    type="number"
+                    min="12"
+                    max="1200"
+                    value={exportSettings.pixelsPerAngstrom}
+                    disabled={Boolean(exportProgress)}
+                    onChange={(event) => patchExportSettings({ pixelsPerAngstrom: Number(event.target.value) })}
+                  />
+                </label>
+              )}
+
+              {exportSettings.mode === 'publication-raster' && (
+                <>
+                  <label className="view-control">
+                    <span>Sampling</span>
+                    <select
+                      value={exportSettings.supersampling}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ supersampling: Number(event.target.value) as PublicationExportSettings['supersampling'] })}
+                    >
+                      <option value={1}>1x</option>
+                      <option value={2}>2x</option>
+                      <option value={3}>3x</option>
+                      <option value={4}>4x</option>
+                    </select>
+                  </label>
+                  <label className="view-control">
+                    <span>Tone map</span>
+                    <select
+                      value={exportSettings.toneMapping}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ toneMapping: event.target.value as ExportToneMapping })}
+                    >
+                      <option value="aces">ACES</option>
+                      <option value="reinhard">Reinhard</option>
+                      <option value="cineon">Cineon</option>
+                      <option value="none">None</option>
+                    </select>
+                  </label>
+                  <div className="view-toggle-row">
+                    <button type="button" className={exportSettings.improvedShadows ? 'view-toggle active' : 'view-toggle'} disabled={Boolean(exportProgress)} onClick={() => patchExportSettings({ improvedShadows: !exportSettings.improvedShadows })}>Shadows</button>
+                    <button type="button" className={exportSettings.ambientOcclusion ? 'view-toggle active' : 'view-toggle'} disabled={Boolean(exportProgress)} onClick={() => patchExportSettings({ ambientOcclusion: !exportSettings.ambientOcclusion })}>AO</button>
+                    <button type="button" className={exportSettings.depthAwareOutline ? 'view-toggle active' : 'view-toggle'} disabled={Boolean(exportProgress)} onClick={() => patchExportSettings({ depthAwareOutline: !exportSettings.depthAwareOutline })}>Outline</button>
+                  </div>
+                </>
+              )}
+
+              {exportSettings.mode === 'path-traced' && (
+                <label className="view-control">
+                  <span>Quality</span>
+                  <select
+                    value={exportSettings.pathTraceQuality}
+                    disabled={Boolean(exportProgress)}
+                    onChange={(event) => patchExportSettings({ pathTraceQuality: event.target.value as PathTraceQuality })}
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="standard">Standard</option>
+                    <option value="final">Final</option>
+                  </select>
+                </label>
+              )}
+
+              <div className="view-toggle-row">
+                <button
+                  type="button"
+                  className={exportSettings.tiledExport ? 'view-toggle active' : 'view-toggle'}
+                  disabled={Boolean(exportProgress)}
+                  onClick={() => patchExportSettings({ tiledExport: !exportSettings.tiledExport })}
+                >
+                  Tiled
+                </button>
+                <button
+                  type="button"
+                  className={exportSettings.includeMetadataSidecar ? 'view-toggle active' : 'view-toggle'}
+                  disabled={Boolean(exportProgress)}
+                  onClick={() => patchExportSettings({ includeMetadataSidecar: !exportSettings.includeMetadataSidecar })}
+                >
+                  Metadata
+                </button>
+              </div>
+
+              <label className="view-control">
+                <span>Label scale</span>
+                <input
+                  type="number"
+                  min="0.75"
+                  max="2"
+                  step="0.05"
+                  value={exportSettings.printSafeAnnotationScale}
+                  disabled={Boolean(exportProgress)}
+                  onChange={(event) => patchExportSettings({ printSafeAnnotationScale: Number(event.target.value) })}
+                />
+              </label>
+
+              {exportPreviewDataUrl && (
+                <div className="export-preview">
+                  <img src={exportPreviewDataUrl} alt="Export preview" />
+                </div>
+              )}
+
+              {exportProgress && (
+                <div className="export-progress" aria-live="polite">
+                  <div><span style={{ width: `${Math.round(exportProgress.progress * 100)}%` }} /></div>
+                  <p>{exportProgress.label}</p>
+                </div>
+              )}
+
+              <div className="export-action-row">
+                <button type="button" disabled={Boolean(exportProgress) || !moleculeData} onClick={() => void runPublicationRender('preview')}>
+                  Preview
+                </button>
+                <button type="button" className="primary" disabled={Boolean(exportProgress) || !moleculeData} onClick={() => void runPublicationRender('save')}>
+                  Save PNG
+                </button>
+                {exportProgress && (
+                  <button type="button" onClick={cancelPublicationExport}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </aside>
+          )}
 
           <AppearancePanel
             moleculeData={moleculeData}

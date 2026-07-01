@@ -597,6 +597,7 @@ function PosePreviewRenderer({
           selectedAngle={null}
           selectedDihedral={null}
           persistentLabels={presentationState?.annotations ?? []}
+          savedPoses={presentationState?.poses ?? []}
           selectionMode="view"
           selectionSummary={{ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] }}
           onBondSelected={() => undefined}
@@ -1417,7 +1418,7 @@ function App() {
 
   const handleExportPng = useCallback(() => {
     if (!moleculeData) {
-      const message = 'Load a molecule before exporting a PNG.';
+      const message = 'Load a molecule before exporting a figure.';
       handleError(message);
       addToast(message, 'info');
       return;
@@ -2253,6 +2254,7 @@ function App() {
             selectedAngle={selectedAngle}
             selectedDihedral={selectedDihedral}
             persistentLabels={persistentLabels}
+            savedPoses={savedPoses}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
             onBondSelected={setSelectedBond}

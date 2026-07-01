@@ -193,8 +193,8 @@ export function Toolbar({
           onClick={onExportPng}
           disabled={isLoading}
           className="icon-only"
-          title={`Export PNG (${hint('exportPng')})`}
-          aria-label="Export PNG"
+          title={`Export figure (${hint('exportPng')})`}
+          aria-label="Export figure"
         >
           <IconSave />
         </button>

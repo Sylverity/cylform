@@ -2,6 +2,21 @@
 
 This roadmap tracks completed milestones and upcoming feature work. The main project overview lives in [README.md](README.md).
 
+## Released — v0.7.0
+
+Cylform **0.7.0** turns export into a deliberate publication rendering pipeline.
+
+### What's new in 0.7.0
+
+- **Shared render state** — export snapshots molecule geometry, styles, render profile, camera/projection, lighting, background, depth cue, labels, link lines, angle arcs, residue groups, hidden atoms, and saved poses
+- **Export modes** — Viewport Exact, Publication Raster, and Experimental Progressive Path-Traced export
+- **Figure presets** — 1x/2x/4x/custom scale plus manuscript, slide, poster, viewport, and custom pixel sizes
+- **Background and crop controls** — white, transparent, or current background with optional crop-to-molecule padding
+- **Comparable figure scale** — optional pixels-per-angstrom absolute scale
+- **Publication raster quality** — high-resolution offscreen rendering, supersampling, tiled canvas compositing, export shadows, ambient-occlusion style enhancement, depth-aware outlines, and tone mapping
+- **Path-tracing experiment** — `three-gpu-pathtracer` integration with draft/standard/final accumulation, progress, cancel, and annotation compositing
+- **Metadata sidecars** — optional `.cylform-render.json` export next to the PNG
+
 ## Released — v0.6.0
 
 Cylform **0.6.0** adds the CYLview parity milestone: annotations, rendering refinements, frontend architecture cleanup, and release hardening.
