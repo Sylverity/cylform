@@ -9,7 +9,7 @@ Cylform shortcuts are configurable in **Settings -> Shortcuts**. On macOS, `CmdO
 | Open File | `CmdOrCtrl+O` |
 | Open Recent | `CmdOrCtrl+Shift+O` |
 | Close Current Molecule | `CmdOrCtrl+W` |
-| Export PNG | `CmdOrCtrl+E` |
+| Export Figure | `CmdOrCtrl+E` |
 | Previous Tab | `CmdOrCtrl+PageUp` |
 | Next Tab | `CmdOrCtrl+PageDown` |
 | Previous File | `Alt+Left` |
