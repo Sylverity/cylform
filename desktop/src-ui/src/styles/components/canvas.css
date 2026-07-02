@@ -442,3 +442,122 @@
   pointer-events: none;
   z-index: var(--z-overlay);
 }
+
+.publication-export-panel {
+  width: 260px;
+  padding: var(--space-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-bg-panel);
+  box-shadow: var(--shadow-xl);
+}
+
+.panel-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: 1;
+}
+
+.export-mode-grid,
+.export-action-row,
+.export-pair-row {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.export-mode-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--space-2);
+}
+
+.export-mode-grid button,
+.export-action-row button {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.export-pair-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: var(--space-1-5);
+}
+
+.export-pair-row label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--c-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+}
+
+.publication-export-panel input[type='number'] {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg-primary);
+  color: var(--c-text-primary);
+  font-size: var(--text-xs);
+}
+
+.export-preview {
+  margin: var(--space-2) 0;
+  overflow: hidden;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg-primary);
+}
+
+.export-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.export-progress {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0;
+}
+
+.export-progress div {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--c-border-subtle);
+}
+
+.export-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--c-accent);
+  transition: width var(--transition-fast);
+}
+
+.export-progress p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--c-text-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-action-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.export-action-row button:last-child:nth-child(3) {
+  grid-column: 1 / -1;
+}

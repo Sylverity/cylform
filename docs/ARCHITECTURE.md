@@ -40,6 +40,7 @@ Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not b
 - `settings.json` stores versioned global app settings for defaults and preferences. These are app-level defaults, not molecule data.
 - `session-tabs.json` stores the visible workspace tab list, while `recent-files.json` remains the global open history.
 - `pose-library.json` stores global Pose Library entries, and `PosePreviews/` stores generated thumbnail PNGs by library-entry id.
+- `export_png` writes validated PNG bytes, while `export_text_sidecar` writes validated JSON metadata sidecars for publication exports.
 - Legacy saved keys such as `labels`, `hiddenAtomIndices`, `savedPoses`, and older style maps are normalized into the v1 envelope when loaded.
 
 The saved-state envelope is intentionally presentation-focused. It belongs to the desktop app, not `cylform-core`.
@@ -48,7 +49,7 @@ The saved-state envelope is intentionally presentation-focused. It belongs to th
 
 The React app owns interaction state and the Three.js scene.
 
-- `App.tsx` coordinates file loading, saved state, annotations, render profile selection, visibility, style overrides, measurements, and exports.
+- `App.tsx` coordinates file loading, saved state, annotations, render profile selection, visibility, style overrides, measurements, and publication export.
 - Menu-triggered workspace actions reuse the same frontend handlers as toolbar buttons and tab controls. The Settings view persists preferences through the Rust app-data settings commands.
 - Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
 - Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
@@ -58,6 +59,8 @@ The React app owns interaction state and the Three.js scene.
 - Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
 - Render profile behavior is explicit in the renderer: CYLview owns hidden-but-pickable atom spheres and split endpoint-colored cylinders, ball-and-stick owns visible glossy atom spheres and uniform glossy bonds, and Houkmol owns visible glossy atom spheres, black normal bonds, and shader-drawn atom quadrants.
 - All WebGL draws that need final scene output should go through `renderScene(ctx)` so animation, export, preview, and benchmark paths share the same fog and focal-blur behavior.
+- Publication export is state-first: `capturePublicationRenderState` snapshots molecule geometry, atom/bond styles, render profile, camera/projection, lighting, background, fog/depth cue, labels, link lines, angle arcs, residue groups, hidden atoms, and saved poses before rendering.
+- `renderPublicationExport` owns the deliberate export workflow: viewport-exact raster, supersampled publication raster, and the experimental progressive path-traced path. It composites DOM labels and link-line canvas output after the 3-D render so annotations stay consistent across modes.
 - Selection and measurement overlays use separate transient objects.
 - Angle measurements display a 3D arc mesh in the plane of the three selected atoms.
 
@@ -77,7 +80,7 @@ The React app owns interaction state and the Three.js scene.
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
 | `geometry.ts` | Angle-arc mesh creation/removal and selection overlay creation/removal. |
 | `picking.ts` | Raycast resolution: `pickScene`, `resolveAtomHit`, `resolveBondHit`. |
-| `exportPng.ts` | `renderCurrentViewDataUrl(ctx, host, options)` — a pure function that composites the WebGL canvas with DOM labels and link lines. |
+| `exportPng.ts` | Publication export state, settings, viewport-exact PNG, supersampled/tiled raster export, experimental path-traced export, metadata JSON, preview thumbnails, and the legacy `renderCurrentViewDataUrl(ctx, host, options)` helper used by pose previews. |
 
 This split keeps `MoleculeCanvas.tsx` focused on React lifecycle and Three.js mutable state, while the modules remain mostly pure and easy to test by typecheck.
 

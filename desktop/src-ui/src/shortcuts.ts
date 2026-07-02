@@ -40,7 +40,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: 'openFile', label: 'Open File', defaultShortcut: 'CmdOrCtrl+O', group: 'file' },
   { id: 'openRecent', label: 'Open Recent', defaultShortcut: 'CmdOrCtrl+Shift+O', group: 'file' },
   { id: 'closeTab', label: 'Close Current Molecule', defaultShortcut: 'CmdOrCtrl+W', group: 'file' },
-  { id: 'exportPng', label: 'Export PNG', defaultShortcut: 'CmdOrCtrl+E', group: 'file' },
+  { id: 'exportPng', label: 'Export Figure', defaultShortcut: 'CmdOrCtrl+E', group: 'file' },
   { id: 'previousTab', label: 'Previous Tab', defaultShortcut: 'CmdOrCtrl+PageUp', group: 'file' },
   { id: 'nextTab', label: 'Next Tab', defaultShortcut: 'CmdOrCtrl+PageDown', group: 'file' },
   { id: 'previousFile', label: 'Previous File', defaultShortcut: 'Alt+ArrowLeft', group: 'file' },
