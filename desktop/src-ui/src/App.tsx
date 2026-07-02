@@ -771,6 +771,8 @@ function App() {
   });
   const [persistentLabels, setPersistentLabels] = useState<PersistentLabel[]>([]);
   const nextLabelId = useRef(1);
+  const frameLoadRequestId = useRef(0);
+  const playbackFrameLoadInFlight = useRef(false);
   const [elementColorOverrides, setElementColorOverrides] = useState<ElementColorOverrides>({});
   const [atomStyleOverrides, setAtomStyleOverrides] = useState<Record<string, AtomStyleOverride>>({});
   const [bondStyleOverrides, setBondStyleOverrides] = useState<Record<string, BondStyleOverride>>({});
@@ -984,6 +986,7 @@ function App() {
   }, [defaultPresentationState]);
 
   const handleFileLoaded = useCallback((data: MoleculeData) => {
+    frameLoadRequestId.current += 1;
     setMoleculeData(data);
     setCurrentPath(data.path);
     setIsFramePlaying(false);
@@ -1002,12 +1005,17 @@ function App() {
     }
     const frameCount = moleculeData.metadata.frameCount;
     const normalizedFrameIndex = ((frameIndex % frameCount) + frameCount) % frameCount;
+    const requestId = frameLoadRequestId.current + 1;
+    frameLoadRequestId.current = requestId;
     try {
-      const data = await invoke<MoleculeData>('load_molecule', {
+      const data = await invoke<MoleculeData>('load_molecule_frame', {
         path: currentPath,
         frameIndex: normalizedFrameIndex,
         bondPerceptionTolerance: appSettingsRef.current.chemistry.bondPerceptionTolerance,
       });
+      if (requestId !== frameLoadRequestId.current) {
+        return null;
+      }
       setMoleculeData(data);
       setSelectedBond(null);
       setSelectedAngle(null);
@@ -1018,6 +1026,9 @@ function App() {
       )));
       return data;
     } catch (err) {
+      if (requestId !== frameLoadRequestId.current) {
+        return null;
+      }
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       setIsFramePlaying(false);
@@ -1035,7 +1046,12 @@ function App() {
     if (!isFramePlaying || currentFrameCount <= 1) return;
     const delayMs = Math.max(50, Math.round(1000 / Math.max(0.1, framePlaybackSpeed)));
     const id = window.setInterval(() => {
-      void loadMoleculeFrame((moleculeData?.metadata.loadedFrameIndex ?? 0) + 1);
+      if (playbackFrameLoadInFlight.current) return;
+      playbackFrameLoadInFlight.current = true;
+      void loadMoleculeFrame((moleculeData?.metadata.loadedFrameIndex ?? 0) + 1)
+        .finally(() => {
+          playbackFrameLoadInFlight.current = false;
+        });
     }, delayMs);
     return () => window.clearInterval(id);
   }, [currentFrameCount, framePlaybackSpeed, isFramePlaying, loadMoleculeFrame, moleculeData?.metadata.loadedFrameIndex]);
@@ -1075,6 +1091,7 @@ function App() {
   }, [activeTabId, buildPresentationState, currentPath, handleError, moleculeData]);
 
   const clearActiveMolecule = useCallback(() => {
+    frameLoadRequestId.current += 1;
     setMoleculeData(null);
     setCurrentPath(null);
     setError(null);
@@ -1141,6 +1158,7 @@ function App() {
     recordRecent = true,
   ) => {
     snapshotActiveTab(true);
+    frameLoadRequestId.current += 1;
     setIsLoading(true);
     setLoadingLabel(label ?? 'Loading molecule');
     const perfStart = performance.now();

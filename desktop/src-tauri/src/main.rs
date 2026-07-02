@@ -19,6 +19,7 @@ use cylform_core::{
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,14 +51,20 @@ const EVENT_MENU_DEVTOOLS_UNAVAILABLE: &str = "menu:devtools-unavailable";
 // Application state
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct StructureCacheKey {
+    path: String,
+    bond_perception_tolerance_bits: u32,
+}
+
 pub struct AppState {
-    structure: Mutex<Option<Structure>>,
+    structures: Mutex<HashMap<StructureCacheKey, Structure>>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
-            structure: Mutex::new(None),
+            structures: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -523,41 +530,40 @@ fn normalize_presentation_envelope(
         .map_err(|error| format!("Could not normalize presentation state: {error}"))
 }
 
-// ---------------------------------------------------------------------------
-// Tauri commands
-// ---------------------------------------------------------------------------
-
-/// Load a molecular file and return the full atom/bond geometry to the frontend.
-/// Coordinates are re-centred to the geometric centre of the molecule.
-#[tauri::command]
-fn load_molecule(
-    path: String,
-    frame_index: Option<usize>,
-    bond_perception_tolerance: Option<f32>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<MoleculeData, String> {
-    let frame_index = frame_index.unwrap_or(0);
-    log::info!("Loading molecule from: {} (frame {})", path, frame_index);
-
+fn read_options_for_request(bond_perception_tolerance: Option<f32>) -> ReadOptions {
     let mut read_options = read_options_from_env();
     if let Some(tolerance) = bond_perception_tolerance {
         read_options.bond_perception_tolerance = normalize_bond_perception_tolerance(tolerance);
     }
+    read_options
+}
 
-    let mut structure = read_structure_with_options(&path, FileFormat::Auto, read_options)
-        .map_err(format_load_error)?;
-    let frame = structure.frame(frame_index).cloned().ok_or_else(|| {
+fn cache_path_key(path: &str) -> String {
+    fs::canonicalize(path)
+        .unwrap_or_else(|_| PathBuf::from(path))
+        .to_string_lossy()
+        .to_string()
+}
+
+fn structure_cache_key(path: &str, read_options: &ReadOptions) -> StructureCacheKey {
+    StructureCacheKey {
+        path: cache_path_key(path),
+        bond_perception_tolerance_bits: read_options.bond_perception_tolerance.to_bits(),
+    }
+}
+
+fn molecule_data_for_frame(
+    structure: &Structure,
+    path: &str,
+    frame_index: usize,
+) -> Result<MoleculeData, String> {
+    let frame = structure.frame(frame_index).ok_or_else(|| {
         format!(
             "Frame index {} is out of range for {} frame(s).",
             frame_index,
             structure.frames.len()
         )
     })?;
-    structure.metadata.loaded_frame_index = Some(frame_index);
-    structure.metadata.title = frame.title.clone().or_else(|| structure.metadata.title.clone());
-    structure.metadata.energy = frame.energy;
-    structure.metadata.energy_unit = frame.energy_unit.clone();
-
     let center = structure.center_for_frame(frame_index);
 
     let atoms = frame
@@ -598,33 +604,78 @@ fn load_molecule(
         })
         .collect();
 
-    log::info!(
-        "Loaded '{}': {} atoms, {} bonds",
-        structure.name(),
-        frame.atoms.len(),
-        structure.bond_count()
-    );
-
-    let data = MoleculeData {
-        path: path.clone(),
+    Ok(MoleculeData {
+        path: path.to_string(),
         name: structure.name().to_string(),
         atoms,
         bonds,
         groups,
         metadata: SerialMoleculeMetadata {
             source_format: structure.metadata.source_format.clone(),
-            title: structure.metadata.title.clone(),
+            title: frame.title.clone().or_else(|| structure.metadata.title.clone()),
             frame_count: structure.metadata.frame_count,
-            loaded_frame_index: structure.metadata.loaded_frame_index,
-            energy: structure.metadata.energy,
-            energy_unit: structure.metadata.energy_unit.clone(),
+            loaded_frame_index: Some(frame_index),
+            energy: frame.energy,
+            energy_unit: frame.energy_unit.clone(),
             warnings: structure.metadata.warnings.clone(),
         },
-    };
+    })
+}
 
-    *state.structure.lock() = Some(structure);
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
 
+/// Load a molecular file and return the full atom/bond geometry to the frontend.
+/// Coordinates are re-centred to the geometric centre of the molecule.
+#[tauri::command]
+fn load_molecule(
+    path: String,
+    frame_index: Option<usize>,
+    bond_perception_tolerance: Option<f32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<MoleculeData, String> {
+    let frame_index = frame_index.unwrap_or(0);
+    log::info!("Loading molecule from: {} (frame {})", path, frame_index);
+
+    let read_options = read_options_for_request(bond_perception_tolerance);
+    let cache_key = structure_cache_key(&path, &read_options);
+    {
+        let cache = state.structures.lock();
+        if let Some(structure) = cache.get(&cache_key) {
+            return molecule_data_for_frame(structure, &path, frame_index);
+        }
+    }
+
+    let structure = read_structure_with_options(&path, FileFormat::Auto, read_options)
+        .map_err(format_load_error)?;
+    let data = molecule_data_for_frame(&structure, &path, frame_index)?;
+
+    log::info!(
+        "Loaded '{}': {} atoms, {} bonds",
+        structure.name(),
+        data.atoms.len(),
+        structure.bond_count()
+    );
+
+    state.structures.lock().insert(cache_key, structure);
     Ok(data)
+}
+
+#[tauri::command]
+fn load_molecule_frame(
+    path: String,
+    frame_index: usize,
+    bond_perception_tolerance: Option<f32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<MoleculeData, String> {
+    let read_options = read_options_for_request(bond_perception_tolerance);
+    let cache_key = structure_cache_key(&path, &read_options);
+    let cache = state.structures.lock();
+    let structure = cache.get(&cache_key).ok_or_else(|| {
+        "Molecule trajectory is not cached. Reload the molecule before changing frames.".to_string()
+    })?;
+    molecule_data_for_frame(structure, &path, frame_index)
 }
 
 fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) -> Result<(), String> {
@@ -1954,6 +2005,7 @@ fn main() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             load_molecule,
+            load_molecule_frame,
             get_benchmark_config,
             write_benchmark_result,
             get_startup_file,
@@ -2552,14 +2604,40 @@ mod tests {
     }
 
     #[test]
-    fn test_app_state_stores_structure() {
+    fn test_app_state_caches_structures_by_path_and_tolerance() {
         let state = AppState::new();
-        assert!(state.structure.lock().is_none());
+        assert!(state.structures.lock().is_empty());
 
-        let structure = Structure::new("test");
-        *state.structure.lock() = Some(structure);
+        let mut read_options = ReadOptions::default();
+        read_options.bond_perception_tolerance = normalize_bond_perception_tolerance(1.25);
+        let key = structure_cache_key("/tmp/test.xyz", &read_options);
+        state
+            .structures
+            .lock()
+            .insert(key.clone(), Structure::new("test"));
 
-        assert!(state.structure.lock().is_some());
-        assert_eq!(state.structure.lock().as_ref().unwrap().name(), "test");
+        assert_eq!(state.structures.lock().len(), 1);
+        assert_eq!(state.structures.lock().get(&key).unwrap().name(), "test");
+    }
+
+    #[test]
+    fn test_molecule_data_for_frame_serializes_requested_cached_frame() {
+        let input_path = std::env::temp_dir().join(format!("cylform-cache-input-{}.xyz", now_timestamp()));
+        fs::write(
+            &input_path,
+            "1\nframe 1 energy=-1.0\nC 0.0 0.0 0.0\n1\nframe 2 energy=-0.9\nC 4.0 5.0 6.0\n",
+        )
+        .unwrap();
+        let structure = read_structure_with_options(&input_path, FileFormat::Auto, ReadOptions::default()).unwrap();
+        let data = molecule_data_for_frame(&structure, input_path.to_str().unwrap(), 1).unwrap();
+
+        assert_eq!(data.metadata.frame_count, Some(2));
+        assert_eq!(data.metadata.loaded_frame_index, Some(1));
+        assert_eq!(data.metadata.title.as_deref(), Some("frame 2 energy=-0.9"));
+        assert_eq!(data.metadata.energy, Some(-0.9));
+        assert_eq!(data.atoms.len(), 1);
+        assert_eq!(data.atoms[0].element, "C");
+
+        let _ = fs::remove_file(input_path);
     }
 }

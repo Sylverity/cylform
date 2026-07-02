@@ -298,6 +298,7 @@ export function MoleculeCanvas({
   const [exportSettings, setExportSettings] = useState<PublicationExportSettings>(DEFAULT_PUBLICATION_EXPORT_SETTINGS);
   const [exportPreviewDataUrl, setExportPreviewDataUrl] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<{ progress: number; label: string } | null>(null);
+  const isExporting = Boolean(exportProgress);
   const visibilityIndex = useMemo(() => buildMoleculeVisibilityIndex(moleculeData), [moleculeData]);
   const isCylviewProfile = renderProfile === 'cylview';
 
@@ -1802,12 +1803,14 @@ export function MoleculeCanvas({
   };
 
   const requestFrame = (nextFrameIndex: number) => {
+    if (isExporting) return;
     const count = Math.max(1, frameCount);
     const normalized = ((nextFrameIndex % count) + count) % count;
     void onFrameChange(normalized);
   };
 
   const exportCurrentFrameXyz = async () => {
+    if (isExporting) return;
     if (!moleculeData) {
       onError('Load a molecule before exporting a frame.');
       return;
@@ -1870,19 +1873,26 @@ export function MoleculeCanvas({
                   step="1"
                   value={frameIndex}
                   aria-label="Current frame"
+                  disabled={isExporting}
                   onChange={(event) => requestFrame(Number(event.target.value))}
                 />
                 <div className="frame-button-row">
-                  <button type="button" onClick={() => requestFrame(frameIndex - 1)}>Prev</button>
-                  <button type="button" className={isFramePlaying ? 'view-toggle active' : 'view-toggle'} onClick={onFramePlaybackToggle}>
+                  <button type="button" disabled={isExporting} onClick={() => requestFrame(frameIndex - 1)}>Prev</button>
+                  <button
+                    type="button"
+                    className={isFramePlaying ? 'view-toggle active' : 'view-toggle'}
+                    disabled={isExporting}
+                    onClick={onFramePlaybackToggle}
+                  >
                     {isFramePlaying ? 'Pause' : 'Play'}
                   </button>
-                  <button type="button" onClick={() => requestFrame(frameIndex + 1)}>Next</button>
+                  <button type="button" disabled={isExporting} onClick={() => requestFrame(frameIndex + 1)}>Next</button>
                 </div>
                 <label className="view-control">
                   <span>Speed</span>
                   <select
                     value={framePlaybackSpeed}
+                    disabled={isExporting}
                     onChange={(event) => onFramePlaybackSpeedChange(Number(event.target.value))}
                   >
                     <option value={0.5}>0.5 fps</option>
@@ -1892,7 +1902,7 @@ export function MoleculeCanvas({
                     <option value={10}>10 fps</option>
                   </select>
                 </label>
-                <button type="button" className="panel-action compact" onClick={() => void exportCurrentFrameXyz()}>
+                <button type="button" className="panel-action compact" disabled={isExporting} onClick={() => void exportCurrentFrameXyz()}>
                   Export XYZ
                 </button>
               </div>
