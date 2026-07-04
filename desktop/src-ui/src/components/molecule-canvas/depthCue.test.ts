@@ -1,6 +1,8 @@
 import { Box3, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
+  focalBlurUniformsForAmount,
+  focalDistanceForView,
   fogRangeForView,
   moleculeViewDepthRange,
 } from './depthCue';
@@ -54,6 +56,18 @@ describe('depth cue fog', () => {
     expect(fog).not.toBeNull();
     expect(fog?.near).toBeLessThan(18);
     expect(fog?.far).toBeLessThan(24);
+  });
+
+  it('maps focal depth across the molecule even when fog is disabled', () => {
+    expect(focalDistanceForView(testBox(), testCamera(), 0)).toBeCloseTo(16);
+    expect(focalDistanceForView(testBox(), testCamera(), 0.5)).toBeCloseTo(20);
+    expect(focalDistanceForView(testBox(), testCamera(), 1)).toBeCloseTo(24);
+  });
+
+  it('uses a true zero for disabled focal blur strength', () => {
+    expect(focalBlurUniformsForAmount(0)).toEqual({ aperture: 0, maxblur: 0 });
+    expect(focalBlurUniformsForAmount(1).aperture).toBeGreaterThan(0);
+    expect(focalBlurUniformsForAmount(1).maxblur).toBeGreaterThan(0);
   });
 
   it('disables fog safely without molecule bounds', () => {

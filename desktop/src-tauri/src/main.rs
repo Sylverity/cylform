@@ -44,6 +44,7 @@ const EVENT_MENU_EXPORT_PNG: &str = "menu:export-png";
 const EVENT_MENU_OPEN_SETTINGS: &str = "menu:open-settings";
 const EVENT_MENU_RESET_VIEW: &str = "menu:reset-view";
 const EVENT_MENU_DEVTOOLS_DISABLED: &str = "menu:devtools-disabled";
+const EVENT_OPEN_FILES: &str = "app:open-files";
 #[cfg(not(any(debug_assertions, feature = "devtools")))]
 const EVENT_MENU_DEVTOOLS_UNAVAILABLE: &str = "menu:devtools-unavailable";
 
@@ -612,7 +613,10 @@ fn molecule_data_for_frame(
         groups,
         metadata: SerialMoleculeMetadata {
             source_format: structure.metadata.source_format.clone(),
-            title: frame.title.clone().or_else(|| structure.metadata.title.clone()),
+            title: frame
+                .title
+                .clone()
+                .or_else(|| structure.metadata.title.clone()),
             frame_count: structure.metadata.frame_count,
             loaded_frame_index: Some(frame_index),
             energy: frame.energy,
@@ -678,7 +682,11 @@ fn load_molecule_frame(
     molecule_data_for_frame(structure, &path, frame_index)
 }
 
-fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) -> Result<(), String> {
+fn export_xyz_frame_to_path(
+    path: &Path,
+    source_path: &str,
+    frame_index: usize,
+) -> Result<(), String> {
     if path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -696,8 +704,9 @@ fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) 
         }
     }
 
-    let structure = read_structure_with_options(source_path, FileFormat::Auto, read_options_from_env())
-        .map_err(format_load_error)?;
+    let structure =
+        read_structure_with_options(source_path, FileFormat::Auto, read_options_from_env())
+            .map_err(format_load_error)?;
     write_xyz_frame(path, &structure, frame_index)
         .map_err(|error| format!("Could not export XYZ frame: {error}"))
 }
@@ -1846,10 +1855,43 @@ fn format_load_error(error: CoreError) -> String {
 /// Return an optional molecular file path passed on app launch.
 #[tauri::command]
 fn get_startup_file() -> Option<String> {
-    std::env::args().skip(1).find(|arg| {
-        let path = Path::new(arg);
-        path.exists() && path.is_file()
-    })
+    molecule_file_args(std::env::args().skip(1), None)
+        .into_iter()
+        .next()
+}
+
+fn molecule_file_args<I, S>(args: I, cwd: Option<&Path>) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .filter_map(|arg| molecule_file_arg(arg.as_ref(), cwd))
+        .collect()
+}
+
+fn molecule_file_arg(arg: &str, cwd: Option<&Path>) -> Option<String> {
+    let path = Path::new(arg);
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.map(|cwd| cwd.join(path))
+            .unwrap_or_else(|| path.to_path_buf())
+    };
+
+    let extension = path.extension().and_then(|extension| extension.to_str())?;
+    if !supported_read_extensions()
+        .iter()
+        .any(|supported| extension.eq_ignore_ascii_case(supported))
+    {
+        return None;
+    }
+
+    if !path.exists() || !path.is_file() {
+        return None;
+    }
+
+    Some(path.to_string_lossy().to_string())
 }
 
 fn menu_event_name(menu_id: &str) -> Option<&'static str> {
@@ -1994,11 +2036,18 @@ fn main() {
         .on_menu_event(|app, event| {
             handle_app_menu_event(app, event.id().as_ref());
         })
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
+                let cwd = PathBuf::from(cwd);
+                let paths = molecule_file_args(args, Some(&cwd));
+                if !paths.is_empty() {
+                    if let Err(error) = window.emit(EVENT_OPEN_FILES, paths) {
+                        log::warn!("Could not emit associated file-open event: {error}");
+                    }
+                }
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -2067,6 +2116,33 @@ mod tests {
         let key2 = path_key("/home/user/mol.xyz");
         assert_eq!(key1, key2);
         assert_eq!(key1.len(), 16);
+    }
+
+    #[test]
+    fn test_molecule_file_args_filters_supported_existing_files() {
+        let cwd = std::env::temp_dir().join(format!("cylform-launch-{}", now_timestamp()));
+        fs::create_dir_all(&cwd).expect("create launch arg test directory");
+        let xyz = cwd.join("launch.xyz");
+        let pdb = cwd.join("UPPER.PDB");
+        let txt = cwd.join("notes.txt");
+        fs::write(&xyz, "0\n\n").expect("write xyz fixture");
+        fs::write(&pdb, "END\n").expect("write pdb fixture");
+        fs::write(&txt, "not a molecule").expect("write unsupported fixture");
+
+        let paths = molecule_file_args(
+            ["launch.xyz", "UPPER.PDB", "notes.txt", "missing.xyz"],
+            Some(&cwd),
+        );
+
+        assert_eq!(
+            paths,
+            vec![
+                xyz.to_string_lossy().to_string(),
+                pdb.to_string_lossy().to_string(),
+            ]
+        );
+
+        fs::remove_dir_all(cwd).ok();
     }
 
     #[test]
@@ -2300,8 +2376,10 @@ mod tests {
 
     #[test]
     fn test_export_xyz_frame_to_path_exports_selected_frame() {
-        let input_path = std::env::temp_dir().join(format!("cylform-input-{}.xyz", now_timestamp()));
-        let output_path = std::env::temp_dir().join(format!("cylform-frame-{}.xyz", now_timestamp()));
+        let input_path =
+            std::env::temp_dir().join(format!("cylform-input-{}.xyz", now_timestamp()));
+        let output_path =
+            std::env::temp_dir().join(format!("cylform-frame-{}.xyz", now_timestamp()));
         fs::write(
             &input_path,
             "1\nframe 1\nC 0.0 0.0 0.0\n1\nframe 2\nC 4.0 5.0 6.0\n",
@@ -2315,7 +2393,12 @@ mod tests {
         assert!(exported.contains("C     4.000000     5.000000     6.000000"));
         fs::remove_file(&input_path).unwrap();
         fs::remove_file(&output_path).unwrap();
-        assert!(export_xyz_frame_to_path(&output_path.with_extension("txt"), input_path.to_str().unwrap(), 0).is_err());
+        assert!(export_xyz_frame_to_path(
+            &output_path.with_extension("txt"),
+            input_path.to_str().unwrap(),
+            0
+        )
+        .is_err());
     }
 
     #[test]
@@ -2608,8 +2691,10 @@ mod tests {
         let state = AppState::new();
         assert!(state.structures.lock().is_empty());
 
-        let mut read_options = ReadOptions::default();
-        read_options.bond_perception_tolerance = normalize_bond_perception_tolerance(1.25);
+        let read_options = ReadOptions {
+            bond_perception_tolerance: normalize_bond_perception_tolerance(1.25),
+            ..Default::default()
+        };
         let key = structure_cache_key("/tmp/test.xyz", &read_options);
         state
             .structures
@@ -2622,13 +2707,16 @@ mod tests {
 
     #[test]
     fn test_molecule_data_for_frame_serializes_requested_cached_frame() {
-        let input_path = std::env::temp_dir().join(format!("cylform-cache-input-{}.xyz", now_timestamp()));
+        let input_path =
+            std::env::temp_dir().join(format!("cylform-cache-input-{}.xyz", now_timestamp()));
         fs::write(
             &input_path,
             "1\nframe 1 energy=-1.0\nC 0.0 0.0 0.0\n1\nframe 2 energy=-0.9\nC 4.0 5.0 6.0\n",
         )
         .unwrap();
-        let structure = read_structure_with_options(&input_path, FileFormat::Auto, ReadOptions::default()).unwrap();
+        let structure =
+            read_structure_with_options(&input_path, FileFormat::Auto, ReadOptions::default())
+                .unwrap();
         let data = molecule_data_for_frame(&structure, input_path.to_str().unwrap(), 1).unwrap();
 
         assert_eq!(data.metadata.frame_count, Some(2));

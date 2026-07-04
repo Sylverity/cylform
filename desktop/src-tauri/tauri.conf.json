@@ -23,6 +23,22 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["xyz"],
+        "name": "XYZ Molecule",
+        "description": "XYZ molecular structure",
+        "mimeType": "chemical/x-xyz",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["pdb"],
+        "name": "PDB Molecule",
+        "description": "Protein Data Bank molecular structure",
+        "mimeType": "chemical/x-pdb",
+        "role": "Viewer"
+      }
     ]
   }
 }

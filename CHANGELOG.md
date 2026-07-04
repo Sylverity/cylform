@@ -4,7 +4,11 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+### Added
+- Registered Cylform as an OS file handler for `.xyz` and `.pdb` molecular files in packaged builds, including support for opening associated files in an already-running app instance.
+
+### Fixed
+- Fixed focal blur rendering so it preserves normal scene brightness, lets the Blur slider reach a true 0% effect, and makes the Focus slider work independently of fog.
 
 ## [0.7.1] - 2026-07-01
 

@@ -313,7 +313,7 @@ fn parse_energy_from_title(title: &str) -> (Option<f64>, Option<String>) {
                         Some(parsed),
                         normalized
                             .get(index + 2)
-                            .filter(|unit| !unit.parse::<f64>().is_ok())
+                            .filter(|unit| unit.parse::<f64>().is_err())
                             .cloned(),
                     );
                 }
@@ -492,7 +492,10 @@ fn read_xyz_content(content: &str, options: ReadOptions) -> Result<Structure> {
         cursor += frame_atom_count + 2;
     }
 
-    let frame_count = frames.len().max(detect_xyz_frame_count(&lines, num_atoms, options.max_atoms));
+    let frame_count =
+        frames
+            .len()
+            .max(detect_xyz_frame_count(&lines, num_atoms, options.max_atoms));
     let (energy, energy_unit) = frames
         .first()
         .map(|frame| (frame.energy, frame.energy_unit.clone()))
@@ -514,9 +517,10 @@ fn read_xyz_content(content: &str, options: ReadOptions) -> Result<Structure> {
     }
 
     if frame_count > 1 {
-        structure.metadata.warnings.push(format!(
-            "Detected {frame_count} XYZ frames."
-        ));
+        structure
+            .metadata
+            .warnings
+            .push(format!("Detected {frame_count} XYZ frames."));
     }
 
     // Auto-perceive bonds
@@ -915,10 +919,19 @@ H 0.9 0.0 0.0
 
         assert_eq!(structure.atom_count(), 2);
         assert_eq!(structure.frames.len(), 2);
-        assert_eq!(structure.frame(0).unwrap().title.as_deref(), Some("step 1 E -1.0 hartree"));
-        assert_eq!(structure.frame(1).unwrap().title.as_deref(), Some("step 2 E -0.9 hartree"));
+        assert_eq!(
+            structure.frame(0).unwrap().title.as_deref(),
+            Some("step 1 E -1.0 hartree")
+        );
+        assert_eq!(
+            structure.frame(1).unwrap().title.as_deref(),
+            Some("step 2 E -0.9 hartree")
+        );
         assert_eq!(structure.frame(1).unwrap().energy, Some(-0.9));
-        assert_eq!(structure.frame(1).unwrap().energy_unit.as_deref(), Some("hartree"));
+        assert_eq!(
+            structure.frame(1).unwrap().energy_unit.as_deref(),
+            Some("hartree")
+        );
         assert_eq!(structure.frame(1).unwrap().atoms[0].position.x, 0.1);
         assert_eq!(structure.metadata.frame_count, Some(2));
         assert_eq!(structure.metadata.loaded_frame_index, Some(0));

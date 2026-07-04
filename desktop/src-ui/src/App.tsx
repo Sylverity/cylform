@@ -2054,6 +2054,9 @@ function App() {
         listen('menu:devtools-disabled', () => {
           addToast('DevTools are disabled in Settings.', 'info');
         }),
+        listen<string[]>('app:open-files', (event) => {
+          void addDroppedMoleculeTabs(event.payload);
+        }),
       ]);
       if (cancelled) {
         listeners.forEach((unlisten) => unlisten());
@@ -2072,6 +2075,7 @@ function App() {
     };
   }, [
     addToast,
+    addDroppedMoleculeTabs,
     handleCloseCurrentTab,
     handleExportPng,
     handleOpenFile,

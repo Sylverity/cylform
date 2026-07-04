@@ -29,6 +29,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -379,12 +380,14 @@ export function MoleculeCanvas({
     const renderPass = new RenderPass(scene, camera);
     const bokehPass = new BokehPass(scene, camera, {
       focus: 25,
-      aperture: 0.00002,
-      maxblur: 0.006,
+      aperture: 0,
+      maxblur: 0,
     });
+    const outputPass = new OutputPass();
     const composer = new EffectComposer(renderer);
     composer.addPass(renderPass);
     composer.addPass(bokehPass);
+    composer.addPass(outputPass);
 
     // Bright, print-oriented lighting tuned toward the CYLview reference.
     const ambient = new AmbientLight(0xffffff, 0.52);
@@ -1062,6 +1065,7 @@ export function MoleculeCanvas({
       atomMats.forEach(m => m.dispose());
       composer.dispose();
       bokehPass.dispose();
+      outputPass.dispose();
       renderer.dispose();
       container.removeChild(renderer.domElement);
       ctxRef.current = null;

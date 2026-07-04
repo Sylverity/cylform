@@ -26,6 +26,8 @@ export interface FogRange {
 }
 
 const BOX_CORNERS = Array.from({ length: 8 }, () => new Vector3());
+const MAX_FOCAL_APERTURE = 0.0014;
+const MAX_FOCAL_BLUR = 0.014;
 
 function boxCorners(box: Box3): Vector3[] {
   const min = box.min;
@@ -92,6 +94,20 @@ export function fogRangeForView(
   return { near, far, focus };
 }
 
+export function focalDistanceForView(box: Box3 | null, camera: Camera, focalDepth: number): number | null {
+  const range = moleculeViewDepthRange(box, camera);
+  if (!range) return null;
+  return Math.max(0.01, range.minDepth + range.span * clamp(focalDepth, 0, 1));
+}
+
+export function focalBlurUniformsForAmount(amount: number): { aperture: number; maxblur: number } {
+  const strength = Math.pow(clamp(amount, 0, 1), 1.25);
+  return {
+    aperture: strength * MAX_FOCAL_APERTURE,
+    maxblur: strength * MAX_FOCAL_BLUR,
+  };
+}
+
 export function applyDepthCue(ctx: SceneCtx): FogRange | null {
   const options = ctx.depthCue.options;
   const bg = ctx.depthCue.backgroundColor;
@@ -106,10 +122,11 @@ export function applyDepthCue(ctx: SceneCtx): FogRange | null {
     bokehPass.camera = ctx.camera;
     const uniforms = bokehPass.uniforms as NumericUniforms;
     const fallbackFocus = ctx.camera.position.distanceTo(ctx.controls.target);
-    const focus = fogRange?.focus ?? fallbackFocus;
+    const focus = focalDistanceForView(ctx.lastMoleculeBox, ctx.camera, options.focalDepth) ?? fallbackFocus;
+    const blurUniforms = focalBlurUniformsForAmount(options.focalBlurAmount);
     uniforms.focus.value = Math.max(0.01, focus);
-    uniforms.aperture.value = 0.000006 + clamp(options.focalBlurAmount, 0, 1) * 0.00006;
-    uniforms.maxblur.value = 0.001 + clamp(options.focalBlurAmount, 0, 1) * 0.018;
+    uniforms.aperture.value = blurUniforms.aperture;
+    uniforms.maxblur.value = blurUniforms.maxblur;
     uniforms.nearClip.value = ctx.camera.near;
     uniforms.farClip.value = ctx.camera.far;
     uniforms.aspect.value = (
@@ -126,6 +143,7 @@ export function renderScene(ctx: SceneCtx): void {
   applyDepthCue(ctx);
   if (
     ctx.depthCue.options.focalBlurEnabled &&
+    focalBlurUniformsForAmount(ctx.depthCue.options.focalBlurAmount).maxblur > 0 &&
     ctx.depthCue.composer &&
     ctx.depthCue.bokehPass &&
     ctx.lastMoleculeBox
