@@ -331,7 +331,7 @@ fn default_presentation_camera(render_profile: &str) -> Value {
     json!({
         "showFloor": false,
         "showGrid": false,
-        "backdropTone": if houkmol { "clean" } else { "paper" },
+        "backdropTone": "clean",
         "customBackdropHex": "#ffffff",
         "projection": "perspective",
         "lightingMood": "publication",
@@ -1992,6 +1992,30 @@ fn main() {
 mod tests {
     use super::*;
     use cylform_core::io::IoError;
+
+    #[test]
+    fn test_default_app_settings_match_shared_golden_fixture() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../shared-fixtures/default-app-settings.json"
+        ))
+        .expect("golden default app settings fixture parses");
+        assert_eq!(default_app_settings(), fixture);
+    }
+
+    #[test]
+    fn test_default_presentation_cameras_match_shared_golden_fixture() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../shared-fixtures/default-presentation-cameras.json"
+        ))
+        .expect("golden default presentation cameras fixture parses");
+        for profile in ["cylview", "ball-stick", "houkmol"] {
+            assert_eq!(
+                default_presentation_camera(profile),
+                fixture[profile],
+                "default camera drifted from the shared fixture for profile {profile}"
+            );
+        }
+    }
 
     #[test]
     fn test_path_key_consistency() {
