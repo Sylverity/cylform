@@ -34,6 +34,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
 import { LoadingSpinner } from './LoadingSpinner';
+import { dispatchCanvasEvent, listenToCanvasEvent } from '../canvasEvents';
 import { profileViewOptionPatch } from '../persistence';
 import type {
   ElementColorOverrides,
@@ -629,13 +630,13 @@ export function MoleculeCanvas({
     ro.observe(container);
 
     // Toolbar button and global keyboard shortcut
+    const canvasEventUnsubscribers: Array<() => void> = [];
     const onReset = () => ctxRef.current?.controls.reset();
 
-    const onCaptureCameraPose = (event: Event) => {
+    const onCaptureCameraPose = (detail: { updatePoseId?: string } | undefined) => {
       const current = ctxRef.current;
       if (!current) return;
-      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
-      const payload = {
+      dispatchCanvasEvent('camera-pose-captured', {
         updatePoseId: detail?.updatePoseId,
         cameraPosition: {
           x: current.camera.position.x,
@@ -649,27 +650,26 @@ export function MoleculeCanvas({
         },
         projection: viewOptionsForPoseRef.current.projection,
         viewOptions: viewOptionsForPoseRef.current,
-      };
-      window.dispatchEvent(new CustomEvent('camera-pose-captured', { detail: payload }));
+      });
     };
 
-    const onApplyCameraPose = (event: Event) => {
+    const onApplyCameraPose = (pose: SavedPose) => {
       const current = ctxRef.current;
-      const pose = (event as CustomEvent<SavedPose>).detail;
       if (!current || !pose) return;
       applySavedPoseToContext(current, pose);
     };
-    const onApplyCameraPreset = (event: Event) => {
+    const onApplyCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
       const current = ctxRef.current;
-      const preset = (event as CustomEvent<'front' | 'top' | 'right' | 'iso'>).detail;
       if (!current || !moleculeDataRef.current || !preset) return;
       applyCameraPreset(current, preset);
     };
     if (!previewMode) {
-      window.addEventListener('reset-camera', onReset);
-      window.addEventListener('capture-camera-pose', onCaptureCameraPose);
-      window.addEventListener('apply-camera-pose', onApplyCameraPose);
-      window.addEventListener('camera-preset', onApplyCameraPreset);
+      canvasEventUnsubscribers.push(
+        listenToCanvasEvent('reset-camera', onReset),
+        listenToCanvasEvent('capture-camera-pose', onCaptureCameraPose),
+        listenToCanvasEvent('apply-camera-pose', onApplyCameraPose),
+        listenToCanvasEvent('camera-preset', onApplyCameraPreset),
+      );
     }
 
     let pointerDown = { x: 0, y: 0 };
@@ -1029,22 +1029,17 @@ export function MoleculeCanvas({
       setExportPanelOpen(true);
     };
     if (!previewMode) {
-      window.addEventListener('export-png', onExport);
+      canvasEventUnsubscribers.push(listenToCanvasEvent('export-png', onExport));
     }
 
     const onClearSelection = () => clearSelection();
     if (!previewMode) {
-      window.addEventListener('clear-selection', onClearSelection);
+      canvasEventUnsubscribers.push(listenToCanvasEvent('clear-selection', onClearSelection));
     }
 
     return () => {
       ro.disconnect();
-      window.removeEventListener('reset-camera', onReset);
-      window.removeEventListener('capture-camera-pose', onCaptureCameraPose);
-      window.removeEventListener('apply-camera-pose', onApplyCameraPose);
-      window.removeEventListener('camera-preset', onApplyCameraPreset);
-      window.removeEventListener('export-png', onExport);
-      window.removeEventListener('clear-selection', onClearSelection);
+      canvasEventUnsubscribers.forEach((unsubscribe) => unsubscribe());
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(animId);

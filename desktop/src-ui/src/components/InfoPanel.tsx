@@ -13,11 +13,12 @@ import type {
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
 } from '../types';
+import { dispatchCanvasEvent } from '../canvasEvents';
 import { isAtomVisible } from '../domain/visibility';
 import { formatAngle, formatDistance } from '../domain/measurements';
 
 function clearSelection(): void {
-  window.dispatchEvent(new CustomEvent('clear-selection'));
+  dispatchCanvasEvent('clear-selection');
 }
 
 function selectionModeLabel(mode: SelectionMode): string {

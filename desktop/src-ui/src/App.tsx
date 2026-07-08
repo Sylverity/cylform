@@ -23,6 +23,7 @@ import {
   shortcutMatchesEvent,
   type ShortcutActionId,
 } from './shortcuts'
+import { dispatchCanvasEvent, listenToCanvasEvent, type CameraPresetId } from './canvasEvents'
 import { formatAngle, formatDistance } from './domain/measurements'
 import { displayNameForPath, isSupportedMoleculePath } from './domain/paths'
 import { useAppSettings } from './hooks/useAppSettings'
@@ -1001,7 +1002,7 @@ function App() {
   }, [handleError]);
 
   const handleResetView = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('reset-camera'));
+    dispatchCanvasEvent('reset-camera');
   }, []);
 
   const handleExportPng = useCallback(() => {
@@ -1011,11 +1012,11 @@ function App() {
       addToast(message, 'info');
       return;
     }
-    window.dispatchEvent(new CustomEvent('export-png'));
+    dispatchCanvasEvent('export-png');
   }, [addToast, handleError, moleculeData]);
 
   const handleClearSelection = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('clear-selection'));
+    dispatchCanvasEvent('clear-selection');
   }, []);
 
   const handlePngExportScaleChange = useCallback((scale: 1 | 2 | 4) => {
@@ -1193,12 +1194,10 @@ function App() {
   }, []);
 
   const handleSavePose = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('capture-camera-pose'));
+    dispatchCanvasEvent('capture-camera-pose');
   }, []);
 
-  const handlePoseCaptured = useCallback((event: Event) => {
-    const detail = (event as CustomEvent<Omit<SavedPose, 'id' | 'name'>>).detail;
-    if (!detail) return;
+  const handlePoseCaptured = useCallback((detail: Omit<SavedPose, 'id' | 'name'>) => {
     setSavedPoses((current) => [
       ...current,
       {
@@ -1218,16 +1217,15 @@ function App() {
       },
     };
     setViewOptions(completePose.viewOptions);
-    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: completePose }));
+    dispatchCanvasEvent('apply-camera-pose', completePose);
   }, [defaultPresentationState]);
 
   const handleUpdatePose = useCallback((pose: SavedPose) => {
-    window.dispatchEvent(new CustomEvent('capture-camera-pose', { detail: { updatePoseId: pose.id } }));
+    dispatchCanvasEvent('capture-camera-pose', { updatePoseId: pose.id });
   }, []);
 
-  const handlePoseUpdated = useCallback((event: Event) => {
-    const detail = (event as CustomEvent<{ updatePoseId?: string } & Omit<SavedPose, 'id' | 'name'>>).detail;
-    if (!detail?.updatePoseId) return;
+  const handlePoseUpdated = useCallback((detail: { updatePoseId?: string } & Omit<SavedPose, 'id' | 'name'>) => {
+    if (!detail.updatePoseId) return;
     setSavedPoses((current) => current.map((pose) => (
       pose.id === detail.updatePoseId
         ? { ...pose, ...detail, id: pose.id, name: pose.name }
@@ -1361,8 +1359,8 @@ function App() {
       if (nextTab) void focusMoleculeTab(nextTab.id);
     };
 
-    const dispatchCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
-      window.dispatchEvent(new CustomEvent('camera-preset', { detail: preset }));
+    const dispatchCameraPreset = (preset: CameraPresetId) => {
+      dispatchCanvasEvent('camera-preset', preset);
     };
 
     const runShortcutAction = (action: ShortcutActionId) => {
@@ -1540,16 +1538,13 @@ function App() {
   ]);
 
   useEffect(() => {
-    const onPoseCaptured = (event: Event) => {
-      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
+    return listenToCanvasEvent('camera-pose-captured', (detail) => {
       if (detail?.updatePoseId) {
-        handlePoseUpdated(event);
+        handlePoseUpdated(detail);
       } else {
-        handlePoseCaptured(event);
+        handlePoseCaptured(detail);
       }
-    };
-    window.addEventListener('camera-pose-captured', onPoseCaptured);
-    return () => window.removeEventListener('camera-pose-captured', onPoseCaptured);
+    });
   }, [handlePoseCaptured, handlePoseUpdated]);
 
   useEffect(() => {
