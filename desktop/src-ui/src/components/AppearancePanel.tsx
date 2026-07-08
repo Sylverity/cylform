@@ -8,7 +8,7 @@ import type {
   MoleculeData,
   SelectionMode,
   SelectionSummary,
-} from '../App';
+} from '../types';
 import { defaultElementColorHex } from './molecule-canvas/materialPresets';
 
 const BOND_STYLE_OPTIONS: Array<{ value: BondStyleType; label: string }> = [

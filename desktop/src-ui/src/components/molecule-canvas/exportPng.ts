@@ -32,7 +32,7 @@ import type {
   RenderProfileId,
   SavedPose,
   ViewOptions,
-} from '../../App';
+} from '../../types';
 import { drawRichLabelText } from './labels';
 import { renderScene } from './depthCue';
 

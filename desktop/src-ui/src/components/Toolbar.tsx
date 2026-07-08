@@ -1,4 +1,4 @@
-import type { HydrogenVisibility, SelectionMode } from '../App';
+import type { HydrogenVisibility, SelectionMode } from '../types';
 import appIconUrl from '../../../src-tauri/icons/32x32.png';
 import { shortcutDisplayText, type ShortcutActionId } from '../shortcuts';
 

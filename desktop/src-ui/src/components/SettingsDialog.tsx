@@ -5,7 +5,7 @@ import type {
   HydrogenVisibility,
   LightingMood,
   ProjectionMode,
-} from '../App';
+} from '../types';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   SHORTCUT_ACTION_LABELS,

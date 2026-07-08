@@ -1,6 +1,6 @@
 import { InstancedMesh, Intersection, Mesh } from 'three';
 import type { SceneCtx, PickResult, AtomSelectionData, BondSelectionData } from './types';
-import type { SelectionMode } from '../../App';
+import type { SelectionMode } from '../../types';
 
 export function resolveAtomHit(hit: Intersection | undefined): AtomSelectionData | null {
   if (!hit || !(hit.object instanceof InstancedMesh) || typeof hit.instanceId !== 'number') {
