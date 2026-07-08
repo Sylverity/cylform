@@ -1,35 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react';
 import {
-  AmbientLight,
   Box3,
-  Color,
-  CylinderGeometry,
-  DirectionalLight,
-  DoubleSide,
-  GridHelper,
-  Group,
   InstancedMesh,
   Material,
   Matrix4,
   MathUtils,
   Mesh,
-  MeshBasicMaterial,
   MeshPhongMaterial,
-  MOUSE,
   OrthographicCamera,
-  PerspectiveCamera,
-  PlaneGeometry,
-  Raycaster,
-  Scene,
-  SphereGeometry,
-  Vector2,
   Vector3,
-  WebGLRenderer,
 } from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
@@ -72,7 +52,6 @@ import {
   atomColorHex,
   atomDisplayRadius,
   backdropColor,
-  MATERIAL_PRESETS,
   applyMaterialPreset,
   applyMaterialFinish,
   bondMaterialForType,
@@ -102,7 +81,6 @@ import {
 import {
   buildMoleculeVisibilityIndex,
   isAtomVisible,
-  labelSourceVisible,
 } from './molecule-canvas/visibility';
 import {
   perfLoggingEnabled,
@@ -141,6 +119,8 @@ import {
   resolveExportFrameIndices,
   sanitizeExportFileName,
 } from './molecule-canvas/exportWorkflow';
+import { createSceneContext, orbitMouseButtons } from './molecule-canvas/sceneSetup';
+import { updateScreenOverlays } from './molecule-canvas/screenLabels';
 import {
   renderScene,
   updateDepthCueBackground,
@@ -360,264 +340,49 @@ export function MoleculeCanvas({
     const container = containerRef.current;
     if (!container) return;
 
-    const w = container.clientWidth  || 800;
-    const h = container.clientHeight || 600;
-
-    // preserveDrawingBuffer is required for toDataURL PNG export
-    const renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(w, h);
-    container.appendChild(renderer.domElement);
-
-    const scene = new Scene();
-    scene.background = new Color(0xffffff);
-    scene.fog = null;
-
-    const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
-    const orthographicCamera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
-    camera.position.set(0, 0, 25);
-    orthographicCamera.position.copy(camera.position);
-
-    const renderPass = new RenderPass(scene, camera);
-    const bokehPass = new BokehPass(scene, camera, {
-      focus: 25,
-      aperture: 0.00002,
-      maxblur: 0.006,
+    const { ctx: sceneCtx, dispose: disposeSceneContext } = createSceneContext(container, {
+      renderProfile,
+      mouseMode,
+      invertScrollZoom,
+      viewOptions: viewOptionsRef.current,
     });
-    const composer = new EffectComposer(renderer);
-    composer.addPass(renderPass);
-    composer.addPass(bokehPass);
-
-    // Bright, print-oriented lighting tuned toward the CYLview reference.
-    const ambient = new AmbientLight(0xffffff, 0.52);
-    scene.add(ambient);
-
-    const key = new DirectionalLight(0xffffff, 1.65);
-    key.position.set(3.2, 4.4, 6.4);
-    scene.add(key);
-
-    const fill = new DirectionalLight(0xffffff, 0.72);
-    fill.position.set(-5.2, 1.4, 3.2);
-    scene.add(fill);
-
-    const rim = new DirectionalLight(0xffffff, 0.24);
-    rim.position.set(-1.6, -3.6, -4.8);
-    scene.add(rim);
-
-    const topLight = new DirectionalLight(0xffffff, 0.35);
-    topLight.position.set(0, 7, 1.5);
-    scene.add(topLight);
-
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping  = true;
-    controls.dampingFactor  = 0.08;
-    controls.mouseButtons = mouseMode === 'one-button'
-      ? {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.PAN,
-          RIGHT: MOUSE.PAN,
-        }
-      : {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.DOLLY,
-          RIGHT: MOUSE.PAN,
-        };
-    controls.zoomSpeed = invertScrollZoom ? -1 : 1;
-
-    const molGroup = new Group();
-    scene.add(molGroup);
-
-    const floorGroup = new Group();
-    const floorMat = new MeshBasicMaterial({
-      color: 0x2d3035,
-      side: DoubleSide,
-      transparent: true,
-      opacity: 0.92,
-    });
-    const floorPlane = new Mesh(new PlaneGeometry(1, 1), floorMat);
-    floorPlane.rotation.x = -Math.PI / 2;
-    const floorGrid = new GridHelper(10, 20, 0x737983, 0x4c525a);
-    floorGroup.add(floorPlane);
-    floorGroup.add(floorGrid);
-    floorGroup.visible = false;
-    scene.add(floorGroup);
-
-    const sphereGeom = new SphereGeometry(1, 20, 16);
-    const cylGeom    = new CylinderGeometry(1, 1, 1, 24, 1, true);
-    const sphereGeometryCache = new Map<string, SphereGeometry>([['20x16', sphereGeom]]);
-    const cylinderGeometryCache = new Map<string, CylinderGeometry>([['24', cylGeom]]);
-
-    // Saturated cyan cylinders with enough gloss to read like polished tubes.
-    const bondMat = new MeshPhongMaterial({
-      color:     MATERIAL_PRESETS[renderProfile].bondColor,
-      shininess: MATERIAL_PRESETS[renderProfile].shininess,
-      specular:  MATERIAL_PRESETS[renderProfile].specular.clone(),
-    });
-    const selectedBondMat = new MeshPhongMaterial({
-      color:     0xffa24c,
-      shininess: 190,
-      specular:  new Color(0.98, 0.88, 0.78),
-    });
-    const selectedAtomMat = new MeshPhongMaterial({
-      color:     0xffbf73,
-      shininess: 150,
-      specular:  new Color(0.98, 0.9, 0.78),
-    });
-
-    const atomMats = new Map<string, MeshPhongMaterial>();
-    const raycaster = new Raycaster();
-    const pointer = new Vector2();
+    ctxRef.current = sceneCtx;
+    const { renderer, scene, controls, perspectiveCamera: camera } = sceneCtx;
 
     // Render loop
     let animId = 0;
     function animate() {
       animId = requestAnimationFrame(animate);
       controls.update();
-      const bondLabel = bondLabelRef.current;
-      const selectedBond = ctxRef.current?.selectedBondData;
-      const activeCamera = ctxRef.current?.camera ?? camera;
-      if (bondLabel && selectedBond) {
-        const projected = selectedBond.midpoint.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        bondLabel.style.display = visible ? 'block' : 'none';
-        bondLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        bondLabel.textContent = formatDistance(selectedBond.distance, distancePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (bondLabel) {
-        bondLabel.style.display = 'none';
-      }
-
-      const angleLabel = angleLabelRef.current;
-      const anglePosition = ctxRef.current?.angleLabelPosition;
-      const angleDegrees = ctxRef.current?.angleDegrees;
-      if (angleLabel && anglePosition && typeof angleDegrees === 'number') {
-        const projected = anglePosition.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        angleLabel.style.display = visible ? 'block' : 'none';
-        angleLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        angleLabel.textContent = formatAngle(angleDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (angleLabel) {
-        angleLabel.style.display = 'none';
-      }
-
-      const dihedralLabel = dihedralLabelRef.current;
-      const dihedralPosition = ctxRef.current?.dihedralLabelPosition;
-      const dihedralDegrees = ctxRef.current?.dihedralDegrees;
-      if (dihedralLabel && dihedralPosition && typeof dihedralDegrees === 'number') {
-        const projected = dihedralPosition.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        dihedralLabel.style.display = visible ? 'block' : 'none';
-        dihedralLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        dihedralLabel.textContent = formatAngle(dihedralDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (dihedralLabel) {
-        dihedralLabel.style.display = 'none';
-      }
-
-      const currentMoleculeData = moleculeDataRef.current;
-      const currentVisibilityIndex = visibilityIndexRef.current;
-      const currentHiddenAtomSet = new Set(hiddenAtomIndicesRef.current);
-      const currentHydrogenVisibility = hydrogenVisibilityRef.current;
-
-      for (const label of persistentLabelsRef.current) {
-        const labelElement = persistentLabelRefs.current.get(label.id);
-        if (!labelElement) continue;
-        if (
-          !label.visible ||
-          !labelSourceVisible(
-            label,
-            currentMoleculeData,
-            currentHydrogenVisibility,
-            currentHiddenAtomSet,
-            currentVisibilityIndex,
-          )
-        ) {
-          labelElement.style.display = 'none';
-          continue;
-        }
-
-        const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
-          .project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        labelElement.style.display = visible ? 'block' : 'none';
-        labelElement.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 10}px)`;
-      }
-
-      const linkCanvas = linkLinesRef.current;
-      if (linkCanvas && viewOptionsRef.current.showLabelLinkLines) {
-        const w = renderer.domElement.clientWidth;
-        const h = renderer.domElement.clientHeight;
-        if (linkCanvas.width !== w || linkCanvas.height !== h) {
-          linkCanvas.width = w;
-          linkCanvas.height = h;
-        }
-        const ctx2d = linkCanvas.getContext('2d');
-        if (ctx2d) {
-          ctx2d.clearRect(0, 0, w, h);
-          ctx2d.setLineDash([4, 3]);
-          ctx2d.strokeStyle = renderProfileRef.current === 'houkmol'
-            ? 'rgba(0, 0, 0, 0.72)'
-            : 'rgba(180, 160, 120, 0.5)';
-          ctx2d.lineWidth = 1;
-          for (const label of persistentLabelsRef.current) {
-            if (!label.visible) continue;
-            const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
-              .project(activeCamera);
-            const x = ((projected.x + 1) / 2) * w;
-            const y = ((-projected.y + 1) / 2) * h;
-            if (projected.z < -1 || projected.z > 1) continue;
-            ctx2d.beginPath();
-            ctx2d.moveTo(x, y);
-            ctx2d.lineTo(x, y - 10);
-            ctx2d.stroke();
-          }
-        }
-      } else if (linkCanvas) {
-        const ctx2d = linkCanvas.getContext('2d');
-        if (ctx2d) ctx2d.clearRect(0, 0, linkCanvas.width, linkCanvas.height);
-      }
-
       const current = ctxRef.current;
+      const activeCamera = current?.camera ?? camera;
+
       if (current) {
+        updateScreenOverlays(current, activeCamera, {
+          bondLabel: bondLabelRef.current,
+          angleLabel: angleLabelRef.current,
+          dihedralLabel: dihedralLabelRef.current,
+          linkCanvas: linkLinesRef.current,
+          labelElements: persistentLabelRefs.current,
+        }, {
+          persistentLabels: persistentLabelsRef.current,
+          moleculeData: moleculeDataRef.current,
+          hydrogenVisibility: hydrogenVisibilityRef.current,
+          hiddenAtomIndices: hiddenAtomIndicesRef.current,
+          visibilityIndex: visibilityIndexRef.current,
+          showLabelLinkLines: viewOptionsRef.current.showLabelLinkLines,
+          renderProfile: renderProfileRef.current,
+          distancePrecision: distancePrecisionRef.current,
+          anglePrecision: anglePrecisionRef.current,
+          useSymbolUnits: useSymbolUnitsRef.current,
+        });
         renderScene(current);
       } else {
         renderer.render(scene, activeCamera);
       }
     }
     animate();
-
-    ctxRef.current = {
-      renderer, scene, camera, perspectiveCamera: camera, orthographicCamera, controls,
-      molGroup, floorGroup, floorPlane, floorGrid, floorMat,
-      lights: { ambient, key, fill, rim, topLight },
-      depthCue: {
-        options: viewOptionsRef.current,
-        backgroundColor: 0xffffff,
-        composer,
-        renderPass,
-        bokehPass,
-      },
-      lastCameraDistance: 25,
-      lastMoleculeBox: null,
-      animId,
-      sphereGeom, cylGeom, sphereGeometryCache, cylinderGeometryCache, atomMats, bondMat, selectedBondMat,
-      raycaster, pointer, selectedBondOverlay: null, selectedBondData: null, bondPickObjects: [],
-      selectedAtomMat, atomPickObjects: [], selectedAtomOverlays: [], modeSelectedAtomOverlays: [],
-      modeSelectedBondOverlays: [], modeSelectedAtoms: [], modeSelectedBonds: [], angleSelection: [],
-      angleLabelPosition: null, angleDegrees: null, dihedralLabelPosition: null,
-      dihedralDegrees: null, angleArcMesh: null,
-    };
+    sceneCtx.animId = animId;
 
     // Resize
     const ro = new ResizeObserver(() => {
@@ -1048,18 +813,7 @@ export function MoleculeCanvas({
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(animId);
-      sphereGeometryCache.forEach((geometry) => geometry.dispose());
-      cylinderGeometryCache.forEach((geometry) => geometry.dispose());
-      floorPlane.geometry.dispose();
-      floorMat.dispose();
-      bondMat.dispose();
-      selectedBondMat.dispose();
-      selectedAtomMat.dispose();
-      atomMats.forEach(m => m.dispose());
-      composer.dispose();
-      bokehPass.dispose();
-      renderer.dispose();
-      container.removeChild(renderer.domElement);
+      disposeSceneContext();
       ctxRef.current = null;
     };
   }, [
@@ -1501,17 +1255,7 @@ export function MoleculeCanvas({
     const ctx = ctxRef.current;
     if (!ctx) return;
 
-    ctx.controls.mouseButtons = mouseMode === 'one-button'
-      ? {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.PAN,
-          RIGHT: MOUSE.PAN,
-        }
-      : {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.DOLLY,
-          RIGHT: MOUSE.PAN,
-        };
+    ctx.controls.mouseButtons = orbitMouseButtons(mouseMode);
     ctx.controls.zoomSpeed = invertScrollZoom ? -1 : 1;
   }, [invertScrollZoom, mouseMode]);
 
