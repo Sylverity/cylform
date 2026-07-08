@@ -13,6 +13,7 @@ High-level project history for Cylform.
 - Extracted Three.js scene construction into `molecule-canvas/sceneSetup.ts` (`createSceneContext` + dispose) and per-frame HTML overlay positioning into `molecule-canvas/screenLabels.ts` (`updateScreenOverlays`).
 - Extracted instanced atom/bond mesh building into `molecule-canvas/moleculeBatches.ts` (`buildMoleculeBatches`), shrinking `MoleculeCanvas.tsx` from 2.5k to ~2k lines overall.
 - Removed the unused placeholder `picker` module from `cylform-core`; interactive picking lives in the Three.js frontend.
+- Split the desktop Tauri backend `main.rs` (2.5k → 0.7k lines) into `menu`, `settings`, `presentation_state`, `pose_library`, `exports`, `molecule_commands`, and `workspace` modules with no behavior change.
 
 ## [0.7.1] - 2026-07-01
 
