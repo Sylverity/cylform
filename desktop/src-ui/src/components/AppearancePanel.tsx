@@ -9,6 +9,7 @@ import type {
   SelectionMode,
   SelectionSummary,
 } from '../types';
+import { isAtomVisible } from '../domain/visibility';
 import { defaultElementColorHex } from './molecule-canvas/materialPresets';
 
 const BOND_STYLE_OPTIONS: Array<{ value: BondStyleType; label: string }> = [
@@ -18,30 +19,6 @@ const BOND_STYLE_OPTIONS: Array<{ value: BondStyleType; label: string }> = [
   { value: 'interaction', label: 'Interaction' },
   { value: 'thin', label: 'Thin' },
 ];
-
-function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || atom.element !== 'H') return false;
-
-  return moleculeData.bonds.some((bond) => {
-    if (bond.atom1 === atomIndex) return moleculeData.atoms[bond.atom2]?.element === 'C';
-    if (bond.atom2 === atomIndex) return moleculeData.atoms[bond.atom1]?.element === 'C';
-    return false;
-  });
-}
-
-function isAtomVisible(
-  atomIndex: number,
-  moleculeData: MoleculeData,
-  hydrogenVisibility: 'shown' | 'hidden' | 'hide-c-h',
-  hiddenAtomSet: Set<number>,
-): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
-  if (hydrogenVisibility === 'hidden' && atom.element === 'H') return false;
-  if (hydrogenVisibility === 'hide-c-h' && isCarbonHydrogen(atomIndex, moleculeData)) return false;
-  return true;
-}
 
 interface AppearancePanelProps {
   moleculeData: MoleculeData | null;
