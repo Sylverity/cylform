@@ -24,10 +24,13 @@ import {
   type ShortcutActionId,
 } from './shortcuts'
 import { formatAngle, formatDistance } from './domain/measurements'
-import { defaultAppSettings } from './types'
+import { displayNameForPath, isSupportedMoleculePath } from './domain/paths'
+import { useAppSettings } from './hooks/useAppSettings'
+import { usePoseLibrary, type PosePreviewJob } from './hooks/usePoseLibrary'
+import { usePresentationStateAutosave } from './hooks/usePresentationStateAutosave'
+import { createTabId, useWorkspaceTabs } from './hooks/useWorkspaceTabs'
 import type {
   Annotation,
-  AppDataPaths,
   AppSettings,
   AtomStyleOverride,
   BenchmarkConfig,
@@ -60,15 +63,6 @@ const MoleculeCanvas = lazy(() =>
   })),
 );
 
-
-interface PosePreviewJob {
-  jobId: string;
-  entryId: string;
-  moleculePath: string;
-  pose: SavedPose;
-}
-
-
 interface BenchmarkLoadMetrics {
   path: string;
   loadMs: number;
@@ -85,37 +79,6 @@ function perfLoggingEnabled(): boolean {
   } catch {
     return false;
   }
-}
-
-function displayNameForPath(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
-
-function extensionForPath(path: string): string {
-  const fileName = displayNameForPath(path);
-  const dotIndex = fileName.lastIndexOf('.');
-  if (dotIndex < 0 || dotIndex === fileName.length - 1) return '';
-  return fileName.slice(dotIndex + 1).toLowerCase();
-}
-
-function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
-  const extension = extensionForPath(path);
-  if (!extension) return false;
-  return extensions.some((candidate) => candidate.toLowerCase() === extension);
-}
-
-
-function createTabId(): string {
-  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createPreviewJob(entry: PoseLibraryEntry): PosePreviewJob {
-  return {
-    jobId: `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    entryId: entry.id,
-    moleculePath: entry.moleculePath,
-    pose: entry.pose,
-  };
 }
 
 function PosePreviewRenderer({
@@ -403,43 +366,39 @@ function App() {
   const [renderProfile, setRenderProfile] = useState<RenderProfileId>('cylview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
-  const [moleculeTabs, setMoleculeTabs] = useState<MoleculeTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [hasLoadedSessionTabs, setHasLoadedSessionTabs] = useState(false);
-  const [poseLibrary, setPoseLibrary] = useState<PoseLibraryEntry[]>([]);
-  const [previewQueue, setPreviewQueue] = useState<PosePreviewJob[]>([]);
-  const [activePreviewJob, setActivePreviewJob] = useState<PosePreviewJob | null>(null);
+  const {
+    moleculeTabs,
+    setMoleculeTabs,
+    activeTabId,
+    setActiveTabId,
+    setHasLoadedSessionTabs,
+    skipNextSessionSave,
+  } = useWorkspaceTabs();
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentDialogOpen, setRecentDialogOpen] = useState(false);
-  const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
-  const [appDataPaths, setAppDataPaths] = useState<AppDataPaths | null>(null);
-  const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
-  const appSettingsRef = useRef<AppSettings>(defaultAppSettings());
+  const {
+    appSettings,
+    setAppSettings,
+    appSettingsRef,
+    appDataPaths,
+    settingsStatus,
+    refreshAppSettings,
+    refreshAppDataPaths,
+    saveAppSettings,
+    resetAppSettings,
+  } = useAppSettings({
+    onError: (message) => setError(message),
+    onAfterPersist: () => refreshRecentFiles(),
+  });
   const nextPoseId = useRef(1);
-  const saveStateTimer = useRef<number | null>(null);
-  const skipNextSessionSave = useRef(false);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
   const benchmarkLoadMetrics = useRef<BenchmarkLoadMetrics | null>(null);
   const benchmarkFinished = useRef(false);
-  const isApplyingPresentationState = useRef(false);
-  const hasLoadedPresentationState = useRef(false);
   const hasStartedInitialLoad = useRef(false);
-
-  // Theme management
-  useEffect(() => {
-    const theme = appSettings.app.theme;
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-  }, [appSettings.app.theme]);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
     showFloor: false,
     showGrid: false,
@@ -460,10 +419,6 @@ function App() {
     showLabelLinkLines: false,
   });
 
-  useEffect(() => {
-    appSettingsRef.current = appSettings;
-  }, [appSettings]);
-
   const defaultPresentationState = useCallback(() => {
     return createDefaultPresentationState(appSettingsRef.current);
   }, []);
@@ -481,67 +436,6 @@ function App() {
       console.warn('Could not load recent files', err);
     }
   }, []);
-
-  const refreshPoseLibrary = useCallback(async () => {
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('get_pose_library');
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      console.warn('Could not load pose library', err);
-    }
-  }, []);
-
-  const refreshAppSettings = useCallback(async () => {
-    try {
-      const settings = await invoke<AppSettings>('get_app_settings');
-      appSettingsRef.current = settings;
-      setAppSettings(settings);
-    } catch (err) {
-      console.warn('Could not load app settings', err);
-    }
-  }, []);
-
-  const refreshAppDataPaths = useCallback(async () => {
-    try {
-      setAppDataPaths(await invoke<AppDataPaths>('get_app_data_paths'));
-    } catch (err) {
-      console.warn('Could not load app data paths', err);
-    }
-  }, []);
-
-  const saveAppSettings = useCallback(async (nextSettings: AppSettings) => {
-    appSettingsRef.current = nextSettings;
-    setAppSettings(nextSettings);
-    setSettingsStatus('Saving...');
-    try {
-      const saved = await invoke<AppSettings>('save_app_settings', { settings: nextSettings });
-      appSettingsRef.current = saved;
-      setAppSettings(saved);
-      await refreshRecentFiles();
-      setSettingsStatus('Saved');
-      window.setTimeout(() => setSettingsStatus(null), 1400);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setSettingsStatus('Could not save settings');
-      setError(message);
-    }
-  }, [refreshRecentFiles]);
-
-  const resetAppSettings = useCallback(async () => {
-    setSettingsStatus('Resetting...');
-    try {
-      const reset = await invoke<AppSettings>('reset_app_settings');
-      appSettingsRef.current = reset;
-      setAppSettings(reset);
-      await refreshRecentFiles();
-      setSettingsStatus('Defaults restored');
-      window.setTimeout(() => setSettingsStatus(null), 1400);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setSettingsStatus('Could not reset settings');
-      setError(message);
-    }
-  }, [refreshRecentFiles]);
 
   const refreshNearbyFiles = useCallback(async (path: string) => {
     try {
@@ -574,6 +468,20 @@ function App() {
     savedPoses,
     viewOptions,
   ]);
+
+  const {
+    isApplyingPresentationState,
+    hasLoadedPresentationState,
+    cancelPendingAutosave,
+  } = usePresentationStateAutosave({
+    currentPath,
+    activeTabId,
+    autosaveEnabled: appSettings.files.autosavePresentationState,
+    moleculeData,
+    buildPresentationState,
+    setMoleculeTabs,
+    onError: (message) => setError(message),
+  });
 
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
@@ -682,16 +590,13 @@ function App() {
       && hasLoadedPresentationState.current
       && appSettingsRef.current.files.autosavePresentationState
     ) {
-      if (saveStateTimer.current) {
-        window.clearTimeout(saveStateTimer.current);
-        saveStateTimer.current = null;
-      }
+      cancelPendingAutosave();
       void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
         handleError(err instanceof Error ? err.message : String(err));
       });
     }
     return state;
-  }, [activeTabId, buildPresentationState, currentPath, handleError, moleculeData]);
+  }, [activeTabId, appSettingsRef, buildPresentationState, cancelPendingAutosave, currentPath, handleError, moleculeData]);
 
   const clearActiveMolecule = useCallback(() => {
     setMoleculeData(null);
@@ -714,6 +619,21 @@ function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const {
+    poseLibrary,
+    activePreviewJob,
+    refreshPoseLibrary,
+    queuePosePreview,
+    addPoseToLibrary,
+    renamePoseLibraryEntry,
+    deletePoseLibraryEntry,
+    onPosePreviewCaptured,
+    onPosePreviewFailed,
+  } = usePoseLibrary({
+    onError: (message) => setError(message),
+    onToast: (text, type) => addToast(text, type),
+  });
 
   const openAppDataFolder = useCallback(async () => {
     try {
@@ -744,14 +664,6 @@ function App() {
       handleError(err instanceof Error ? err.message : String(err));
     }
   }, [addToast, handleError]);
-
-  const queuePosePreview = useCallback((entry: PoseLibraryEntry) => {
-    setPreviewQueue((current) => [...current, createPreviewJob(entry)]);
-  }, []);
-
-  const finishActivePreviewJob = useCallback(() => {
-    setActivePreviewJob(null);
-  }, []);
 
   const activateMoleculePath = useCallback(async (
     path: string,
@@ -1335,81 +1247,14 @@ function App() {
 
   const handleAddPoseToLibrary = useCallback(async (pose: SavedPose) => {
     if (!currentPath || !moleculeData) return;
-    try {
-      const entry = await invoke<PoseLibraryEntry>('save_pose_to_library', {
-        name: pose.name,
-        moleculePath: currentPath,
-        moleculeDisplayName: moleculeData.name || displayNameForPath(currentPath),
-        pose,
-        tags: [],
-        notes: '',
-        atomCount: moleculeData.atoms.length,
-        formula: null,
-        sourceFormat: moleculeData.metadata.sourceFormat ?? null,
-        previewImagePath: null,
-      });
-      setPoseLibrary((current) => [entry, ...current.filter((candidate) => candidate.id !== entry.id)]);
-      queuePosePreview(entry);
-      addToast(`Added ${pose.name} to Pose Library`, 'success');
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-    }
-  }, [addToast, currentPath, handleError, moleculeData, queuePosePreview]);
+    await addPoseToLibrary(pose, currentPath, moleculeData);
+  }, [addPoseToLibrary, currentPath, moleculeData]);
 
   const handleOpenPoseLibraryEntry = useCallback(async (entry: PoseLibraryEntry) => {
     const loaded = await loadMoleculePath(entry.moleculePath, 'Opening library molecule');
     if (!loaded) return;
     window.setTimeout(() => handleApplyPose(entry.pose), 0);
   }, [handleApplyPose, loadMoleculePath]);
-
-  const handleRenamePoseLibraryEntry = useCallback(async (id: string, name: string) => {
-    setPoseLibrary((current) => current.map((entry) => (
-      entry.id === id ? { ...entry, name } : entry
-    )));
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('rename_pose_library_entry', { id, name });
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-      void refreshPoseLibrary();
-    }
-  }, [handleError, refreshPoseLibrary]);
-
-  const handleDeletePoseLibraryEntry = useCallback(async (id: string) => {
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('delete_pose_library_entry', { id });
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-    }
-  }, [handleError]);
-
-  const handleGeneratePosePreview = useCallback((entry: PoseLibraryEntry) => {
-    queuePosePreview(entry);
-  }, [queuePosePreview]);
-
-  const handlePosePreviewCaptured = useCallback(async (job: PosePreviewJob, dataUrl: string) => {
-    try {
-      const updatedEntry = await invoke<PoseLibraryEntry>('save_pose_library_preview', {
-        id: job.entryId,
-        dataUrl,
-      });
-      setPoseLibrary((current) => current.map((entry) => (
-        entry.id === updatedEntry.id ? updatedEntry : entry
-      )));
-    } catch (err) {
-      console.warn('Could not save pose preview', err);
-      addToast('Saved the pose, but could not generate its preview yet.', 'info');
-    } finally {
-      finishActivePreviewJob();
-    }
-  }, [addToast, finishActivePreviewJob]);
-
-  const handlePosePreviewFailed = useCallback((job: PosePreviewJob, error: string) => {
-    console.warn('Could not generate pose preview', job.entryId, error);
-    addToast('Saved the pose, but could not generate its preview yet.', 'info');
-    finishActivePreviewJob();
-  }, [addToast, finishActivePreviewJob]);
 
   const handleCloseTab = useCallback((id: string) => {
     snapshotActiveTab(true);
@@ -1719,65 +1564,6 @@ function App() {
   }, [appSettings.files.recentFilesLimit, refreshRecentFiles]);
 
   useEffect(() => {
-    if (activePreviewJob || previewQueue.length === 0) return;
-    const [nextJob, ...remainingJobs] = previewQueue;
-    setActivePreviewJob(nextJob);
-    setPreviewQueue(remainingJobs);
-  }, [activePreviewJob, previewQueue]);
-
-  useEffect(() => {
-    if (!hasLoadedSessionTabs) return;
-    if (skipNextSessionSave.current) {
-      skipNextSessionSave.current = false;
-      return;
-    }
-    const session: SessionTabsEnvelope = {
-      version: 1,
-      activeTabId,
-      tabs: moleculeTabs.map(({ id, path, displayName, lastOpenedAt }) => ({
-        id,
-        path,
-        displayName,
-        lastOpenedAt,
-      })),
-    };
-    void invoke('save_session_tabs', { session }).catch((err) => {
-      console.warn('Could not save session tabs', err);
-    });
-  }, [activeTabId, hasLoadedSessionTabs, moleculeTabs]);
-
-  useEffect(() => {
-    if (!currentPath || !hasLoadedPresentationState.current || isApplyingPresentationState.current) return;
-    if (!appSettings.files.autosavePresentationState) return;
-    if (saveStateTimer.current) {
-      window.clearTimeout(saveStateTimer.current);
-    }
-    const state = buildPresentationState();
-    if (activeTabId) {
-      setMoleculeTabs((current) => current.map((tab) => (
-        tab.id === activeTabId ? { ...tab, molecule: moleculeData ?? tab.molecule, presentationState: state } : tab
-      )));
-    }
-    saveStateTimer.current = window.setTimeout(() => {
-      void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
-        handleError(err instanceof Error ? err.message : String(err));
-      });
-    }, 350);
-    return () => {
-      if (saveStateTimer.current) {
-        window.clearTimeout(saveStateTimer.current);
-      }
-    };
-  }, [
-    activeTabId,
-    appSettings.files.autosavePresentationState,
-    buildPresentationState,
-    currentPath,
-    handleError,
-    moleculeData,
-  ]);
-
-  useEffect(() => {
     if (hasStartedInitialLoad.current) return;
     hasStartedInitialLoad.current = true;
     let cancelled = false;
@@ -1993,9 +1779,9 @@ function App() {
           onDeletePose={handleDeletePose}
           onAddPoseToLibrary={handleAddPoseToLibrary}
           onOpenPoseLibraryEntry={(entry) => void handleOpenPoseLibraryEntry(entry)}
-          onRenamePoseLibraryEntry={handleRenamePoseLibraryEntry}
-          onDeletePoseLibraryEntry={handleDeletePoseLibraryEntry}
-          onGeneratePosePreview={handleGeneratePosePreview}
+          onRenamePoseLibraryEntry={renamePoseLibraryEntry}
+          onDeletePoseLibraryEntry={deletePoseLibraryEntry}
+          onGeneratePosePreview={queuePosePreview}
           onClearSavedState={handleClearSavedState}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}
@@ -2034,8 +1820,8 @@ function App() {
       <PosePreviewRenderer
         job={activePreviewJob}
         appSettings={appSettings}
-        onCaptured={handlePosePreviewCaptured}
-        onFailed={handlePosePreviewFailed}
+        onCaptured={onPosePreviewCaptured}
+        onFailed={onPosePreviewFailed}
       />
       {isDraggingFiles && (
         <div className="drop-overlay" aria-hidden="true">
