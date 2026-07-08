@@ -7,6 +7,7 @@ High-level project history for Cylform.
 - Moved shared frontend domain types and default settings out of `App.tsx` into dedicated `types/` modules so panels, canvas, and persistence no longer import from the root component.
 - Deduplicated C-H hydrogen visibility and distance/angle formatting into shared `domain/` helpers used by `InfoPanel`, `AppearancePanel`, the canvas, and `App`, with new unit tests.
 - Fixed Rust presentation-state normalization emitting an invalid `"paper"` backdrop tone for non-Houkmol camera defaults, and added shared TS/Rust golden fixture tests so default settings and camera state cannot drift between languages.
+- Split `App.tsx` (2.4k → 1.8k lines) into focused domain hooks: `useAppSettings`, `useWorkspaceTabs`, `usePresentationStateAutosave`, and `usePoseLibrary`.
 
 ## [0.7.1] - 2026-07-01
 
