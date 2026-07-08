@@ -12,7 +12,7 @@ import type {
   SelectedAngleMeasurement,
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
-} from '../App';
+} from '../types';
 
 function clearSelection(): void {
   window.dispatchEvent(new CustomEvent('clear-selection'));

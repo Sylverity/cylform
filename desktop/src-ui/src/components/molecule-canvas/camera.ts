@@ -1,6 +1,6 @@
 import { OrthographicCamera, PerspectiveCamera, Vector3 } from 'three';
 import type { SceneCtx } from './types';
-import type { ViewOptions, SavedPose } from '../../App';
+import type { ViewOptions, SavedPose } from '../../types';
 
 export function syncOrthographicCamera(ctx: SceneCtx): void {
   const { renderer, orthographicCamera, controls } = ctx;

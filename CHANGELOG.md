@@ -4,7 +4,7 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+- Moved shared frontend domain types and default settings out of `App.tsx` into dedicated `types/` modules so panels, canvas, and persistence no longer import from the root component.
 
 ## [0.7.1] - 2026-07-01
 

@@ -23,6 +23,35 @@ import {
   shortcutMatchesEvent,
   type ShortcutActionId,
 } from './shortcuts'
+import { defaultAppSettings } from './types'
+import type {
+  Annotation,
+  AppDataPaths,
+  AppSettings,
+  AtomStyleOverride,
+  BenchmarkConfig,
+  BenchmarkRenderMetrics,
+  BondStyleOverride,
+  BondStyleType,
+  ElementColorOverrides,
+  HydrogenVisibility,
+  MoleculeData,
+  MoleculeTab,
+  PersistentLabel,
+  PoseLibraryEntry,
+  PresentationState,
+  RecentFileEntry,
+  RenderProfileId,
+  SavedPose,
+  SelectedAngleMeasurement,
+  SelectedBondMeasurement,
+  SelectedDihedralMeasurement,
+  SelectionMode,
+  SelectionSummary,
+  SessionTabRecord,
+  SessionTabsEnvelope,
+  ViewOptions,
+} from './types'
 
 const MoleculeCanvas = lazy(() =>
   import('./components/MoleculeCanvas').then((module) => ({
@@ -30,279 +59,6 @@ const MoleculeCanvas = lazy(() =>
   })),
 );
 
-export interface AtomData {
-  x: number;
-  y: number;
-  z: number;
-  element: string;
-  radius: number;
-  metadata?: AtomMetadata;
-}
-
-export interface BondData {
-  atom1: number;
-  atom2: number;
-  radius: number;
-  kind: BondKind;
-}
-
-export interface LabelAnchor {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface SelectedBondMeasurement {
-  atom1Element: string;
-  atom2Element: string;
-  distance: number;
-  anchor: LabelAnchor;
-  atomIndices?: [number, number];
-}
-
-export interface SelectedAngleMeasurement {
-  atomElements: [string, string, string];
-  angleDegrees: number;
-  stage: 1 | 2 | 3;
-  anchor?: LabelAnchor;
-  atomIndices?: [number, number, number];
-}
-
-export interface SelectedDihedralMeasurement {
-  atomElements: [string, string, string, string];
-  dihedralDegrees: number;
-  stage: 1 | 2 | 3 | 4;
-  anchor?: LabelAnchor;
-  atomIndices?: [number, number, number, number];
-}
-
-export type SelectionMode = 'view' | 'measure' | 'atom' | 'bond' | 'atom-bond' | 'label';
-export type HydrogenVisibility = 'shown' | 'hidden' | 'hide-c-h';
-
-export interface SelectionSummary {
-  atomCount: number;
-  bondCount: number;
-  atomIndices: number[];
-  bondKeys: string[];
-}
-
-export type ElementColorOverrides = Record<string, string>;
-export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
-export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
-export type BondKind = 'Normal' | 'Ts' | 'Dative' | 'Interaction' | 'Thin';
-export type LegacyMaterialPresetId = 'CYLviewLegacy' | 'CYLview' | 'Houkmol';
-export type MaterialPresetId = LegacyMaterialPresetId;
-export type RenderProfileId = 'cylview' | 'ball-stick' | 'houkmol';
-
-export interface Annotation {
-  id: string;
-  type: AnnotationType;
-  text: string;
-  anchor: LabelAnchor;
-  visible: boolean;
-  atom_id?: number;
-  atoms?: number[];
-  value?: number;
-  source?: {
-    atomIndex?: number;
-    atomIndices?: number[];
-    bond?: [number, number];
-  };
-}
-
-export type PersistentLabel = Annotation;
-
-export type BackdropTone = 'clean' | 'warm' | 'slate' | 'black' | 'custom';
-export type ProjectionMode = 'perspective' | 'orthographic';
-export type LightingMood = 'publication' | 'soft-studio' | 'high-contrast';
-
-export interface ViewOptions {
-  showFloor: boolean;
-  showGrid: boolean;
-  backdropTone: BackdropTone;
-  customBackdropHex?: string;
-  projection: ProjectionMode;
-  lightingMood: LightingMood;
-  fogEnabled: boolean;
-  fogIntensity: number;
-  fogDepth: number;
-  focalBlurEnabled: boolean;
-  focalBlurAmount: number;
-  focalDepth: number;
-  autoRotate: boolean;
-  autoRotateSpeed: number;
-  labelFontScale: number;
-  bondSizeScale: number;
-  showLabelLinkLines: boolean;
-}
-
-export interface AppSettings {
-  version: 1;
-  rendering: {
-    pngExportScale: 1 | 2 | 4;
-    defaultBackground: 'white' | 'black' | 'custom';
-    customBackgroundHex: string;
-    defaultRenderProfile: RenderProfileId;
-    defaultMaterialPreset?: MaterialPresetId;
-    defaultProjection: ProjectionMode;
-    defaultLighting: LightingMood;
-    showFloorGridByDefault: boolean;
-  };
-  chemistry: {
-    defaultHydrogenVisibility: HydrogenVisibility;
-    distancePrecision: number;
-    anglePrecision: number;
-    bondPerceptionTolerance: number;
-    useSymbolUnits: boolean;
-  };
-  interaction: {
-    mouseMode: 'standard' | 'one-button';
-    invertScrollZoom: boolean;
-    keyboardShortcuts: Record<string, string>;
-  };
-  files: {
-    autosavePresentationState: boolean;
-    restorePreviousSessionOnStartup: boolean;
-    droppedFilesOpenInBackground: boolean;
-    recentFilesLimit: number;
-  };
-  app: {
-    autoCheckForUpdates: boolean;
-    devtoolsMenuEnabled: boolean;
-    theme: 'auto' | 'light' | 'dark';
-  };
-}
-
-export type { ShortcutActionId };
-
-export interface AppDataPaths {
-  root: string;
-  settings: string;
-  session_tabs: string;
-  recent_files: string;
-  saved_info: string;
-  pose_library: string;
-  pose_previews: string;
-}
-
-export interface AtomMetadata {
-  recordType?: string;
-  serial?: number;
-  atomName?: string;
-  altLoc?: string;
-  residueName?: string;
-  chainId?: string;
-  residueSequence?: number;
-  insertionCode?: string;
-  occupancy?: number;
-  bFactor?: number;
-  formalCharge?: string;
-}
-
-export interface MoleculeMetadata {
-  sourceFormat?: string;
-  title?: string;
-  frameCount?: number;
-  loadedFrameIndex?: number;
-  energy?: number;
-  energyUnit?: string;
-  warnings: string[];
-}
-
-export interface MoleculeGroup {
-  id: string;
-  label: string;
-  residueName?: string;
-  chainId?: string;
-  residueSequence?: number;
-  insertionCode?: string;
-  atomIndices: number[];
-  centroid: LabelAnchor;
-}
-
-export interface MoleculeData {
-  path: string;
-  name: string;
-  atoms: AtomData[];
-  bonds: BondData[];
-  groups: MoleculeGroup[];
-  metadata: MoleculeMetadata;
-}
-
-export interface SavedPose {
-  id: string;
-  name: string;
-  cameraPosition: LabelAnchor;
-  target: LabelAnchor;
-  projection: ProjectionMode;
-  viewOptions: ViewOptions;
-}
-
-export interface AtomStyleOverride {
-  color?: string;
-  sizeScale?: number;
-}
-
-export interface BondStyleOverride {
-  type: BondStyleType;
-}
-
-export interface PresentationState {
-  version: 1;
-  poses: SavedPose[];
-  annotations: Annotation[];
-  hidden_atoms: number[];
-  styles: {
-    hydrogen_visibility?: HydrogenVisibility;
-    element_color_overrides?: ElementColorOverrides;
-    atom_size_scale?: number;
-    atom_style_overrides?: Record<string, AtomStyleOverride>;
-    bond_style_overrides?: Record<string, BondStyleOverride>;
-    render_profile?: RenderProfileId;
-    material_preset?: MaterialPresetId;
-  };
-  camera?: ViewOptions;
-}
-
-export interface RecentFileEntry {
-  path: string;
-  name: string;
-}
-
-export interface SessionTabRecord {
-  id: string;
-  path: string;
-  displayName: string;
-  lastOpenedAt: string;
-}
-
-export interface SessionTabsEnvelope {
-  version: 1;
-  activeTabId: string | null;
-  tabs: SessionTabRecord[];
-}
-
-export interface MoleculeTab extends SessionTabRecord {
-  molecule?: MoleculeData;
-  presentationState?: PresentationState | null;
-}
-
-export interface PoseLibraryEntry {
-  id: string;
-  name: string;
-  moleculePath: string;
-  moleculeDisplayName: string;
-  moleculeHash: string;
-  pose: SavedPose;
-  previewImagePath: string | null;
-  createdAt: string;
-  updatedAt: string;
-  tags: string[];
-  notes: string;
-  atomCount?: number | null;
-  formula?: string | null;
-  sourceFormat?: string | null;
-}
 
 interface PosePreviewJob {
   jobId: string;
@@ -311,24 +67,6 @@ interface PosePreviewJob {
   pose: SavedPose;
 }
 
-export interface BenchmarkConfig {
-  enabled: boolean;
-  outputPath?: string;
-  sampleMs: number;
-  interactionMs: number;
-  targetFps: number;
-  maxAtoms: number;
-}
-
-interface BenchmarkInteractionPhase {
-  phase: 'orbit' | 'pan' | 'zoom';
-  frameSampleMs: number;
-  sampledFrames: number;
-  averageFrameMs: number | null;
-  p95FrameMs: number | null;
-  minFps: number | null;
-  averageFps: number | null;
-}
 
 interface BenchmarkLoadMetrics {
   path: string;
@@ -339,48 +77,6 @@ interface BenchmarkLoadMetrics {
   startedAt: string;
 }
 
-export interface BenchmarkRenderMetrics {
-  rebuildSceneMs: number;
-  visibleAtoms: number;
-  visibleBonds: number;
-  totalAtoms: number;
-  totalBonds: number;
-  renderProfile: RenderProfileId;
-  renderQuality: {
-    primitiveLoad: number;
-    qualityT: number;
-    pixelRatio: number;
-    sphereWidthSegments: number;
-    sphereHeightSegments: number;
-    cylinderRadialSegments: number;
-  };
-  renderCalls: number;
-  triangles: number;
-  geometries: number;
-  textures: number;
-  sceneObjects: number;
-  pickAtomMs: number | null;
-  pickBondMs: number | null;
-  pickTotalMs: number;
-  pickHitType: 'atom' | 'bond' | 'none';
-  pickAtomCandidates: number;
-  pickBondCandidates: number;
-  frameSampleMs: number;
-  sampledFrames: number;
-  averageFrameMs: number | null;
-  p95FrameMs: number | null;
-  minFps: number | null;
-  averageFps: number | null;
-  interactionFrameSampleMs: number;
-  interactionAverageFrameMs: number | null;
-  interactionP95FrameMs: number | null;
-  interactionMinFps: number | null;
-  interactionAverageFps: number | null;
-  interactionPhases: BenchmarkInteractionPhase[];
-  responsive: boolean;
-  webglRenderer: string | null;
-  webglVendor: string | null;
-}
 
 function perfLoggingEnabled(): boolean {
   try {
@@ -407,44 +103,6 @@ function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
   return extensions.some((candidate) => candidate.toLowerCase() === extension);
 }
 
-function defaultAppSettings(): AppSettings {
-  return {
-    version: 1,
-    rendering: {
-      pngExportScale: 2,
-      defaultBackground: 'white',
-      customBackgroundHex: '#ffffff',
-      defaultRenderProfile: 'cylview',
-      defaultMaterialPreset: 'CYLviewLegacy',
-      defaultProjection: 'perspective',
-      defaultLighting: 'publication',
-      showFloorGridByDefault: false,
-    },
-    chemistry: {
-      defaultHydrogenVisibility: 'shown',
-      distancePrecision: 2,
-      anglePrecision: 1,
-      bondPerceptionTolerance: 1.3,
-      useSymbolUnits: true,
-    },
-    interaction: {
-      mouseMode: 'standard',
-      invertScrollZoom: false,
-      keyboardShortcuts: {},
-    },
-    files: {
-      autosavePresentationState: true,
-      restorePreviousSessionOnStartup: true,
-      droppedFilesOpenInBackground: true,
-      recentFilesLimit: 12,
-    },
-    app: {
-      autoCheckForUpdates: false,
-      devtoolsMenuEnabled: true,
-      theme: 'dark',
-    },
-  };
-}
 
 function clampPrecision(precision: number): number {
   return Math.min(4, Math.max(1, Math.round(precision)));

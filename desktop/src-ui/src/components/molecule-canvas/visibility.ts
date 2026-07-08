@@ -1,5 +1,5 @@
 import { Box3, Vector3 } from 'three';
-import type { MoleculeData, HydrogenVisibility, PersistentLabel } from '../../App';
+import type { MoleculeData, HydrogenVisibility, PersistentLabel } from '../../types';
 import type { MoleculeVisibilityIndex } from './types';
 import { atomDisplayRadius } from './visualStyle';
 

@@ -10,7 +10,7 @@ import type {
   SavedPose,
   SessionTabsEnvelope,
   ViewOptions,
-} from './App';
+} from './types';
 import { normalizeRenderProfile, renderProfileToLegacyMaterialPreset } from './renderProfiles';
 
 export interface PresentationStateParts {

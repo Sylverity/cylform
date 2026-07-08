@@ -6,7 +6,7 @@ import {
   PerspectiveCamera,
   Vector3,
 } from 'three';
-import type { ViewOptions } from '../../App';
+import type { ViewOptions } from '../../types';
 import type { SceneCtx } from './types';
 import { clamp } from './visualStyle';
 

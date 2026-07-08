@@ -53,7 +53,7 @@ import type {
   SelectedDihedralMeasurement,
   SavedPose,
   ViewOptions,
-} from '../App';
+} from '../types';
 import type { ToastMessage } from './Toast';
 import {
   BondSelectionData,

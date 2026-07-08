@@ -1,4 +1,4 @@
-import type { LegacyMaterialPresetId, RenderProfileId } from './App';
+import type { LegacyMaterialPresetId, RenderProfileId } from './types';
 
 export const RENDER_PROFILE_IDS = ['cylview', 'ball-stick', 'houkmol'] as const;
 
