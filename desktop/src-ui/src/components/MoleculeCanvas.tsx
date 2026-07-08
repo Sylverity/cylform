@@ -137,6 +137,11 @@ import {
   type PublicationExportSettings,
 } from './molecule-canvas/exportPng';
 import {
+  numberedPngPath,
+  resolveExportFrameIndices,
+  sanitizeExportFileName,
+} from './molecule-canvas/exportWorkflow';
+import {
   renderScene,
   updateDepthCueBackground,
 } from './molecule-canvas/depthCue';
@@ -1615,35 +1620,9 @@ export function MoleculeCanvas({
     });
   };
 
-  const frameIndicesForExport = () => {
-    if (frameCount <= 1 || exportSettings.frameSelection === 'current') return [frameIndex];
-    const count = Math.max(1, frameCount);
-    const start = Math.min(count - 1, Math.max(0, Math.round(exportSettings.frameStart) - 1));
-    const end = Math.min(count - 1, Math.max(0, Math.round(exportSettings.frameEnd) - 1));
-    const step = exportSettings.frameSelection === 'range'
-      ? 1
-      : Math.max(1, Math.round(exportSettings.frameStep));
-    const first = Math.min(start, end);
-    const last = Math.max(start, end);
-    const indices: number[] = [];
-    for (let index = first; index <= last; index += step) {
-      indices.push(index);
-    }
-    return indices.length > 0 ? indices : [frameIndex];
-  };
-
   const waitForFrameRender = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  };
-
-  const numberedPngPath = (targetPath: string, frame: number, sequenceIndex: number, sequenceLength: number) => {
-    if (sequenceLength <= 1) return targetPath;
-    const extensionIndex = targetPath.toLowerCase().endsWith('.png') ? targetPath.length - 4 : targetPath.length;
-    const base = targetPath.slice(0, extensionIndex);
-    const suffix = String(frame + 1).padStart(4, '0');
-    const collisionSuffix = sequenceIndex > 0 ? '' : '';
-    return `${base}_${suffix}${collisionSuffix}.png`;
   };
 
   const runPublicationRender = async (purpose: 'preview' | 'save') => {
@@ -1657,11 +1636,11 @@ export function MoleculeCanvas({
     exportCancelRef.current = false;
     try {
       let targetPath: string | null = null;
-      const frameIndices = purpose === 'save' ? frameIndicesForExport() : [frameIndex];
+      const frameIndices = purpose === 'save'
+        ? resolveExportFrameIndices(exportSettings, frameCount, frameIndex)
+        : [frameIndex];
       if (purpose === 'save') {
-        const defaultName = `${moleculeData.name || 'molecule'}.png`
-          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-          .replace(/\s+/g, '_');
+        const defaultName = sanitizeExportFileName(`${moleculeData.name || 'molecule'}.png`);
 
         targetPath = await save({
           title: 'Export Publication Figure',
@@ -1724,7 +1703,7 @@ export function MoleculeCanvas({
 
         if (purpose === 'save') {
           if (!targetPath) throw new Error('Export path was not selected.');
-          const framePath = numberedPngPath(targetPath, index, sequenceIndex, frameIndices.length);
+          const framePath = numberedPngPath(targetPath, index, frameIndices.length);
           const pngBytes = dataUrlToBytes(result.dataUrl);
           await invoke('export_png', { path: framePath, bytes: Array.from(pngBytes) });
           if (result.metadataJson) {
@@ -1772,9 +1751,9 @@ export function MoleculeCanvas({
       return;
     }
     try {
-      const defaultName = `${moleculeData.name || 'frame'}_${String(frameIndex + 1).padStart(4, '0')}.xyz`
-        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-        .replace(/\s+/g, '_');
+      const defaultName = sanitizeExportFileName(
+        `${moleculeData.name || 'frame'}_${String(frameIndex + 1).padStart(4, '0')}.xyz`,
+      );
       const targetPath = await save({
         title: 'Export Current Frame as XYZ',
         defaultPath: defaultName,
