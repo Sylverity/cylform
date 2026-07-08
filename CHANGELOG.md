@@ -5,6 +5,7 @@ High-level project history for Cylform.
 ## [Unreleased]
 
 - Moved shared frontend domain types and default settings out of `App.tsx` into dedicated `types/` modules so panels, canvas, and persistence no longer import from the root component.
+- Deduplicated C-H hydrogen visibility and distance/angle formatting into shared `domain/` helpers used by `InfoPanel`, `AppearancePanel`, the canvas, and `App`, with new unit tests.
 
 ## [0.7.1] - 2026-07-01
 

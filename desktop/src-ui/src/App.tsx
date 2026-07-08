@@ -23,6 +23,7 @@ import {
   shortcutMatchesEvent,
   type ShortcutActionId,
 } from './shortcuts'
+import { formatAngle, formatDistance } from './domain/measurements'
 import { defaultAppSettings } from './types'
 import type {
   Annotation,
@@ -103,20 +104,6 @@ function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
   return extensions.some((candidate) => candidate.toLowerCase() === extension);
 }
 
-
-function clampPrecision(precision: number): number {
-  return Math.min(4, Math.max(1, Math.round(precision)));
-}
-
-function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? 'Å' : 'A';
-  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
-}
-
-function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? '°' : 'deg';
-  return `${value.toFixed(clampPrecision(precision))}${unit}`;
-}
 
 function createTabId(): string {
   return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

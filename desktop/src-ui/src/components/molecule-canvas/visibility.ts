@@ -1,7 +1,9 @@
 import { Box3, Vector3 } from 'three';
-import type { MoleculeData, HydrogenVisibility, PersistentLabel } from '../../types';
+import type { MoleculeData } from '../../types';
 import type { MoleculeVisibilityIndex } from './types';
 import { atomDisplayRadius } from './visualStyle';
+
+export { isAtomVisible, labelSourceVisible } from '../../domain/visibility';
 
 export function buildMoleculeVisibilityIndex(moleculeData: MoleculeData | null): MoleculeVisibilityIndex | null {
   if (!moleculeData || moleculeData.atoms.length === 0) return null;
@@ -37,36 +39,4 @@ export function buildMoleculeVisibilityIndex(moleculeData: MoleculeData | null):
     isCarbonHydrogen,
     bounds: bounds.isEmpty() ? null : bounds,
   };
-}
-
-export function isAtomVisible(
-  atomIndex: number,
-  moleculeData: MoleculeData,
-  hydrogenVisibility: HydrogenVisibility,
-  hiddenAtomSet: Set<number>,
-  visibilityIndex: MoleculeVisibilityIndex | null,
-): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
-  if (hydrogenVisibility === 'hidden' && (visibilityIndex?.isHydrogen[atomIndex] ?? atom.element === 'H')) return false;
-  if (hydrogenVisibility === 'hide-c-h' && (visibilityIndex?.isCarbonHydrogen[atomIndex] ?? false)) return false;
-  return true;
-}
-
-export function labelSourceVisible(
-  label: PersistentLabel,
-  moleculeData: MoleculeData | null,
-  hydrogenVisibility: HydrogenVisibility,
-  hiddenAtomSet: Set<number>,
-  visibilityIndex: MoleculeVisibilityIndex | null,
-): boolean {
-  if (!moleculeData) return false;
-  const atomIndices = label.source?.atomIndices
-    ?? (typeof label.source?.atomIndex === 'number' ? [label.source.atomIndex] : undefined)
-    ?? label.source?.bond;
-
-  if (!atomIndices || atomIndices.length === 0) return true;
-  return atomIndices.every((atomIndex) => (
-    isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet, visibilityIndex)
-  ));
 }

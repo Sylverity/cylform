@@ -13,6 +13,8 @@ import type {
   SelectedBondMeasurement,
   SelectedDihedralMeasurement,
 } from '../types';
+import { isAtomVisible } from '../domain/visibility';
+import { formatAngle, formatDistance } from '../domain/measurements';
 
 function clearSelection(): void {
   window.dispatchEvent(new CustomEvent('clear-selection'));
@@ -33,30 +35,6 @@ function hydrogenVisibilityLabel(mode: HydrogenVisibility): string {
   if (mode === 'shown') return 'Shown';
   if (mode === 'hidden') return 'Hidden';
   return 'Hide C-H';
-}
-
-function isCarbonHydrogen(atomIndex: number, moleculeData: MoleculeData): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || atom.element !== 'H') return false;
-
-  return moleculeData.bonds.some((bond) => {
-    if (bond.atom1 === atomIndex) return moleculeData.atoms[bond.atom2]?.element === 'C';
-    if (bond.atom2 === atomIndex) return moleculeData.atoms[bond.atom1]?.element === 'C';
-    return false;
-  });
-}
-
-function isAtomVisible(
-  atomIndex: number,
-  moleculeData: MoleculeData,
-  hydrogenVisibility: HydrogenVisibility,
-  hiddenAtomSet: Set<number>,
-): boolean {
-  const atom = moleculeData.atoms[atomIndex];
-  if (!atom || hiddenAtomSet.has(atomIndex)) return false;
-  if (hydrogenVisibility === 'hidden' && atom.element === 'H') return false;
-  if (hydrogenVisibility === 'hide-c-h' && isCarbonHydrogen(atomIndex, moleculeData)) return false;
-  return true;
 }
 
 function metadataSummary(moleculeData: MoleculeData) {
@@ -159,20 +137,6 @@ interface InfoPanelProps {
   error: string | null;
   hiddenAtomCount: number;
   hasSavedPresentationState: boolean;
-}
-
-function clampPrecision(precision: number): number {
-  return Math.min(4, Math.max(1, Math.round(precision)));
-}
-
-function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? 'Å' : 'A';
-  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
-}
-
-function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? '°' : 'deg';
-  return `${value.toFixed(clampPrecision(precision))}${unit}`;
 }
 
 function CollapsibleSection({
