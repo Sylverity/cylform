@@ -9,6 +9,7 @@ High-level project history for Cylform.
 - Fixed Rust presentation-state normalization emitting an invalid `"paper"` backdrop tone for non-Houkmol camera defaults, and added shared TS/Rust golden fixture tests so default settings and camera state cannot drift between languages.
 - Split `App.tsx` (2.4k → 1.8k lines) into focused domain hooks: `useAppSettings`, `useWorkspaceTabs`, `usePresentationStateAutosave`, and `usePoseLibrary`.
 - Centralized the window custom events between App/panels and the canvas into a typed `canvasEvents.ts` with `dispatchCanvasEvent`/`listenToCanvasEvent` helpers.
+- Isolated pure export-sequencing logic (frame range resolution, numbered PNG paths, filename sanitization) into `molecule-canvas/exportWorkflow.ts` with unit tests, removing the no-op `collisionSuffix`.
 
 ## [0.7.1] - 2026-07-01
 
