@@ -12,6 +12,7 @@ High-level project history for Cylform.
 - Isolated pure export-sequencing logic (frame range resolution, numbered PNG paths, filename sanitization) into `molecule-canvas/exportWorkflow.ts` with unit tests, removing the no-op `collisionSuffix`.
 - Extracted Three.js scene construction into `molecule-canvas/sceneSetup.ts` (`createSceneContext` + dispose) and per-frame HTML overlay positioning into `molecule-canvas/screenLabels.ts` (`updateScreenOverlays`).
 - Extracted instanced atom/bond mesh building into `molecule-canvas/moleculeBatches.ts` (`buildMoleculeBatches`), shrinking `MoleculeCanvas.tsx` from 2.5k to ~2k lines overall.
+- Removed the unused placeholder `picker` module from `cylform-core`; interactive picking lives in the Three.js frontend.
 
 ## [0.7.1] - 2026-07-01
 
