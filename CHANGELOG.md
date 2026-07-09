@@ -14,6 +14,9 @@ High-level project history for Cylform.
 - Extracted instanced atom/bond mesh building into `molecule-canvas/moleculeBatches.ts` (`buildMoleculeBatches`), shrinking `MoleculeCanvas.tsx` from 2.5k to ~2k lines overall.
 - Removed the unused placeholder `picker` module from `cylform-core`; interactive picking lives in the Three.js frontend.
 - Split the desktop Tauri backend `main.rs` (2.5k → 0.7k lines) into `menu`, `settings`, `presentation_state`, `pose_library`, `exports`, `molecule_commands`, and `workspace` modules with no behavior change.
+- Added a developer screenshot path to the benchmark harness (`--screenshot`, and `--render-profile <id>` to force a style) that saves a PNG of the settled render under `benchmark-results/screenshots/`.
+- Fixed forced render profiles being ignored during screenshot capture — the profile was reset to the settings default while the molecule loaded, so `cylview`, `ball-stick`, and `houkmol` all rendered identically; they now each render distinctly.
+- Added a `snapshot:molecule` harness (`scripts/snapshot-molecule.mjs`) that opens a real molecule and saves a clean static PNG per render profile with no frame-timing sample or orbit/pan/zoom, for render and UI review.
 
 ## [0.7.1] - 2026-07-01
 

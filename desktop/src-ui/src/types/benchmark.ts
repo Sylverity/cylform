@@ -7,6 +7,18 @@ export interface BenchmarkConfig {
   interactionMs: number;
   targetFps: number;
   maxAtoms: number;
+  /** When true, capture a PNG of the rendered view for local visual feedback. */
+  screenshot: boolean;
+  /** Local path the app writes the screenshot PNG to; set by the benchmark runner. */
+  screenshotPath?: string;
+  /** Optional render profile to force for this run, e.g. "cylview" | "ball-stick" | "houkmol". */
+  renderProfile?: string;
+  /**
+   * When true, capture a static screenshot of the loaded molecule without the
+   * frame-timing sample or orbit/pan/zoom interaction phases. Used by the
+   * snapshot harness to grab a clean render/UI view of a real molecule.
+   */
+  snapshot?: boolean;
 }
 
 export interface BenchmarkInteractionPhase {

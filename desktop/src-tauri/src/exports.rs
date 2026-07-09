@@ -20,6 +20,12 @@ pub(crate) struct BenchmarkConfig {
     target_fps: f64,
     #[serde(rename = "maxAtoms")]
     max_atoms: usize,
+    screenshot: bool,
+    #[serde(rename = "screenshotPath")]
+    screenshot_path: Option<String>,
+    #[serde(rename = "renderProfile")]
+    render_profile: Option<String>,
+    snapshot: bool,
 }
 
 pub(crate) fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) -> Result<(), String> {
@@ -57,6 +63,12 @@ pub(crate) fn benchmark_enabled() -> bool {
         .unwrap_or(false)
 }
 
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"))
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 pub(crate) fn get_benchmark_config() -> BenchmarkConfig {
     BenchmarkConfig {
@@ -78,6 +90,14 @@ pub(crate) fn get_benchmark_config() -> BenchmarkConfig {
             .filter(|value| *value > 0.0)
             .unwrap_or(30.0),
         max_atoms: read_options_from_env().max_atoms,
+        screenshot: env_flag("CYLFORM_BENCH_SCREENSHOT"),
+        screenshot_path: std::env::var("CYLFORM_BENCH_SCREENSHOT_PATH")
+            .ok()
+            .filter(|value| !value.is_empty()),
+        render_profile: std::env::var("CYLFORM_BENCH_RENDER_PROFILE")
+            .ok()
+            .filter(|value| !value.is_empty()),
+        snapshot: env_flag("CYLFORM_BENCH_SNAPSHOT"),
     }
 }
 

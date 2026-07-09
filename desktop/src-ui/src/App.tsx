@@ -16,7 +16,7 @@ import {
   normalizeSessionTabs,
   serializePresentationState,
 } from './persistence'
-import { normalizeRenderProfile } from './renderProfiles'
+import { normalizeRenderProfile, renderProfileToLegacyMaterialPreset } from './renderProfiles'
 import { hideGroupAtoms, revealGroupAtoms } from './groupVisibility'
 import {
   effectiveKeyboardShortcuts,
@@ -397,6 +397,7 @@ function App() {
   });
   const nextPoseId = useRef(1);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
+  const benchmarkRenderProfileRef = useRef<RenderProfileId | null>(null);
   const benchmarkLoadMetrics = useRef<BenchmarkLoadMetrics | null>(null);
   const benchmarkFinished = useRef(false);
   const hasStartedInitialLoad = useRef(false);
@@ -486,7 +487,23 @@ function App() {
 
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
-    const normalized = normalizePresentationState(state, appSettingsRef.current);
+    // In benchmark/snapshot mode a forced render profile must win over the file's
+    // saved/default profile so --render-profile drives every derived value (materials,
+    // atom size, and per-profile view options) in a single race-free pass.
+    const overrideProfile = benchmarkRenderProfileRef.current;
+    const settingsForNormalize = overrideProfile
+      ? {
+          ...appSettingsRef.current,
+          rendering: {
+            ...appSettingsRef.current.rendering,
+            defaultRenderProfile: overrideProfile,
+            defaultMaterialPreset: renderProfileToLegacyMaterialPreset(overrideProfile),
+          },
+        }
+      : appSettingsRef.current;
+    const normalized = overrideProfile
+      ? normalizePresentationState(null, settingsForNormalize)
+      : normalizePresentationState(state, settingsForNormalize);
     setPersistentLabels(normalized.annotations);
     setHiddenAtomIndices(normalized.hidden_atoms);
     setHydrogenVisibility(normalized.styles.hydrogen_visibility ?? 'shown');
@@ -990,6 +1007,7 @@ function App() {
       pickBondCandidates: renderMetrics.pickBondCandidates,
       targetFps: config.targetFps,
       maxAtoms: config.maxAtoms,
+      screenshotPath: config.screenshot ? config.screenshotPath : undefined,
       startedAt: loadMetrics.startedAt,
     };
 
@@ -1570,6 +1588,15 @@ function App() {
         if (!cancelled) setAppSettings(settings);
 
         benchmarkConfig.current = await invoke<BenchmarkConfig>('get_benchmark_config');
+        // Record any forced render profile so applyPresentationState derives the whole
+        // profile (materials, atom size, and per-profile view options) during the load
+        // pass, driving the captured screenshot for --render-profile.
+        benchmarkRenderProfileRef.current = benchmarkConfig.current?.renderProfile
+          ? normalizeRenderProfile(benchmarkConfig.current.renderProfile)
+          : null;
+        if (benchmarkRenderProfileRef.current) {
+          setRenderProfile(benchmarkRenderProfileRef.current);
+        }
         const startupPath = await invoke<string | null>('get_startup_file');
         if (startupPath) {
           setHasLoadedSessionTabs(true);
