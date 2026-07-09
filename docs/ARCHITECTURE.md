@@ -31,7 +31,17 @@ Current built-in read formats are XYZ and PDB. SDF/MOL export behavior has not b
 
 ## Tauri Layer
 
-`desktop/src-tauri/src/main.rs` is the native bridge.
+`desktop/src-tauri/src` is the native bridge. `main.rs` keeps only `AppState`, `main()`, the `tauri::generate_handler!` command list, and the test module; the commands and helpers are grouped into focused modules:
+
+| Module | Responsibility |
+|---|---|
+| `molecule_commands.rs` | `load_molecule`, molecule serialization types, bond/group building, supported-extension and startup-file commands. |
+| `settings.rs` | Global `settings.json` load/normalize/save commands and per-key normalization helpers. |
+| `presentation_state.rs` | Per-file presentation-state envelope, annotation model, render-profile/camera defaults and normalization, and load/save/clear commands. |
+| `pose_library.rs` | Pose Library envelope, entry mutation helpers, preview PNG encode/decode, and library commands. |
+| `exports.rs` | PNG / XYZ-frame / JSON-sidecar export commands and the benchmark config/result commands. |
+| `workspace.rs` | App-data paths, session tabs, and recent-files state and commands. |
+| `menu.rs` | Native menu construction, `menu:*` event mapping, and menu event handling. |
 
 - `load_molecule` accepts a path and optional `frameIndex`, defaults to frame 0, and returns `MoleculeData` for the selected frame. It preserves static topology while updating current-frame atom coordinates, frame title, and frame energy metadata.
 - `get_supported_read_extensions` exposes the parser registry to the frontend so the native open dialog does not hardcode supported formats.
@@ -49,12 +59,19 @@ The saved-state envelope is intentionally presentation-focused. It belongs to th
 
 The React app owns interaction state and the Three.js scene.
 
-- `App.tsx` coordinates file loading, saved state, annotations, render profile selection, visibility, style overrides, measurements, and publication export.
+Shared, non-component code is grouped by concern so `App.tsx` and the canvas are not accidental public APIs:
+
+- `types/` holds shared domain types and default constants (`molecule`, `presentation`, `settings`, `workspace`, `benchmark`). Everything imports types from here rather than from `App.tsx`.
+- `domain/` holds pure, framework-free helpers: `visibility.ts` (hydrogen/visibility filtering), `measurements.ts` (distance/angle formatting), and `paths.ts`.
+- `hooks/` holds the controllers extracted from `App.tsx`: `useAppSettings`, `useWorkspaceTabs`, `usePresentationStateAutosave`, and `usePoseLibrary`.
+- `canvasEvents.ts` defines the typed window-event map exchanged between `App`/panels and the canvas, with `dispatchCanvasEvent`/`listenToCanvasEvent` helpers instead of ad-hoc string `CustomEvent`s.
+
+- `App.tsx` coordinates file loading, saved state, annotations, render profile selection, visibility, style overrides, measurements, and publication export, composing the hooks above.
 - Menu-triggered workspace actions reuse the same frontend handlers as toolbar buttons and tab controls. The Settings view persists preferences through the Rust app-data settings commands.
 - Visible molecule tabs are frontend workspace state. Hidden internal preview render jobs deliberately bypass visible tab state, session persistence, and recent-file recording.
 - Desktop drag-and-drop uses the same supported-extension list as the native Open dialog. Dropped molecules become visible workspace tabs; when a tab is already active, new drop tabs are loaded in the background without changing the current camera, selection, or active molecule.
 - `MoleculeCanvas.tsx` builds the WebGL scene and keeps normal molecule topology rendering batched.
-- It is intentionally an orchestrating React component: scene init, event handlers, effects, and JSX live here, while pure helpers and scene internals live in `components/molecule-canvas/`.
+- It is intentionally an orchestrating React component: it composes scene construction (`createSceneContext`), event handlers, effects, and JSX, while pure helpers and scene internals live in `components/molecule-canvas/`.
 - Atoms are rendered with instanced sphere geometry.
 - Bonds are rendered with one `InstancedMesh` per style bucket, including styled bonds, so transition-state, dative, interaction, and thin bonds do not fall back to one mesh per bond.
 - Render profile behavior is explicit in the renderer: CYLview owns hidden-but-pickable atom spheres and split endpoint-colored cylinders, ball-and-stick owns visible glossy atom spheres and uniform glossy bonds, and Houkmol owns visible glossy atom spheres, black normal bonds, and shader-drawn atom quadrants.
@@ -72,15 +89,19 @@ The React app owns interaction state and the Three.js scene.
 | Module | Responsibility |
 |---|---|
 | `types.ts` | Shared interfaces: `SceneCtx`, `BondSelectionData`, `AtomSelectionData`, `PickResult`, etc. |
-| `labels.ts` | Label formatting (`formatDistance`, `formatAngle`), text sanitizing, and rich canvas sub/superscript rendering. |
+| `sceneSetup.ts` | `createSceneContext` builds the renderer, cameras, lights, controls, shared geometries/materials, and post-processing passes, and returns a paired `dispose`. |
+| `moleculeBatches.ts` | `buildMoleculeBatches` builds the instanced atom/bond meshes (uniform and split-cylinder bonds, per-style materials) and registers pick objects. |
+| `screenLabels.ts` | `updateScreenOverlays` positions the HTML measurement labels, persistent labels, and link-line canvas over the WebGL viewport once per frame. |
+| `labels.ts` | Rich canvas sub/superscript label rendering and text sanitizing; re-exports the shared `domain/measurements` formatters. |
 | `materialPresets.ts` | Shared element colors and profile material definitions used by the renderer and appearance UI. |
 | `visualStyle.ts` | `applyMaterialPreset`, profile behavior helpers, `atomMaterial`, bond geometry helpers (`bondTransform`, `segmentTransform`), and large-scene detection. |
 | `depthCue.ts` | Molecule-relative fog and optional focal-blur rendering. It projects the molecule bounding box along the active camera direction, applies Three.js fog, updates `BokehPass`, and exposes `renderScene(ctx)` as the shared render entry point. |
 | `camera.ts` | Camera sync, preset application, saved-pose restoration, and floor placement. |
-| `visibility.ts` | `buildMoleculeVisibilityIndex`, `isAtomVisible`, and `labelSourceVisible` for hydrogen/visibility filtering. |
+| `visibility.ts` | `buildMoleculeVisibilityIndex` plus re-exports of the shared `domain/visibility` `isAtomVisible`/`labelSourceVisible` helpers. |
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
 | `geometry.ts` | Angle-arc mesh creation/removal and selection overlay creation/removal. |
 | `picking.ts` | Raycast resolution: `pickScene`, `resolveAtomHit`, `resolveBondHit`. |
+| `exportWorkflow.ts` | Pure export-sequencing logic: frame-range resolution, numbered PNG paths, and export filename sanitization. |
 | `exportPng.ts` | Publication export state, settings, viewport-exact PNG, supersampled/tiled raster export, experimental path-traced export, numbered frame sequence settings, metadata JSON, preview thumbnails, and the legacy `renderCurrentViewDataUrl(ctx, host, options)` helper used by pose previews. |
 
 This split keeps `MoleculeCanvas.tsx` focused on React lifecycle and Three.js mutable state, while the modules remain mostly pure and easy to test by typecheck.
