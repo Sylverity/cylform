@@ -34,6 +34,32 @@ Run a quick smoke test:
 pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 500,1000,2000 --sample-ms 1000
 ```
 
+Save a PNG screenshot of each run's rendered view (developer visual feedback):
+
+```bash
+pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 500 --sample-ms 1000 --screenshot
+```
+
+Screenshot capture is a minimal way to reuse this runner as a "launch the app and save a picture" harness. When `--screenshot` (or `CYLFORM_BENCH_SCREENSHOT=1`) is set, the app captures the settled rendered view — the same canvas + label/link-line compositing the Export Figure path uses — and writes one PNG per run under `benchmark-results/screenshots/`. The screenshot path is recorded in each JSON result. Normal runs are unaffected.
+
+Pick a render style to screenshot with `--render-profile` (implies `--screenshot`, and can also be set with `CYLFORM_BENCH_RENDER_PROFILE`):
+
+```bash
+pnpm --dir desktop/src-ui run benchmark:atoms -- --sizes 500 --sample-ms 1000 --render-profile ball-stick
+```
+
+Valid profiles are `cylview` (default), `ball-stick`, and `houkmol`. To eyeball a specific style, write a tiny wrapper that calls the runner with your chosen fixture size and profile; the PNG lands in the ignored `benchmark-results/screenshots/` tree with the profile in its filename. This captures the molecule render surface only, not surrounding app chrome or menus.
+
+### Snapshotting a real molecule (no performance sampling)
+
+The atom-capacity runner is built around generated lattice fixtures and always runs the frame-timing sample plus orbit/pan/zoom interaction. When you just want a clean, static picture of a real structure — for render review or to eyeball a specific profile — use the dedicated snapshot harness instead:
+
+```bash
+pnpm --dir desktop/src-ui run snapshot:molecule -- --molecule /path/to/structure.xyz
+```
+
+It launches the app on the given molecule, lets the scene settle, captures one PNG per render profile (default `cylview,ball-stick,houkmol`) with no timing sample or camera motion, and writes them to `benchmark-results/snapshots/`. Restrict the profiles with `--profiles cylview,houkmol`. Like the benchmark screenshot, this captures the molecule render surface only. Internally it sets `CYLFORM_BENCH_SNAPSHOT=1`, which tells the app to take the fast settle-and-capture path rather than the performance benchmark.
+
 Run the standard README-validation ladder:
 
 ```bash
@@ -52,7 +78,7 @@ Run the full default ladder:
 pnpm --dir desktop/src-ui run benchmark:atoms
 ```
 
-Results are written under `benchmark-results/`, which is intentionally ignored by git.
+Results are written under `benchmark-results/`, which is intentionally ignored by git. This includes generated fixtures, benchmark JSON, summaries, and optional screenshot PNGs.
 
 ## WSL2 / WSLg Notes
 
@@ -116,5 +142,6 @@ For README wording, prefer conservative language:
 - Record the exact command, OS/runtime, GPU renderer from `glxinfo -B` when available, and the JSON output path.
 - Treat WSLg `llvmpipe` results as invalid for public performance claims.
 - Do not commit `benchmark-results/` artifacts.
+- Use `--screenshot` (optionally with `--render-profile <id>`) when you want instant visual feedback: it launches the app and saves a PNG of the rendered view under `benchmark-results/screenshots/` without a separate manual run.
 - After renderer performance changes, run at least `2000,3000,5000` for cutoff detection and `5000,10000,25000,50000` for README-limit validation.
 - If results show low FPS with low `rebuildSceneMs`, inspect renderer/material changes, WebGL acceleration, and batch counts before optimizing Rust parsing.

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +19,8 @@ function parseArgs(argv) {
     sampleMs: 3_000,
     interactionMs: 1_200,
     targetFps: 30,
+    screenshot: parseEnvFlag(process.env.CYLFORM_BENCH_SCREENSHOT),
+    renderProfile: process.env.CYLFORM_BENCH_RENDER_PROFILE?.trim() || null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,6 +47,12 @@ function parseArgs(argv) {
     } else if (arg === '--target-fps' && value) {
       options.targetFps = Number.parseFloat(value);
       index += 1;
+    } else if (arg === '--screenshot') {
+      options.screenshot = true;
+    } else if (arg === '--render-profile' && value) {
+      options.renderProfile = value.trim();
+      options.screenshot = true;
+      index += 1;
     } else if (arg === '--help') {
       printHelp();
       process.exit(0);
@@ -62,6 +70,10 @@ function parseArgs(argv) {
   return options;
 }
 
+function parseEnvFlag(value) {
+  return ['1', 'true', 'TRUE', 'yes', 'YES', 'on', 'ON'].includes(value ?? '');
+}
+
 function printHelp() {
   console.log(`Usage: node scripts/benchmark-atom-capacity.mjs [options]
 
@@ -73,6 +85,8 @@ Options:
   --sample-ms <ms>      Frame sampling window inside the app, default 3000
   --interaction-ms <ms> Per orbit/pan/zoom interaction phase, default 1200
   --target-fps <fps>    Responsiveness target, default 30
+  --screenshot          Save a PNG of each run's rendered view under benchmark-results/screenshots/
+  --render-profile <id> Force a render style for the screenshot (cylview | ball-stick | houkmol); implies --screenshot
 `);
 }
 
@@ -154,10 +168,20 @@ function waitForResult(path, timeoutMs, child) {
 async function runOne(options, atomCount) {
   const fixturePath = resolve(options.outputDir, 'fixtures', `benchmark-${atomCount}-atoms.xyz`);
   const resultPath = resolve(options.outputDir, `benchmark-${atomCount}-atoms.json`);
+  const profileSuffix = options.renderProfile ? `-${options.renderProfile}` : '';
+  const screenshotPath = resolve(
+    options.outputDir,
+    'screenshots',
+    `benchmark-${atomCount}-atoms${profileSuffix}.png`,
+  );
 
   await generateXyz(atomCount, fixturePath);
   if (existsSync(resultPath)) {
     unlinkSync(resultPath);
+  }
+  if (options.screenshot) {
+    // export_png requires the destination directory to already exist.
+    mkdirSync(dirname(screenshotPath), { recursive: true });
   }
   console.log(`Launching Cylform benchmark for ${atomCount.toLocaleString()} atoms...`);
 
@@ -171,6 +195,9 @@ async function runOne(options, atomCount) {
       CYLFORM_BENCH_SAMPLE_MS: String(options.sampleMs),
       CYLFORM_BENCH_INTERACTION_MS: String(options.interactionMs),
       CYLFORM_BENCH_TARGET_FPS: String(options.targetFps),
+      CYLFORM_BENCH_SCREENSHOT: options.screenshot ? '1' : '0',
+      ...(options.screenshot ? { CYLFORM_BENCH_SCREENSHOT_PATH: screenshotPath } : {}),
+      ...(options.renderProfile ? { CYLFORM_BENCH_RENDER_PROFILE: options.renderProfile } : {}),
     },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
@@ -227,6 +254,7 @@ function summarize(results) {
     sceneObjects: result.sceneObjects ?? '',
     pickMs: result.pickTotalMs ? result.pickTotalMs.toFixed(1) : '',
     pickHit: result.pickHitType ?? '',
+    screenshot: result.screenshotPath ? basename(result.screenshotPath) : '',
   })));
   console.log(`Observed responsive ceiling on this system: ${observedLimit.toLocaleString()} atoms`);
   console.log(`Suggested conservative README limit: ${conservativeLimit.toLocaleString()} atoms`);

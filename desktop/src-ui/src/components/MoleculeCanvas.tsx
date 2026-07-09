@@ -1005,6 +1005,74 @@ export function MoleculeCanvas({
     }
 
     if (benchmarkConfig?.enabled && onBenchmarkRender && shouldFitCamera) {
+      // Optional developer visual feedback: save a PNG of the settled view so agents
+      // can eyeball the actual render without a separate app run. Best-effort only —
+      // a capture failure must never sink the benchmark result.
+      const captureBenchmarkScreenshot = async () => {
+        if (!benchmarkConfig.screenshot || !benchmarkConfig.screenshotPath) return;
+        try {
+          const dataUrl = renderCurrentViewDataUrl(ctx, containerRef.current, {
+            moleculeData,
+            pngExportScale: 1,
+          });
+          await invoke('export_png', {
+            path: benchmarkConfig.screenshotPath,
+            bytes: Array.from(dataUrlToBytes(dataUrl)),
+          });
+        } catch (error) {
+          console.error('Benchmark screenshot capture failed:', error);
+        }
+      };
+
+      if (benchmarkConfig.snapshot) {
+        // Static snapshot: let the scene settle a couple frames, capture, and report
+        // a minimal result. No frame sampling or orbit/pan/zoom, so the captured view
+        // is exactly the loaded molecule — for render/UI review on real structures.
+        void (async () => {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await captureBenchmarkScreenshot();
+          const debugInfo = webglDebugInfo(ctx.renderer);
+          const pickMetrics = benchmarkPickMetrics(ctx);
+          onBenchmarkRender({
+            rebuildSceneMs,
+            visibleAtoms: visibleAtomCount,
+            visibleBonds: visibleBondCount,
+            totalAtoms: moleculeData.atoms.length,
+            totalBonds: moleculeData.bonds.length,
+            renderProfile,
+            renderQuality: qualityProfile,
+            renderCalls: renderStats.renderCalls,
+            triangles: renderStats.triangles,
+            geometries: renderStats.geometries,
+            textures: renderStats.textures,
+            sceneObjects: renderStats.sceneObjects,
+            pickAtomMs: pickMetrics.pickAtomMs,
+            pickBondMs: pickMetrics.pickBondMs,
+            pickTotalMs: pickMetrics.pickTotalMs,
+            pickHitType: pickMetrics.pickHitType,
+            pickAtomCandidates: pickMetrics.pickAtomCandidates,
+            pickBondCandidates: pickMetrics.pickBondCandidates,
+            frameSampleMs: 0,
+            sampledFrames: 0,
+            averageFrameMs: null,
+            p95FrameMs: null,
+            minFps: null,
+            averageFps: null,
+            interactionFrameSampleMs: 0,
+            interactionAverageFrameMs: null,
+            interactionP95FrameMs: null,
+            interactionMinFps: null,
+            interactionAverageFps: null,
+            interactionPhases: [],
+            webglRenderer: debugInfo.webglRenderer,
+            webglVendor: debugInfo.webglVendor,
+            responsive: true,
+          });
+        })();
+        return;
+      }
+
       const sampleMs = benchmarkConfig.sampleMs || 3000;
       const interactionMs = benchmarkConfig.interactionMs || 1200;
       const targetFrameMs = 1000 / (benchmarkConfig.targetFps || 30);
@@ -1013,6 +1081,9 @@ export function MoleculeCanvas({
         const pickMetrics = benchmarkPickMetrics(ctx);
         const passiveMetrics = frameMetrics(frameTimes);
         const interactionMetrics = await benchmarkInteractionMetrics(ctx, interactionMs);
+
+        await captureBenchmarkScreenshot();
+
         onBenchmarkRender({
           rebuildSceneMs,
           visibleAtoms: visibleAtomCount,
