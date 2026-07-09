@@ -665,7 +665,7 @@ checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
 
 [[package]]
 name = "cylform-core"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "cylform-desktop"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "base64 0.22.1",
  "cylform-core",
