@@ -393,8 +393,10 @@ mod tests {
 
     #[test]
     fn test_export_xyz_frame_to_path_exports_selected_frame() {
-        let input_path = std::env::temp_dir().join(format!("cylform-input-{}.xyz", now_timestamp()));
-        let output_path = std::env::temp_dir().join(format!("cylform-frame-{}.xyz", now_timestamp()));
+        let input_path =
+            std::env::temp_dir().join(format!("cylform-input-{}.xyz", now_timestamp()));
+        let output_path =
+            std::env::temp_dir().join(format!("cylform-frame-{}.xyz", now_timestamp()));
         fs::write(
             &input_path,
             "1\nframe 1\nC 0.0 0.0 0.0\n1\nframe 2\nC 4.0 5.0 6.0\n",
@@ -408,7 +410,12 @@ mod tests {
         assert!(exported.contains("C     4.000000     5.000000     6.000000"));
         fs::remove_file(&input_path).unwrap();
         fs::remove_file(&output_path).unwrap();
-        assert!(export_xyz_frame_to_path(&output_path.with_extension("txt"), input_path.to_str().unwrap(), 0).is_err());
+        assert!(export_xyz_frame_to_path(
+            &output_path.with_extension("txt"),
+            input_path.to_str().unwrap(),
+            0
+        )
+        .is_err());
     }
 
     #[test]

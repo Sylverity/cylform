@@ -148,7 +148,10 @@ pub(crate) fn load_molecule(
         )
     })?;
     structure.metadata.loaded_frame_index = Some(frame_index);
-    structure.metadata.title = frame.title.clone().or_else(|| structure.metadata.title.clone());
+    structure.metadata.title = frame
+        .title
+        .clone()
+        .or_else(|| structure.metadata.title.clone());
     structure.metadata.energy = frame.energy;
     structure.metadata.energy_unit = frame.energy_unit.clone();
 
@@ -238,7 +241,10 @@ pub(crate) fn read_options_from_env() -> ReadOptions {
     }
 }
 
-pub(crate) fn build_molecule_groups_for_atoms(atoms: &[Atom], center: glam::Vec3) -> Vec<SerialMoleculeGroup> {
+pub(crate) fn build_molecule_groups_for_atoms(
+    atoms: &[Atom],
+    center: glam::Vec3,
+) -> Vec<SerialMoleculeGroup> {
     #[derive(Clone)]
     struct GroupAccumulator {
         residue_name: Option<String>,

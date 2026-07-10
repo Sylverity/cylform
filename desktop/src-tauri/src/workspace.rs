@@ -187,7 +187,10 @@ pub(crate) fn read_session_tabs(app: &AppHandle) -> Result<SessionTabsEnvelope, 
     Ok(normalize_session_tabs(envelope))
 }
 
-pub(crate) fn write_session_tabs(app: &AppHandle, envelope: &SessionTabsEnvelope) -> Result<(), String> {
+pub(crate) fn write_session_tabs(
+    app: &AppHandle,
+    envelope: &SessionTabsEnvelope,
+) -> Result<(), String> {
     let path = session_tabs_path(app)?;
     let envelope = normalize_session_tabs(envelope.clone());
     let contents = serde_json::to_string_pretty(&envelope)
@@ -201,7 +204,10 @@ pub(crate) fn get_session_tabs(app: AppHandle) -> Result<SessionTabsEnvelope, St
 }
 
 #[tauri::command]
-pub(crate) fn save_session_tabs(app: AppHandle, session: SessionTabsEnvelope) -> Result<(), String> {
+pub(crate) fn save_session_tabs(
+    app: AppHandle,
+    session: SessionTabsEnvelope,
+) -> Result<(), String> {
     write_session_tabs(&app, &session)
 }
 
@@ -220,7 +226,10 @@ pub(crate) fn read_recent_files(app: &AppHandle) -> Result<Vec<RecentFileEntry>,
         .map_err(|error| format!("Recent files are invalid JSON: {error}"))
 }
 
-pub(crate) fn write_recent_files(app: &AppHandle, entries: &[RecentFileEntry]) -> Result<(), String> {
+pub(crate) fn write_recent_files(
+    app: &AppHandle,
+    entries: &[RecentFileEntry],
+) -> Result<(), String> {
     let path = recent_files_path(app)?;
     let contents = serde_json::to_string_pretty(entries)
         .map_err(|error| format!("Could not encode recent files: {error}"))?;
@@ -232,7 +241,10 @@ pub(crate) fn normalize_recent_files_limit(limit: Option<usize>) -> usize {
 }
 
 #[tauri::command]
-pub(crate) fn get_recent_files(app: AppHandle, limit: Option<usize>) -> Result<Vec<RecentFileEntry>, String> {
+pub(crate) fn get_recent_files(
+    app: AppHandle,
+    limit: Option<usize>,
+) -> Result<Vec<RecentFileEntry>, String> {
     let entries = read_recent_files(&app)?;
     Ok(entries
         .into_iter()
@@ -242,7 +254,11 @@ pub(crate) fn get_recent_files(app: AppHandle, limit: Option<usize>) -> Result<V
 }
 
 #[tauri::command]
-pub(crate) fn record_recent_file(app: AppHandle, path: String, limit: Option<usize>) -> Result<(), String> {
+pub(crate) fn record_recent_file(
+    app: AppHandle,
+    path: String,
+    limit: Option<usize>,
+) -> Result<(), String> {
     let file_name = Path::new(&path)
         .file_name()
         .and_then(|name| name.to_str())
