@@ -101,11 +101,17 @@ export interface BondStyleOverride {
   type: BondStyleType;
 }
 
+export interface GroupPresentationState {
+  hidden_group_ids: string[];
+  highlighted_group_ids: string[];
+}
+
 export interface PresentationState {
   version: 1;
   poses: SavedPose[];
   annotations: Annotation[];
   hidden_atoms: number[];
+  group_state?: GroupPresentationState;
   styles: {
     hydrogen_visibility?: HydrogenVisibility;
     element_color_overrides?: ElementColorOverrides;

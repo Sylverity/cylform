@@ -513,6 +513,11 @@ mod tests {
         assert_eq!(normalized["poses"], json!([]));
         assert_eq!(normalized["annotations"], json!([]));
         assert_eq!(normalized["hidden_atoms"], json!([]));
+        assert_eq!(normalized["group_state"]["hidden_group_ids"], json!([]));
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!([])
+        );
         assert_eq!(normalized["styles"]["element_color_overrides"], json!({}));
         assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["styles"]["render_profile"], json!("cylview"));
@@ -555,6 +560,11 @@ mod tests {
         assert_eq!(normalized["annotations"][0]["type"], json!("Distance"));
         assert_eq!(normalized["annotations"][0]["atoms"], json!([0, 1]));
         assert_eq!(normalized["hidden_atoms"], json!([3, 5]));
+        assert_eq!(normalized["group_state"]["hidden_group_ids"], json!([]));
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!([])
+        );
         assert_eq!(
             normalized["styles"]["hydrogen_visibility"],
             json!("hide-c-h")
@@ -580,6 +590,10 @@ mod tests {
             "version": 1,
             "annotations": [],
             "hidden_atoms": [],
+            "group_state": {
+                "hidden_group_ids": ["A:ALA:1:"],
+                "highlighted_group_ids": ["A:GLY:2:"]
+            },
             "poses": [],
             "styles": {
                 "material_preset": "CYLview"
@@ -588,6 +602,14 @@ mod tests {
         .unwrap();
 
         assert_eq!(normalized["styles"]["render_profile"], json!("ball-stick"));
+        assert_eq!(
+            normalized["group_state"]["hidden_group_ids"],
+            json!(["A:ALA:1:"])
+        );
+        assert_eq!(
+            normalized["group_state"]["highlighted_group_ids"],
+            json!(["A:GLY:2:"])
+        );
         assert_eq!(normalized["styles"]["material_preset"], json!("CYLview"));
         assert_eq!(normalized["styles"]["atom_size_scale"], json!(1.0));
         assert_eq!(normalized["camera"]["fogEnabled"], json!(false));
