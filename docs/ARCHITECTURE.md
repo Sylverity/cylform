@@ -100,6 +100,7 @@ Shared, non-component code is grouped by concern so `App.tsx` and the canvas are
 | `visibility.ts` | `buildMoleculeVisibilityIndex` plus re-exports of the shared `domain/visibility` `isAtomVisible`/`labelSourceVisible` helpers. |
 | `benchmark.ts` | Frame-time sampling, interaction-benchmark orchestration, WebGL debug info, and render stats. |
 | `geometry.ts` | Angle-arc mesh creation/removal and selection overlay creation/removal. |
+| `highlights.ts` | Cross-profile residue-group highlight overlay meshes that render outside atom colour/style overrides and appear in exports and pose previews. |
 | `picking.ts` | Raycast resolution: `pickScene`, `resolveAtomHit`, `resolveBondHit`. |
 | `exportWorkflow.ts` | Pure export-sequencing logic: frame-range resolution, numbered PNG paths, and export filename sanitization. |
 | `exportPng.ts` | Publication export state, settings, viewport-exact PNG, supersampled/tiled raster export, experimental path-traced export, numbered frame sequence settings, metadata JSON, preview thumbnails, and the legacy `renderCurrentViewDataUrl(ctx, host, options)` helper used by pose previews. |

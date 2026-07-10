@@ -168,6 +168,13 @@ interface LabelSnapshot {
   className: string;
 }
 
+interface CanvasRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const SIZE_PRESETS: Record<Exclude<ExportSizePreset, 'viewport' | 'custom'>, { width: number; height: number }> = {
   manuscript: { width: 1800, height: 1350 },
   slide: { width: 1920, height: 1080 },
@@ -363,18 +370,27 @@ function drawLabels(
   labels: LabelSnapshot[],
   cssWidth: number,
   cssHeight: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceRect: CanvasRect,
   outputWidth: number,
   outputHeight: number,
   printScale: number,
 ): void {
   if (!hostRect) return;
-  const scaleX = outputWidth / cssWidth;
-  const scaleY = outputHeight / cssHeight;
+  const cssToSourceX = sourceWidth / cssWidth;
+  const cssToSourceY = sourceHeight / cssHeight;
+  const sourceToOutputX = outputWidth / sourceRect.width;
+  const sourceToOutputY = outputHeight / sourceRect.height;
+  const scaleX = cssToSourceX * sourceToOutputX;
+  const scaleY = cssToSourceY * sourceToOutputY;
   const labelScale = Math.max(scaleX, scaleY) * printScale;
 
   for (const label of labels) {
-    const x = (label.rect.left - hostRect.left) * scaleX;
-    const y = (label.rect.top - hostRect.top) * scaleY;
+    const sourceX = (label.rect.left - hostRect.left) * cssToSourceX;
+    const sourceY = (label.rect.top - hostRect.top) * cssToSourceY;
+    const x = (sourceX - sourceRect.x) * sourceToOutputX;
+    const y = (sourceY - sourceRect.y) * sourceToOutputY;
     const width = label.rect.width * scaleX * printScale;
     const height = label.rect.height * scaleY * printScale;
     const radius = label.className.includes('render-profile-houkmol')
@@ -414,21 +430,52 @@ function drawLabels(
 function drawLinkLines(
   exportCtx: CanvasRenderingContext2D,
   host: HTMLDivElement | null,
+  cssWidth: number,
+  cssHeight: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  sourceRect: CanvasRect,
   outputWidth: number,
   outputHeight: number,
   printScale: number,
 ): void {
   const linkCanvasEl = host?.querySelector<HTMLCanvasElement>('.label-link-overlay');
   if (!linkCanvasEl || linkCanvasEl.style.display === 'none') return;
+  const linkSourceRect = {
+    x: sourceRect.x * (cssWidth / sourceWidth),
+    y: sourceRect.y * (cssHeight / sourceHeight),
+    width: sourceRect.width * (cssWidth / sourceWidth),
+    height: sourceRect.height * (cssHeight / sourceHeight),
+  };
 
   if (printScale === 1) {
-    exportCtx.drawImage(linkCanvasEl, 0, 0, outputWidth, outputHeight);
+    exportCtx.drawImage(
+      linkCanvasEl,
+      linkSourceRect.x,
+      linkSourceRect.y,
+      linkSourceRect.width,
+      linkSourceRect.height,
+      0,
+      0,
+      outputWidth,
+      outputHeight,
+    );
     return;
   }
 
   exportCtx.save();
   exportCtx.globalAlpha = 0.9;
-  exportCtx.drawImage(linkCanvasEl, 0, 0, outputWidth, outputHeight);
+  exportCtx.drawImage(
+    linkCanvasEl,
+    linkSourceRect.x,
+    linkSourceRect.y,
+    linkSourceRect.width,
+    linkSourceRect.height,
+    0,
+    0,
+    outputWidth,
+    outputHeight,
+  );
   exportCtx.restore();
 }
 
@@ -764,6 +811,7 @@ export async function renderPublicationExport(options: {
   const originalBackground = ctx.scene.background;
   const originalClearAlpha = renderer.getClearAlpha();
   const originalAspect = ctx.perspectiveCamera.aspect;
+  const objectShadowStates: Array<{ object: Object3D; castShadow: boolean; receiveShadow: boolean }> = [];
   const cssWidth = sourceCanvas.clientWidth || originalSize.x || 800;
   const cssHeight = sourceCanvas.clientHeight || originalSize.y || 600;
   const dimensions = resolveDimensions(ctx, settings);
@@ -790,6 +838,11 @@ export async function renderPublicationExport(options: {
 
     ctx.scene.traverse((object) => {
       if (object instanceof Mesh || object instanceof InstancedMesh) {
+        objectShadowStates.push({
+          object,
+          castShadow: object.castShadow,
+          receiveShadow: object.receiveShadow,
+        });
         object.castShadow = settings.improvedShadows;
         object.receiveShadow = settings.improvedShadows;
       }
@@ -854,13 +907,27 @@ export async function renderPublicationExport(options: {
       );
     }
 
-    drawLinkLines(exportCtx, host, targetWidth, targetHeight, settings.printSafeAnnotationScale);
+    drawLinkLines(
+      exportCtx,
+      host,
+      cssWidth,
+      cssHeight,
+      dimensions.sourceWidth,
+      dimensions.sourceHeight,
+      sourceRect,
+      targetWidth,
+      targetHeight,
+      settings.printSafeAnnotationScale,
+    );
     drawLabels(
       exportCtx,
       hostRect,
       labels,
       cssWidth,
       cssHeight,
+      dimensions.sourceWidth,
+      dimensions.sourceHeight,
+      sourceRect,
       targetWidth,
       targetHeight,
       settings.printSafeAnnotationScale,
@@ -898,6 +965,10 @@ export async function renderPublicationExport(options: {
     renderer.toneMapping = originalToneMapping;
     renderer.shadowMap.enabled = originalShadowEnabled;
     renderer.shadowMap.type = originalShadowType;
+    for (const { object, castShadow, receiveShadow } of objectShadowStates) {
+      object.castShadow = castShadow;
+      object.receiveShadow = receiveShadow;
+    }
     renderer.setClearAlpha(originalClearAlpha);
     ctx.scene.background = originalBackground;
     ctx.depthCue.composer?.setPixelRatio(originalPixelRatio);
@@ -958,9 +1029,38 @@ export function renderCurrentViewDataUrl(
     }
 
     exportCtx.drawImage(sourceCanvas, 0, 0, exportCanvas.width, exportCanvas.height);
-    drawLinkLines(exportCtx, host, exportCanvas.width, exportCanvas.height, 1);
+    const sourceRect = {
+      x: 0,
+      y: 0,
+      width: sourceCanvas.width,
+      height: sourceCanvas.height,
+    };
+    drawLinkLines(
+      exportCtx,
+      host,
+      cssWidth,
+      cssHeight,
+      sourceCanvas.width,
+      sourceCanvas.height,
+      sourceRect,
+      exportCanvas.width,
+      exportCanvas.height,
+      1,
+    );
     const { hostRect, labels } = collectLabels(host);
-    drawLabels(exportCtx, hostRect, labels, cssWidth, cssHeight, exportCanvas.width, exportCanvas.height, 1);
+    drawLabels(
+      exportCtx,
+      hostRect,
+      labels,
+      cssWidth,
+      cssHeight,
+      sourceCanvas.width,
+      sourceCanvas.height,
+      sourceRect,
+      exportCanvas.width,
+      exportCanvas.height,
+      1,
+    );
 
     return exportCanvas.toDataURL('image/png');
   } finally {

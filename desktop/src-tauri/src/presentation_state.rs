@@ -169,6 +169,14 @@ impl Default for PresentationStyles {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub(crate) struct PresentationGroupState {
+    #[serde(default)]
+    pub(crate) hidden_group_ids: Vec<String>,
+    #[serde(default)]
+    pub(crate) highlighted_group_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct PresentationStateEnvelope {
     #[serde(default = "presentation_state_version")]
@@ -179,6 +187,8 @@ pub(crate) struct PresentationStateEnvelope {
     pub(crate) annotations: Vec<Annotation>,
     #[serde(default)]
     pub(crate) hidden_atoms: Vec<usize>,
+    #[serde(default)]
+    pub(crate) group_state: PresentationGroupState,
     #[serde(default)]
     pub(crate) styles: PresentationStyles,
     #[serde(default)]
@@ -192,6 +202,7 @@ impl Default for PresentationStateEnvelope {
             poses: Value::Array(Vec::new()),
             annotations: Vec::new(),
             hidden_atoms: Vec::new(),
+            group_state: PresentationGroupState::default(),
             styles: PresentationStyles::default(),
             camera: Value::Null,
         }
@@ -306,6 +317,7 @@ pub(crate) fn legacy_label_to_annotation(label: &Value) -> Value {
 pub(crate) fn normalize_presentation_state(mut value: Value) -> Result<Value, String> {
     if value.get("annotations").is_some()
         || value.get("hidden_atoms").is_some()
+        || value.get("group_state").is_some()
         || value.get("styles").is_some()
         || value.get("camera").is_some()
         || value.get("poses").is_some()
@@ -337,6 +349,10 @@ pub(crate) fn normalize_presentation_state(mut value: Value) -> Result<Value, St
         "poses": value_array(value.get("savedPoses")),
         "annotations": legacy_labels,
         "hidden_atoms": value.get("hiddenAtomIndices").cloned().unwrap_or_else(|| json!([])),
+        "group_state": {
+            "hidden_group_ids": [],
+            "highlighted_group_ids": []
+        },
         "styles": {
             "hydrogen_visibility": value.get("hydrogenVisibility").cloned(),
             "element_color_overrides": value_object(value.get("elementColorOverrides")),

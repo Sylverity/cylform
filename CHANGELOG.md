@@ -52,6 +52,8 @@ Multi-frame foundation milestone.
 Publication rendering pipeline milestone.
 
 ### Added
+- Dedicated residue-group presentation state for independent group hide/show and highlight toggles.
+- Cross-profile residue highlight overlay that renders outside atom colour/style overrides and appears in PNG exports and pose previews.
 - **Shared publication render state** for molecule geometry, styles, render profile, camera/projection, lighting, background, depth cue, labels, link lines, angle arcs, residue groups, hidden atoms, and saved poses.
 - **Deliberate export workflow** in the canvas with Viewport Exact, Publication Raster, and Experimental Progressive Path-Traced modes.
 - **Publication export settings** for 1x/2x/4x/custom scale, manuscript/slide/poster/custom sizes, white/transparent/current background, crop-to-molecule padding, absolute scale, print-safe annotation scaling, preview thumbnails, and optional JSON metadata sidecars.
@@ -65,6 +67,11 @@ Publication rendering pipeline milestone.
 - Normalized repository metadata and source links to `https://github.com/Sylverity/cylform`.
 - Updated the Apache 2.0 appendix copyright holder to Sylverity LLC.
 - Documented dependency-license scan results in the README.
+
+### Fixed
+- Fixed Molecules panel residue highlight buttons getting stuck by separating highlight state from atom style overrides.
+- Fixed residue group Hide so it behaves as a true Hide/Show toggle instead of permanently adding atoms to the manual hidden-atom list.
+- Fixed hollow-looking cylinder ends and reduced small bond-junction gaps by capping cylinders, increasing junction overlap, and scaling default visible atom radii to cover bond ends.
 
 ### Verified
 - Confirmed Rust workspace packages inherit the `Apache-2.0` SPDX license declaration.

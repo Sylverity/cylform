@@ -111,6 +111,7 @@ import {
   renderScene,
   updateDepthCueBackground,
 } from './molecule-canvas/depthCue';
+import { addHighlightLayer } from './molecule-canvas/highlights';
 
 function preventMaterialPresetShortcutOverlap(event: ReactKeyboardEvent<HTMLSelectElement>) {
   if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === 'h') {
@@ -123,6 +124,7 @@ interface Props {
   moleculeData: MoleculeData | null;
   hydrogenVisibility: HydrogenVisibility;
   hiddenAtomIndices: number[];
+  highlightedGroupIds: string[];
   elementColorOverrides: ElementColorOverrides;
   atomStyleOverrides: Record<string, AtomStyleOverride>;
   bondStyleOverrides: Record<string, BondStyleOverride>;
@@ -185,6 +187,7 @@ export function MoleculeCanvas({
   moleculeData,
   hydrogenVisibility,
   hiddenAtomIndices,
+  highlightedGroupIds,
   elementColorOverrides,
   atomStyleOverrides,
   bondStyleOverrides,
@@ -951,6 +954,18 @@ export function MoleculeCanvas({
       bondSizeScale: viewOptions.bondSizeScale,
     });
 
+    addHighlightLayer(
+      ctx,
+      moleculeData,
+      highlightedGroupIds,
+      hiddenAtomSet,
+      hydrogenVisibility,
+      activeVisibilityIndex,
+      atomStyleOverrides,
+      atomSizeScale,
+      viewOptions.bondSizeScale,
+    );
+
     // --- Fit camera ---
     const box = activeVisibilityIndex?.bounds?.clone() ?? new Box3().setFromObject(molGroup);
     ctx.lastMoleculeBox = box.isEmpty() ? null : box.clone();
@@ -1134,6 +1149,7 @@ export function MoleculeCanvas({
     visibilityIndex,
     hydrogenVisibility,
     hiddenAtomIndices,
+    highlightedGroupIds,
     isCylviewProfile,
     elementColorOverrides,
     atomStyleOverrides,

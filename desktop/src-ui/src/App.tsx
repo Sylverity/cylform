@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react'
+import { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
@@ -17,7 +17,11 @@ import {
   serializePresentationState,
 } from './persistence'
 import { normalizeRenderProfile, renderProfileToLegacyMaterialPreset } from './renderProfiles'
-import { hideGroupAtoms, revealGroupAtoms } from './groupVisibility'
+import {
+  effectiveHiddenAtomIndices,
+  toggleGroupHidden,
+  toggleGroupHighlighted,
+} from './groupVisibility'
 import {
   effectiveKeyboardShortcuts,
   shortcutMatchesEvent,
@@ -141,6 +145,12 @@ function PosePreviewRenderer({
   if (!job || !moleculeData) return null;
 
   const styles = presentationState?.styles;
+  const previewHighlightedGroupIds = presentationState?.group_state?.highlighted_group_ids ?? [];
+  const previewHiddenAtomIndices = effectiveHiddenAtomIndices(
+    presentationState?.hidden_atoms ?? [],
+    moleculeData.groups,
+    presentationState?.group_state?.hidden_group_ids ?? [],
+  );
   const previewViewOptions = {
     ...createDefaultPresentationState(appSettings).camera,
     ...job.pose.viewOptions,
@@ -158,7 +168,8 @@ function PosePreviewRenderer({
         <MoleculeCanvas
           moleculeData={moleculeData}
           hydrogenVisibility={styles?.hydrogen_visibility ?? 'shown'}
-          hiddenAtomIndices={presentationState?.hidden_atoms ?? []}
+          hiddenAtomIndices={previewHiddenAtomIndices}
+          highlightedGroupIds={previewHighlightedGroupIds}
           elementColorOverrides={styles?.element_color_overrides ?? {}}
           atomStyleOverrides={styles?.atom_style_overrides ?? {}}
           bondStyleOverrides={styles?.bond_style_overrides ?? {}}
@@ -348,6 +359,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [hydrogenVisibility, setHydrogenVisibility] = useState<HydrogenVisibility>('shown');
   const [hiddenAtomIndices, setHiddenAtomIndices] = useState<number[]>([]);
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<string[]>([]);
+  const [highlightedGroupIds, setHighlightedGroupIds] = useState<string[]>([]);
   const [selectedBond, setSelectedBond] = useState<SelectedBondMeasurement | null>(null);
   const [selectedAngle, setSelectedAngle] = useState<SelectedAngleMeasurement | null>(null);
   const [selectedDihedral, setSelectedDihedral] = useState<SelectedDihedralMeasurement | null>(null);
@@ -451,6 +464,8 @@ function App() {
     poses: savedPoses,
     annotations: persistentLabels,
     hiddenAtomIndices,
+    hiddenGroupIds,
+    highlightedGroupIds,
     hydrogenVisibility,
     elementColorOverrides,
     atomSizeScale,
@@ -463,6 +478,8 @@ function App() {
     atomStyleOverrides,
     bondStyleOverrides,
     elementColorOverrides,
+    hiddenGroupIds,
+    highlightedGroupIds,
     hiddenAtomIndices,
     hydrogenVisibility,
     renderProfile,
@@ -506,6 +523,8 @@ function App() {
       : normalizePresentationState(state, settingsForNormalize);
     setPersistentLabels(normalized.annotations);
     setHiddenAtomIndices(normalized.hidden_atoms);
+    setHiddenGroupIds(normalized.group_state?.hidden_group_ids ?? []);
+    setHighlightedGroupIds(normalized.group_state?.highlighted_group_ids ?? []);
     setHydrogenVisibility(normalized.styles.hydrogen_visibility ?? 'shown');
     setElementColorOverrides(normalized.styles.element_color_overrides ?? {});
     setAtomSizeScale(normalized.styles.atom_size_scale ?? 1);
@@ -1061,35 +1080,14 @@ function App() {
   }, [handleClearSelection, selectionSummary.atomIndices]);
 
   const handleHideGroups = useCallback((groupIds: string[]) => {
-    const selectedGroups = moleculeData?.groups.filter((candidate) => groupIds.includes(candidate.id)) ?? [];
-    if (selectedGroups.length === 0) return;
-
-    setHiddenAtomIndices((current) => {
-      return hideGroupAtoms(current, selectedGroups, groupIds);
-    });
+    if (!moleculeData) return;
+    setHiddenGroupIds((current) => toggleGroupHidden(current, moleculeData.groups, groupIds));
     handleClearSelection();
   }, [handleClearSelection, moleculeData]);
 
   const handleHighlightGroups = useCallback((groupIds: string[]) => {
-    const selectedGroups = moleculeData?.groups.filter((candidate) => groupIds.includes(candidate.id)) ?? [];
-    if (selectedGroups.length === 0) return;
-
-    setHiddenAtomIndices((current) => {
-      return revealGroupAtoms(current, selectedGroups, groupIds);
-    });
-    setAtomStyleOverrides((current) => {
-      const next = { ...current };
-      for (const group of selectedGroups) {
-        for (const atomIndex of group.atomIndices) {
-          next[String(atomIndex)] = {
-            ...(next[String(atomIndex)] ?? {}),
-            color: '#10b981',
-            sizeScale: 1.08,
-          };
-        }
-      }
-      return next;
-    });
+    if (!moleculeData) return;
+    setHighlightedGroupIds((current) => toggleGroupHighlighted(current, moleculeData.groups, groupIds));
     handleClearSelection();
   }, [handleClearSelection, moleculeData]);
 
@@ -1330,10 +1328,17 @@ function App() {
     || selectionSummary.atomCount > 0
     || selectionSummary.bondCount > 0,
   );
-  const hiddenAtomCount = hiddenAtomIndices.length;
+  const effectiveHiddenAtomIndicesForView = useMemo(() => (
+    moleculeData
+      ? effectiveHiddenAtomIndices(hiddenAtomIndices, moleculeData.groups, hiddenGroupIds)
+      : hiddenAtomIndices
+  ), [hiddenAtomIndices, hiddenGroupIds, moleculeData]);
+  const hiddenAtomCount = effectiveHiddenAtomIndicesForView.length;
   const hasSavedPresentationState = Boolean(
     persistentLabels.length ||
     hiddenAtomIndices.length ||
+    hiddenGroupIds.length ||
+    highlightedGroupIds.length ||
     hydrogenVisibility !== 'shown' ||
     Object.keys(elementColorOverrides).length ||
     atomSizeScale !== 1 ||
@@ -1713,7 +1718,8 @@ function App() {
           <MoleculeCanvas
             moleculeData={moleculeData}
             hydrogenVisibility={hydrogenVisibility}
-            hiddenAtomIndices={hiddenAtomIndices}
+            hiddenAtomIndices={effectiveHiddenAtomIndicesForView}
+            highlightedGroupIds={highlightedGroupIds}
             elementColorOverrides={elementColorOverrides}
             atomStyleOverrides={atomStyleOverrides}
             bondStyleOverrides={bondStyleOverrides}
@@ -1779,7 +1785,9 @@ function App() {
         <InfoPanel
           moleculeData={moleculeData}
           hydrogenVisibility={hydrogenVisibility}
-          hiddenAtomIndices={hiddenAtomIndices}
+          hiddenAtomIndices={effectiveHiddenAtomIndicesForView}
+          hiddenGroupIds={hiddenGroupIds}
+          highlightedGroupIds={highlightedGroupIds}
           selectedBond={selectedBond}
           selectedAngle={selectedAngle}
           selectedDihedral={selectedDihedral}

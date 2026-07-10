@@ -134,7 +134,7 @@ export function createSceneContext(
   scene.add(floorGroup);
 
   const sphereGeom = new SphereGeometry(1, 20, 16);
-  const cylGeom = new CylinderGeometry(1, 1, 1, 24, 1, true);
+  const cylGeom = new CylinderGeometry(1, 1, 1, 24, 1, false);
   const sphereGeometryCache = new Map<string, SphereGeometry>([['20x16', sphereGeom]]);
   const cylinderGeometryCache = new Map<string, CylinderGeometry>([['24', cylGeom]]);
 
