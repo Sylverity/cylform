@@ -34,7 +34,9 @@ pub(crate) fn menu_event_name(menu_id: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(manager: &M) -> tauri::Result<Menu<R>> {
+pub(crate) fn build_app_menu<R: tauri::Runtime, M: Manager<R>>(
+    manager: &M,
+) -> tauri::Result<Menu<R>> {
     let open_file = MenuItemBuilder::with_id(MENU_FILE_OPEN, "Open File...")
         .accelerator("CommandOrControl+O")
         .build(manager)?;

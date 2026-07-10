@@ -200,7 +200,10 @@ pub(crate) fn read_pose_library(app: &AppHandle) -> Result<PoseLibraryEnvelope, 
         .map_err(|error| format!("Pose library is invalid JSON: {error}"))
 }
 
-pub(crate) fn write_pose_library(app: &AppHandle, library: &PoseLibraryEnvelope) -> Result<(), String> {
+pub(crate) fn write_pose_library(
+    app: &AppHandle,
+    library: &PoseLibraryEnvelope,
+) -> Result<(), String> {
     let path = pose_library_path(app)?;
     let contents = serde_json::to_string_pretty(library)
         .map_err(|error| format!("Could not encode pose library: {error}"))?;
@@ -263,7 +266,10 @@ pub(crate) fn rename_pose_library_entry(
 }
 
 #[tauri::command]
-pub(crate) fn delete_pose_library_entry(app: AppHandle, id: String) -> Result<PoseLibraryEnvelope, String> {
+pub(crate) fn delete_pose_library_entry(
+    app: AppHandle,
+    id: String,
+) -> Result<PoseLibraryEnvelope, String> {
     let library = read_pose_library(&app)?;
     let preview_reference = library
         .entries

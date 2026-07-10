@@ -11,7 +11,10 @@ pub(crate) fn app_settings_version() -> u32 {
     1
 }
 
-pub(crate) fn setting_section<'a>(value: &'a Value, key: &str) -> Option<&'a serde_json::Map<String, Value>> {
+pub(crate) fn setting_section<'a>(
+    value: &'a Value,
+    key: &str,
+) -> Option<&'a serde_json::Map<String, Value>> {
     value.get(key).and_then(Value::as_object)
 }
 

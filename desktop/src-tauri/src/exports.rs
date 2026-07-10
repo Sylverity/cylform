@@ -28,7 +28,11 @@ pub(crate) struct BenchmarkConfig {
     snapshot: bool,
 }
 
-pub(crate) fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_index: usize) -> Result<(), String> {
+pub(crate) fn export_xyz_frame_to_path(
+    path: &Path,
+    source_path: &str,
+    frame_index: usize,
+) -> Result<(), String> {
     if path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -46,14 +50,19 @@ pub(crate) fn export_xyz_frame_to_path(path: &Path, source_path: &str, frame_ind
         }
     }
 
-    let structure = read_structure_with_options(source_path, FileFormat::Auto, read_options_from_env())
-        .map_err(format_load_error)?;
+    let structure =
+        read_structure_with_options(source_path, FileFormat::Auto, read_options_from_env())
+            .map_err(format_load_error)?;
     write_xyz_frame(path, &structure, frame_index)
         .map_err(|error| format!("Could not export XYZ frame: {error}"))
 }
 
 #[tauri::command]
-pub(crate) fn export_xyz_frame(path: String, source_path: String, frame_index: usize) -> Result<(), String> {
+pub(crate) fn export_xyz_frame(
+    path: String,
+    source_path: String,
+    frame_index: usize,
+) -> Result<(), String> {
     export_xyz_frame_to_path(Path::new(&path), &source_path, frame_index)
 }
 
@@ -65,7 +74,12 @@ pub(crate) fn benchmark_enabled() -> bool {
 
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"))
+        .map(|value| {
+            matches!(
+                value.as_str(),
+                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+            )
+        })
         .unwrap_or(false)
 }
 
