@@ -1,5 +1,5 @@
 import { Color } from 'three';
-import type { RenderProfileId } from '../../App';
+import type { RenderProfileId } from '../../types';
 
 export const ATOM_COLORS: Record<string, number> = {
   H: 0xcfd3d7,

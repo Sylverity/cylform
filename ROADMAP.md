@@ -2,6 +2,32 @@
 
 This roadmap tracks completed milestones and upcoming feature work. The main project overview lives in [README.md](README.md).
 
+## Released — v0.7.2
+
+Cylform **0.7.2** is an architecture and quality milestone: no user-facing feature changes, but the codebase is split into focused, testable modules and two cross-language correctness bugs are fixed.
+
+### What's new in 0.7.2
+
+- **Modular frontend** — shared types moved to `types/`, reusable logic to `domain/` and `hooks/`, window commands to a typed `canvasEvents.ts`, and `MoleculeCanvas.tsx` further decomposed into `molecule-canvas/` scene-setup, overlay, batch-building, and export-workflow modules
+- **Modular Tauri backend** — `main.rs` split into `menu`, `settings`, `presentation_state`, `pose_library`, `exports`, `molecule_commands`, and `workspace` modules
+- **Cross-language default fixtures** — shared TS/Rust golden tests lock default settings and per-profile camera state so they cannot drift
+- **Benchmark screenshot + snapshot tooling** — save a PNG of the settled render from the benchmark harness, or use `snapshot:molecule` to capture a real molecule per render profile without the performance sample
+- **Fixes** — invalid `"paper"` backdrop default and forced render profiles being ignored during screenshot capture
+- **Removed** the unused placeholder `picker` module from `cylform-core`
+
+## Released — v0.7.1
+
+Cylform **0.7.1** adds the multi-frame foundation for trajectory display and export.
+
+### What's new in 0.7.1
+
+- **Multi-frame XYZ loading** — all XYZ frames are parsed into `Structure.frames`
+- **Frame metadata** — per-frame titles and optional energy/unit values are parsed and displayed
+- **Frame transport** — slider, previous/next, play/pause, and playback speed controls
+- **Stable presentation across frames** — camera, projection, render profile, styles, labels, and annotations survive frame swaps
+- **Current-frame XYZ export** — save the displayed frame as a standalone `.xyz`
+- **Frame sequence export** — render current frame, ranges, or every Nth frame to numbered PNG sequences with fixed camera and fixed crop bounds
+
 ## Released — v0.7.0
 
 Cylform **0.7.0** turns export into a deliberate publication rendering pipeline.
@@ -55,7 +81,6 @@ Cylform **0.5.0** is publicly available with validated installers for Windows, L
 
 ## Up Next
 
-- [ ] Multi-frame XYZ trajectory playback
 - [ ] PDB residue-level colouring
 - [ ] Gaussian output support (optimizations, frequencies, scans, IRC)
 - [ ] Relative-energy plotting for scans and trajectories

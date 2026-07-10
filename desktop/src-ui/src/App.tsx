@@ -16,7 +16,7 @@ import {
   normalizeSessionTabs,
   serializePresentationState,
 } from './persistence'
-import { normalizeRenderProfile } from './renderProfiles'
+import { normalizeRenderProfile, renderProfileToLegacyMaterialPreset } from './renderProfiles'
 import {
   effectiveHiddenAtomIndices,
   toggleGroupHidden,
@@ -27,318 +27,46 @@ import {
   shortcutMatchesEvent,
   type ShortcutActionId,
 } from './shortcuts'
+import { dispatchCanvasEvent, listenToCanvasEvent, type CameraPresetId } from './canvasEvents'
+import { formatAngle, formatDistance } from './domain/measurements'
+import { displayNameForPath, isSupportedMoleculePath } from './domain/paths'
+import { useAppSettings } from './hooks/useAppSettings'
+import { usePoseLibrary, type PosePreviewJob } from './hooks/usePoseLibrary'
+import { usePresentationStateAutosave } from './hooks/usePresentationStateAutosave'
+import { createTabId, useWorkspaceTabs } from './hooks/useWorkspaceTabs'
+import type {
+  Annotation,
+  AppSettings,
+  AtomStyleOverride,
+  BenchmarkConfig,
+  BenchmarkRenderMetrics,
+  BondStyleOverride,
+  BondStyleType,
+  ElementColorOverrides,
+  HydrogenVisibility,
+  MoleculeData,
+  MoleculeTab,
+  PersistentLabel,
+  PoseLibraryEntry,
+  PresentationState,
+  RecentFileEntry,
+  RenderProfileId,
+  SavedPose,
+  SelectedAngleMeasurement,
+  SelectedBondMeasurement,
+  SelectedDihedralMeasurement,
+  SelectionMode,
+  SelectionSummary,
+  SessionTabRecord,
+  SessionTabsEnvelope,
+  ViewOptions,
+} from './types'
 
 const MoleculeCanvas = lazy(() =>
   import('./components/MoleculeCanvas').then((module) => ({
     default: module.MoleculeCanvas,
   })),
 );
-
-export interface AtomData {
-  x: number;
-  y: number;
-  z: number;
-  element: string;
-  radius: number;
-  metadata?: AtomMetadata;
-}
-
-export interface BondData {
-  atom1: number;
-  atom2: number;
-  radius: number;
-  kind: BondKind;
-}
-
-export interface LabelAnchor {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export interface SelectedBondMeasurement {
-  atom1Element: string;
-  atom2Element: string;
-  distance: number;
-  anchor: LabelAnchor;
-  atomIndices?: [number, number];
-}
-
-export interface SelectedAngleMeasurement {
-  atomElements: [string, string, string];
-  angleDegrees: number;
-  stage: 1 | 2 | 3;
-  anchor?: LabelAnchor;
-  atomIndices?: [number, number, number];
-}
-
-export interface SelectedDihedralMeasurement {
-  atomElements: [string, string, string, string];
-  dihedralDegrees: number;
-  stage: 1 | 2 | 3 | 4;
-  anchor?: LabelAnchor;
-  atomIndices?: [number, number, number, number];
-}
-
-export type SelectionMode = 'view' | 'measure' | 'atom' | 'bond' | 'atom-bond' | 'label';
-export type HydrogenVisibility = 'shown' | 'hidden' | 'hide-c-h';
-
-export interface SelectionSummary {
-  atomCount: number;
-  bondCount: number;
-  atomIndices: number[];
-  bondKeys: string[];
-}
-
-export type ElementColorOverrides = Record<string, string>;
-export type AnnotationType = 'AtomLabel' | 'Distance' | 'Angle' | 'Dihedral';
-export type BondStyleType = 'full' | 'ts' | 'dative' | 'interaction' | 'thin';
-export type BondKind = 'Normal' | 'Ts' | 'Dative' | 'Interaction' | 'Thin';
-export type LegacyMaterialPresetId = 'CYLviewLegacy' | 'CYLview' | 'Houkmol';
-export type MaterialPresetId = LegacyMaterialPresetId;
-export type RenderProfileId = 'cylview' | 'ball-stick' | 'houkmol';
-
-export interface Annotation {
-  id: string;
-  type: AnnotationType;
-  text: string;
-  anchor: LabelAnchor;
-  visible: boolean;
-  atom_id?: number;
-  atoms?: number[];
-  value?: number;
-  source?: {
-    atomIndex?: number;
-    atomIndices?: number[];
-    bond?: [number, number];
-  };
-}
-
-export type PersistentLabel = Annotation;
-
-export type BackdropTone = 'clean' | 'warm' | 'slate' | 'black' | 'custom';
-export type ProjectionMode = 'perspective' | 'orthographic';
-export type LightingMood = 'publication' | 'soft-studio' | 'high-contrast';
-
-export interface ViewOptions {
-  showFloor: boolean;
-  showGrid: boolean;
-  backdropTone: BackdropTone;
-  customBackdropHex?: string;
-  projection: ProjectionMode;
-  lightingMood: LightingMood;
-  fogEnabled: boolean;
-  fogIntensity: number;
-  fogDepth: number;
-  focalBlurEnabled: boolean;
-  focalBlurAmount: number;
-  focalDepth: number;
-  autoRotate: boolean;
-  autoRotateSpeed: number;
-  labelFontScale: number;
-  bondSizeScale: number;
-  showLabelLinkLines: boolean;
-}
-
-export interface AppSettings {
-  version: 1;
-  rendering: {
-    pngExportScale: 1 | 2 | 4;
-    defaultBackground: 'white' | 'black' | 'custom';
-    customBackgroundHex: string;
-    defaultRenderProfile: RenderProfileId;
-    defaultMaterialPreset?: MaterialPresetId;
-    defaultProjection: ProjectionMode;
-    defaultLighting: LightingMood;
-    showFloorGridByDefault: boolean;
-  };
-  chemistry: {
-    defaultHydrogenVisibility: HydrogenVisibility;
-    distancePrecision: number;
-    anglePrecision: number;
-    bondPerceptionTolerance: number;
-    useSymbolUnits: boolean;
-  };
-  interaction: {
-    mouseMode: 'standard' | 'one-button';
-    invertScrollZoom: boolean;
-    keyboardShortcuts: Record<string, string>;
-  };
-  files: {
-    autosavePresentationState: boolean;
-    restorePreviousSessionOnStartup: boolean;
-    droppedFilesOpenInBackground: boolean;
-    recentFilesLimit: number;
-  };
-  app: {
-    autoCheckForUpdates: boolean;
-    devtoolsMenuEnabled: boolean;
-    theme: 'auto' | 'light' | 'dark';
-  };
-}
-
-export type { ShortcutActionId };
-
-export interface AppDataPaths {
-  root: string;
-  settings: string;
-  session_tabs: string;
-  recent_files: string;
-  saved_info: string;
-  pose_library: string;
-  pose_previews: string;
-}
-
-export interface AtomMetadata {
-  recordType?: string;
-  serial?: number;
-  atomName?: string;
-  altLoc?: string;
-  residueName?: string;
-  chainId?: string;
-  residueSequence?: number;
-  insertionCode?: string;
-  occupancy?: number;
-  bFactor?: number;
-  formalCharge?: string;
-}
-
-export interface MoleculeMetadata {
-  sourceFormat?: string;
-  title?: string;
-  frameCount?: number;
-  loadedFrameIndex?: number;
-  energy?: number;
-  energyUnit?: string;
-  warnings: string[];
-}
-
-export interface MoleculeGroup {
-  id: string;
-  label: string;
-  residueName?: string;
-  chainId?: string;
-  residueSequence?: number;
-  insertionCode?: string;
-  atomIndices: number[];
-  centroid: LabelAnchor;
-}
-
-export interface MoleculeData {
-  path: string;
-  name: string;
-  atoms: AtomData[];
-  bonds: BondData[];
-  groups: MoleculeGroup[];
-  metadata: MoleculeMetadata;
-}
-
-export interface SavedPose {
-  id: string;
-  name: string;
-  cameraPosition: LabelAnchor;
-  target: LabelAnchor;
-  projection: ProjectionMode;
-  viewOptions: ViewOptions;
-}
-
-export interface AtomStyleOverride {
-  color?: string;
-  sizeScale?: number;
-}
-
-export interface BondStyleOverride {
-  type: BondStyleType;
-}
-
-export interface GroupPresentationState {
-  hidden_group_ids: string[];
-  highlighted_group_ids: string[];
-}
-
-export interface PresentationState {
-  version: 1;
-  poses: SavedPose[];
-  annotations: Annotation[];
-  hidden_atoms: number[];
-  group_state?: GroupPresentationState;
-  styles: {
-    hydrogen_visibility?: HydrogenVisibility;
-    element_color_overrides?: ElementColorOverrides;
-    atom_size_scale?: number;
-    atom_style_overrides?: Record<string, AtomStyleOverride>;
-    bond_style_overrides?: Record<string, BondStyleOverride>;
-    render_profile?: RenderProfileId;
-    material_preset?: MaterialPresetId;
-  };
-  camera?: ViewOptions;
-}
-
-export interface RecentFileEntry {
-  path: string;
-  name: string;
-}
-
-export interface SessionTabRecord {
-  id: string;
-  path: string;
-  displayName: string;
-  lastOpenedAt: string;
-}
-
-export interface SessionTabsEnvelope {
-  version: 1;
-  activeTabId: string | null;
-  tabs: SessionTabRecord[];
-}
-
-export interface MoleculeTab extends SessionTabRecord {
-  molecule?: MoleculeData;
-  presentationState?: PresentationState | null;
-}
-
-export interface PoseLibraryEntry {
-  id: string;
-  name: string;
-  moleculePath: string;
-  moleculeDisplayName: string;
-  moleculeHash: string;
-  pose: SavedPose;
-  previewImagePath: string | null;
-  createdAt: string;
-  updatedAt: string;
-  tags: string[];
-  notes: string;
-  atomCount?: number | null;
-  formula?: string | null;
-  sourceFormat?: string | null;
-}
-
-interface PosePreviewJob {
-  jobId: string;
-  entryId: string;
-  moleculePath: string;
-  pose: SavedPose;
-}
-
-export interface BenchmarkConfig {
-  enabled: boolean;
-  outputPath?: string;
-  sampleMs: number;
-  interactionMs: number;
-  targetFps: number;
-  maxAtoms: number;
-}
-
-interface BenchmarkInteractionPhase {
-  phase: 'orbit' | 'pan' | 'zoom';
-  frameSampleMs: number;
-  sampledFrames: number;
-  averageFrameMs: number | null;
-  p95FrameMs: number | null;
-  minFps: number | null;
-  averageFps: number | null;
-}
 
 interface BenchmarkLoadMetrics {
   path: string;
@@ -349,48 +77,6 @@ interface BenchmarkLoadMetrics {
   startedAt: string;
 }
 
-export interface BenchmarkRenderMetrics {
-  rebuildSceneMs: number;
-  visibleAtoms: number;
-  visibleBonds: number;
-  totalAtoms: number;
-  totalBonds: number;
-  renderProfile: RenderProfileId;
-  renderQuality: {
-    primitiveLoad: number;
-    qualityT: number;
-    pixelRatio: number;
-    sphereWidthSegments: number;
-    sphereHeightSegments: number;
-    cylinderRadialSegments: number;
-  };
-  renderCalls: number;
-  triangles: number;
-  geometries: number;
-  textures: number;
-  sceneObjects: number;
-  pickAtomMs: number | null;
-  pickBondMs: number | null;
-  pickTotalMs: number;
-  pickHitType: 'atom' | 'bond' | 'none';
-  pickAtomCandidates: number;
-  pickBondCandidates: number;
-  frameSampleMs: number;
-  sampledFrames: number;
-  averageFrameMs: number | null;
-  p95FrameMs: number | null;
-  minFps: number | null;
-  averageFps: number | null;
-  interactionFrameSampleMs: number;
-  interactionAverageFrameMs: number | null;
-  interactionP95FrameMs: number | null;
-  interactionMinFps: number | null;
-  interactionAverageFps: number | null;
-  interactionPhases: BenchmarkInteractionPhase[];
-  responsive: boolean;
-  webglRenderer: string | null;
-  webglVendor: string | null;
-}
 
 function perfLoggingEnabled(): boolean {
   try {
@@ -398,89 +84,6 @@ function perfLoggingEnabled(): boolean {
   } catch {
     return false;
   }
-}
-
-function displayNameForPath(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
-
-function extensionForPath(path: string): string {
-  const fileName = displayNameForPath(path);
-  const dotIndex = fileName.lastIndexOf('.');
-  if (dotIndex < 0 || dotIndex === fileName.length - 1) return '';
-  return fileName.slice(dotIndex + 1).toLowerCase();
-}
-
-function isSupportedMoleculePath(path: string, extensions: string[]): boolean {
-  const extension = extensionForPath(path);
-  if (!extension) return false;
-  return extensions.some((candidate) => candidate.toLowerCase() === extension);
-}
-
-function defaultAppSettings(): AppSettings {
-  return {
-    version: 1,
-    rendering: {
-      pngExportScale: 2,
-      defaultBackground: 'white',
-      customBackgroundHex: '#ffffff',
-      defaultRenderProfile: 'cylview',
-      defaultMaterialPreset: 'CYLviewLegacy',
-      defaultProjection: 'perspective',
-      defaultLighting: 'publication',
-      showFloorGridByDefault: false,
-    },
-    chemistry: {
-      defaultHydrogenVisibility: 'shown',
-      distancePrecision: 2,
-      anglePrecision: 1,
-      bondPerceptionTolerance: 1.3,
-      useSymbolUnits: true,
-    },
-    interaction: {
-      mouseMode: 'standard',
-      invertScrollZoom: false,
-      keyboardShortcuts: {},
-    },
-    files: {
-      autosavePresentationState: true,
-      restorePreviousSessionOnStartup: true,
-      droppedFilesOpenInBackground: true,
-      recentFilesLimit: 12,
-    },
-    app: {
-      autoCheckForUpdates: false,
-      devtoolsMenuEnabled: true,
-      theme: 'dark',
-    },
-  };
-}
-
-function clampPrecision(precision: number): number {
-  return Math.min(4, Math.max(1, Math.round(precision)));
-}
-
-function formatDistance(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? 'Å' : 'A';
-  return `${value.toFixed(clampPrecision(precision))} ${unit}`;
-}
-
-function formatAngle(value: number, precision: number, useSymbolUnits = false): string {
-  const unit = useSymbolUnits ? '°' : 'deg';
-  return `${value.toFixed(clampPrecision(precision))}${unit}`;
-}
-
-function createTabId(): string {
-  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function createPreviewJob(entry: PoseLibraryEntry): PosePreviewJob {
-  return {
-    jobId: `preview_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    entryId: entry.id,
-    moleculePath: entry.moleculePath,
-    pose: entry.pose,
-  };
 }
 
 function PosePreviewRenderer({
@@ -542,12 +145,11 @@ function PosePreviewRenderer({
   if (!job || !moleculeData) return null;
 
   const styles = presentationState?.styles;
-  const previewHiddenGroupIds = presentationState?.group_state?.hidden_group_ids ?? [];
   const previewHighlightedGroupIds = presentationState?.group_state?.highlighted_group_ids ?? [];
   const previewHiddenAtomIndices = effectiveHiddenAtomIndices(
     presentationState?.hidden_atoms ?? [],
     moleculeData.groups,
-    previewHiddenGroupIds,
+    presentationState?.group_state?.hidden_group_ids ?? [],
   );
   const previewViewOptions = {
     ...createDefaultPresentationState(appSettings).camera,
@@ -598,6 +200,13 @@ function PosePreviewRenderer({
           selectedDihedral={null}
           persistentLabels={presentationState?.annotations ?? []}
           savedPoses={presentationState?.poses ?? []}
+          frameIndex={moleculeData.metadata.loadedFrameIndex ?? 0}
+          frameCount={moleculeData.metadata.frameCount ?? 1}
+          isFramePlaying={false}
+          framePlaybackSpeed={1}
+          onFrameChange={async () => moleculeData}
+          onFramePlaybackToggle={() => undefined}
+          onFramePlaybackSpeedChange={() => undefined}
           selectionMode="view"
           selectionSummary={{ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] }}
           onBondSelected={() => undefined}
@@ -743,6 +352,8 @@ function OpenRecentDialog({
 function App() {
   const [moleculeData, setMoleculeData] = useState<MoleculeData | null>(null);
   const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [isFramePlaying, setIsFramePlaying] = useState(false);
+  const [framePlaybackSpeed, setFramePlaybackSpeed] = useState(2);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState<string>('Preparing molecular workspace');
   const [error, setError] = useState<string | null>(null);
@@ -769,43 +380,40 @@ function App() {
   const [renderProfile, setRenderProfile] = useState<RenderProfileId>('cylview');
   const [savedPoses, setSavedPoses] = useState<SavedPose[]>([]);
   const [recentFiles, setRecentFiles] = useState<RecentFileEntry[]>([]);
-  const [moleculeTabs, setMoleculeTabs] = useState<MoleculeTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [hasLoadedSessionTabs, setHasLoadedSessionTabs] = useState(false);
-  const [poseLibrary, setPoseLibrary] = useState<PoseLibraryEntry[]>([]);
-  const [previewQueue, setPreviewQueue] = useState<PosePreviewJob[]>([]);
-  const [activePreviewJob, setActivePreviewJob] = useState<PosePreviewJob | null>(null);
+  const {
+    moleculeTabs,
+    setMoleculeTabs,
+    activeTabId,
+    setActiveTabId,
+    setHasLoadedSessionTabs,
+    skipNextSessionSave,
+  } = useWorkspaceTabs();
   const [nearbyFiles, setNearbyFiles] = useState<string[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recentDialogOpen, setRecentDialogOpen] = useState(false);
-  const [appSettings, setAppSettings] = useState<AppSettings>(defaultAppSettings);
-  const [appDataPaths, setAppDataPaths] = useState<AppDataPaths | null>(null);
-  const [settingsStatus, setSettingsStatus] = useState<string | null>(null);
-  const appSettingsRef = useRef<AppSettings>(defaultAppSettings());
+  const {
+    appSettings,
+    setAppSettings,
+    appSettingsRef,
+    appDataPaths,
+    settingsStatus,
+    refreshAppSettings,
+    refreshAppDataPaths,
+    saveAppSettings,
+    resetAppSettings,
+  } = useAppSettings({
+    onError: (message) => setError(message),
+    onAfterPersist: () => refreshRecentFiles(),
+  });
   const nextPoseId = useRef(1);
-  const saveStateTimer = useRef<number | null>(null);
-  const skipNextSessionSave = useRef(false);
   const benchmarkConfig = useRef<BenchmarkConfig | null>(null);
+  const benchmarkRenderProfileRef = useRef<RenderProfileId | null>(null);
   const benchmarkLoadMetrics = useRef<BenchmarkLoadMetrics | null>(null);
   const benchmarkFinished = useRef(false);
-  const isApplyingPresentationState = useRef(false);
-  const hasLoadedPresentationState = useRef(false);
   const hasStartedInitialLoad = useRef(false);
-
-  // Theme management
-  useEffect(() => {
-    const theme = appSettings.app.theme;
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-  }, [appSettings.app.theme]);
   const [viewOptions, setViewOptions] = useState<ViewOptions>({
     showFloor: false,
     showGrid: false,
@@ -826,14 +434,13 @@ function App() {
     showLabelLinkLines: false,
   });
 
-  useEffect(() => {
-    appSettingsRef.current = appSettings;
-  }, [appSettings]);
-
   const defaultPresentationState = useCallback(() => {
     return createDefaultPresentationState(appSettingsRef.current);
   }, []);
   const activeShortcuts = effectiveKeyboardShortcuts(appSettings);
+
+  const currentFrameIndex = moleculeData?.metadata.loadedFrameIndex ?? 0;
+  const currentFrameCount = moleculeData?.metadata.frameCount ?? 1;
 
   const refreshRecentFiles = useCallback(async () => {
     try {
@@ -844,67 +451,6 @@ function App() {
       console.warn('Could not load recent files', err);
     }
   }, []);
-
-  const refreshPoseLibrary = useCallback(async () => {
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('get_pose_library');
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      console.warn('Could not load pose library', err);
-    }
-  }, []);
-
-  const refreshAppSettings = useCallback(async () => {
-    try {
-      const settings = await invoke<AppSettings>('get_app_settings');
-      appSettingsRef.current = settings;
-      setAppSettings(settings);
-    } catch (err) {
-      console.warn('Could not load app settings', err);
-    }
-  }, []);
-
-  const refreshAppDataPaths = useCallback(async () => {
-    try {
-      setAppDataPaths(await invoke<AppDataPaths>('get_app_data_paths'));
-    } catch (err) {
-      console.warn('Could not load app data paths', err);
-    }
-  }, []);
-
-  const saveAppSettings = useCallback(async (nextSettings: AppSettings) => {
-    appSettingsRef.current = nextSettings;
-    setAppSettings(nextSettings);
-    setSettingsStatus('Saving...');
-    try {
-      const saved = await invoke<AppSettings>('save_app_settings', { settings: nextSettings });
-      appSettingsRef.current = saved;
-      setAppSettings(saved);
-      await refreshRecentFiles();
-      setSettingsStatus('Saved');
-      window.setTimeout(() => setSettingsStatus(null), 1400);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setSettingsStatus('Could not save settings');
-      setError(message);
-    }
-  }, [refreshRecentFiles]);
-
-  const resetAppSettings = useCallback(async () => {
-    setSettingsStatus('Resetting...');
-    try {
-      const reset = await invoke<AppSettings>('reset_app_settings');
-      appSettingsRef.current = reset;
-      setAppSettings(reset);
-      await refreshRecentFiles();
-      setSettingsStatus('Defaults restored');
-      window.setTimeout(() => setSettingsStatus(null), 1400);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setSettingsStatus('Could not reset settings');
-      setError(message);
-    }
-  }, [refreshRecentFiles]);
 
   const refreshNearbyFiles = useCallback(async (path: string) => {
     try {
@@ -942,13 +488,43 @@ function App() {
     viewOptions,
   ]);
 
+  const {
+    isApplyingPresentationState,
+    hasLoadedPresentationState,
+    cancelPendingAutosave,
+  } = usePresentationStateAutosave({
+    currentPath,
+    activeTabId,
+    autosaveEnabled: appSettings.files.autosavePresentationState,
+    moleculeData,
+    buildPresentationState,
+    setMoleculeTabs,
+    onError: (message) => setError(message),
+  });
+
   const applyPresentationState = useCallback((state: PresentationState | null, activatePersistence = true) => {
     isApplyingPresentationState.current = true;
-    const normalized = normalizePresentationState(state, appSettingsRef.current);
+    // In benchmark/snapshot mode a forced render profile must win over the file's
+    // saved/default profile so --render-profile drives every derived value (materials,
+    // atom size, and per-profile view options) in a single race-free pass.
+    const overrideProfile = benchmarkRenderProfileRef.current;
+    const settingsForNormalize = overrideProfile
+      ? {
+          ...appSettingsRef.current,
+          rendering: {
+            ...appSettingsRef.current.rendering,
+            defaultRenderProfile: overrideProfile,
+            defaultMaterialPreset: renderProfileToLegacyMaterialPreset(overrideProfile),
+          },
+        }
+      : appSettingsRef.current;
+    const normalized = overrideProfile
+      ? normalizePresentationState(null, settingsForNormalize)
+      : normalizePresentationState(state, settingsForNormalize);
     setPersistentLabels(normalized.annotations);
     setHiddenAtomIndices(normalized.hidden_atoms);
-    setHiddenGroupIds(normalized.group_state.hidden_group_ids);
-    setHighlightedGroupIds(normalized.group_state.highlighted_group_ids);
+    setHiddenGroupIds(normalized.group_state?.hidden_group_ids ?? []);
+    setHighlightedGroupIds(normalized.group_state?.highlighted_group_ids ?? []);
     setHydrogenVisibility(normalized.styles.hydrogen_visibility ?? 'shown');
     setElementColorOverrides(normalized.styles.element_color_overrides ?? {});
     setAtomSizeScale(normalized.styles.atom_size_scale ?? 1);
@@ -974,6 +550,7 @@ function App() {
   const handleFileLoaded = useCallback((data: MoleculeData) => {
     setMoleculeData(data);
     setCurrentPath(data.path);
+    setIsFramePlaying(false);
     setError(null);
     setSelectedBond(null);
     setSelectedAngle(null);
@@ -982,6 +559,50 @@ function App() {
     hasLoadedPresentationState.current = false;
     applyPresentationState(null, false);
   }, [applyPresentationState]);
+
+  const loadMoleculeFrame = useCallback(async (frameIndex: number): Promise<MoleculeData | null> => {
+    if (!currentPath || !moleculeData?.metadata.frameCount || moleculeData.metadata.frameCount <= 1) {
+      return moleculeData;
+    }
+    const frameCount = moleculeData.metadata.frameCount;
+    const normalizedFrameIndex = ((frameIndex % frameCount) + frameCount) % frameCount;
+    try {
+      const data = await invoke<MoleculeData>('load_molecule', {
+        path: currentPath,
+        frameIndex: normalizedFrameIndex,
+        bondPerceptionTolerance: appSettingsRef.current.chemistry.bondPerceptionTolerance,
+      });
+      setMoleculeData(data);
+      setSelectedBond(null);
+      setSelectedAngle(null);
+      setSelectedDihedral(null);
+      setSelectionSummary({ atomCount: 0, bondCount: 0, atomIndices: [], bondKeys: [] });
+      setMoleculeTabs((current) => current.map((tab) => (
+        tab.id === activeTabId ? { ...tab, molecule: data } : tab
+      )));
+      return data;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      setIsFramePlaying(false);
+      return null;
+    }
+  }, [activeTabId, currentPath, moleculeData]);
+
+  useEffect(() => {
+    if (currentFrameCount <= 1 && isFramePlaying) {
+      setIsFramePlaying(false);
+    }
+  }, [currentFrameCount, isFramePlaying]);
+
+  useEffect(() => {
+    if (!isFramePlaying || currentFrameCount <= 1) return;
+    const delayMs = Math.max(50, Math.round(1000 / Math.max(0.1, framePlaybackSpeed)));
+    const id = window.setInterval(() => {
+      void loadMoleculeFrame((moleculeData?.metadata.loadedFrameIndex ?? 0) + 1);
+    }, delayMs);
+    return () => window.clearInterval(id);
+  }, [currentFrameCount, framePlaybackSpeed, isFramePlaying, loadMoleculeFrame, moleculeData?.metadata.loadedFrameIndex]);
 
   const handleError = useCallback((err: string) => {
     setError(err);
@@ -1006,16 +627,13 @@ function App() {
       && hasLoadedPresentationState.current
       && appSettingsRef.current.files.autosavePresentationState
     ) {
-      if (saveStateTimer.current) {
-        window.clearTimeout(saveStateTimer.current);
-        saveStateTimer.current = null;
-      }
+      cancelPendingAutosave();
       void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
         handleError(err instanceof Error ? err.message : String(err));
       });
     }
     return state;
-  }, [activeTabId, buildPresentationState, currentPath, handleError, moleculeData]);
+  }, [activeTabId, appSettingsRef, buildPresentationState, cancelPendingAutosave, currentPath, handleError, moleculeData]);
 
   const clearActiveMolecule = useCallback(() => {
     setMoleculeData(null);
@@ -1038,6 +656,21 @@ function App() {
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const {
+    poseLibrary,
+    activePreviewJob,
+    refreshPoseLibrary,
+    queuePosePreview,
+    addPoseToLibrary,
+    renamePoseLibraryEntry,
+    deletePoseLibraryEntry,
+    onPosePreviewCaptured,
+    onPosePreviewFailed,
+  } = usePoseLibrary({
+    onError: (message) => setError(message),
+    onToast: (text, type) => addToast(text, type),
+  });
 
   const openAppDataFolder = useCallback(async () => {
     try {
@@ -1068,14 +701,6 @@ function App() {
       handleError(err instanceof Error ? err.message : String(err));
     }
   }, [addToast, handleError]);
-
-  const queuePosePreview = useCallback((entry: PoseLibraryEntry) => {
-    setPreviewQueue((current) => [...current, createPreviewJob(entry)]);
-  }, []);
-
-  const finishActivePreviewJob = useCallback(() => {
-    setActivePreviewJob(null);
-  }, []);
 
   const activateMoleculePath = useCallback(async (
     path: string,
@@ -1401,6 +1026,7 @@ function App() {
       pickBondCandidates: renderMetrics.pickBondCandidates,
       targetFps: config.targetFps,
       maxAtoms: config.maxAtoms,
+      screenshotPath: config.screenshot ? config.screenshotPath : undefined,
       startedAt: loadMetrics.startedAt,
     };
 
@@ -1413,7 +1039,7 @@ function App() {
   }, [handleError]);
 
   const handleResetView = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('reset-camera'));
+    dispatchCanvasEvent('reset-camera');
   }, []);
 
   const handleExportPng = useCallback(() => {
@@ -1423,11 +1049,11 @@ function App() {
       addToast(message, 'info');
       return;
     }
-    window.dispatchEvent(new CustomEvent('export-png'));
+    dispatchCanvasEvent('export-png');
   }, [addToast, handleError, moleculeData]);
 
   const handleClearSelection = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('clear-selection'));
+    dispatchCanvasEvent('clear-selection');
   }, []);
 
   const handlePngExportScaleChange = useCallback((scale: 1 | 2 | 4) => {
@@ -1584,12 +1210,10 @@ function App() {
   }, []);
 
   const handleSavePose = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('capture-camera-pose'));
+    dispatchCanvasEvent('capture-camera-pose');
   }, []);
 
-  const handlePoseCaptured = useCallback((event: Event) => {
-    const detail = (event as CustomEvent<Omit<SavedPose, 'id' | 'name'>>).detail;
-    if (!detail) return;
+  const handlePoseCaptured = useCallback((detail: Omit<SavedPose, 'id' | 'name'>) => {
     setSavedPoses((current) => [
       ...current,
       {
@@ -1609,16 +1233,15 @@ function App() {
       },
     };
     setViewOptions(completePose.viewOptions);
-    window.dispatchEvent(new CustomEvent('apply-camera-pose', { detail: completePose }));
+    dispatchCanvasEvent('apply-camera-pose', completePose);
   }, [defaultPresentationState]);
 
   const handleUpdatePose = useCallback((pose: SavedPose) => {
-    window.dispatchEvent(new CustomEvent('capture-camera-pose', { detail: { updatePoseId: pose.id } }));
+    dispatchCanvasEvent('capture-camera-pose', { updatePoseId: pose.id });
   }, []);
 
-  const handlePoseUpdated = useCallback((event: Event) => {
-    const detail = (event as CustomEvent<{ updatePoseId?: string } & Omit<SavedPose, 'id' | 'name'>>).detail;
-    if (!detail?.updatePoseId) return;
+  const handlePoseUpdated = useCallback((detail: { updatePoseId?: string } & Omit<SavedPose, 'id' | 'name'>) => {
+    if (!detail.updatePoseId) return;
     setSavedPoses((current) => current.map((pose) => (
       pose.id === detail.updatePoseId
         ? { ...pose, ...detail, id: pose.id, name: pose.name }
@@ -1638,81 +1261,14 @@ function App() {
 
   const handleAddPoseToLibrary = useCallback(async (pose: SavedPose) => {
     if (!currentPath || !moleculeData) return;
-    try {
-      const entry = await invoke<PoseLibraryEntry>('save_pose_to_library', {
-        name: pose.name,
-        moleculePath: currentPath,
-        moleculeDisplayName: moleculeData.name || displayNameForPath(currentPath),
-        pose,
-        tags: [],
-        notes: '',
-        atomCount: moleculeData.atoms.length,
-        formula: null,
-        sourceFormat: moleculeData.metadata.sourceFormat ?? null,
-        previewImagePath: null,
-      });
-      setPoseLibrary((current) => [entry, ...current.filter((candidate) => candidate.id !== entry.id)]);
-      queuePosePreview(entry);
-      addToast(`Added ${pose.name} to Pose Library`, 'success');
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-    }
-  }, [addToast, currentPath, handleError, moleculeData, queuePosePreview]);
+    await addPoseToLibrary(pose, currentPath, moleculeData);
+  }, [addPoseToLibrary, currentPath, moleculeData]);
 
   const handleOpenPoseLibraryEntry = useCallback(async (entry: PoseLibraryEntry) => {
     const loaded = await loadMoleculePath(entry.moleculePath, 'Opening library molecule');
     if (!loaded) return;
     window.setTimeout(() => handleApplyPose(entry.pose), 0);
   }, [handleApplyPose, loadMoleculePath]);
-
-  const handleRenamePoseLibraryEntry = useCallback(async (id: string, name: string) => {
-    setPoseLibrary((current) => current.map((entry) => (
-      entry.id === id ? { ...entry, name } : entry
-    )));
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('rename_pose_library_entry', { id, name });
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-      void refreshPoseLibrary();
-    }
-  }, [handleError, refreshPoseLibrary]);
-
-  const handleDeletePoseLibraryEntry = useCallback(async (id: string) => {
-    try {
-      const library = await invoke<{ version: 1; entries: PoseLibraryEntry[] }>('delete_pose_library_entry', { id });
-      setPoseLibrary(library.entries);
-    } catch (err) {
-      handleError(err instanceof Error ? err.message : String(err));
-    }
-  }, [handleError]);
-
-  const handleGeneratePosePreview = useCallback((entry: PoseLibraryEntry) => {
-    queuePosePreview(entry);
-  }, [queuePosePreview]);
-
-  const handlePosePreviewCaptured = useCallback(async (job: PosePreviewJob, dataUrl: string) => {
-    try {
-      const updatedEntry = await invoke<PoseLibraryEntry>('save_pose_library_preview', {
-        id: job.entryId,
-        dataUrl,
-      });
-      setPoseLibrary((current) => current.map((entry) => (
-        entry.id === updatedEntry.id ? updatedEntry : entry
-      )));
-    } catch (err) {
-      console.warn('Could not save pose preview', err);
-      addToast('Saved the pose, but could not generate its preview yet.', 'info');
-    } finally {
-      finishActivePreviewJob();
-    }
-  }, [addToast, finishActivePreviewJob]);
-
-  const handlePosePreviewFailed = useCallback((job: PosePreviewJob, error: string) => {
-    console.warn('Could not generate pose preview', job.entryId, error);
-    addToast('Saved the pose, but could not generate its preview yet.', 'info');
-    finishActivePreviewJob();
-  }, [addToast, finishActivePreviewJob]);
 
   const handleCloseTab = useCallback((id: string) => {
     snapshotActiveTab(true);
@@ -1826,8 +1382,8 @@ function App() {
       if (nextTab) void focusMoleculeTab(nextTab.id);
     };
 
-    const dispatchCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
-      window.dispatchEvent(new CustomEvent('camera-preset', { detail: preset }));
+    const dispatchCameraPreset = (preset: CameraPresetId) => {
+      dispatchCanvasEvent('camera-preset', preset);
     };
 
     const runShortcutAction = (action: ShortcutActionId) => {
@@ -2005,16 +1561,13 @@ function App() {
   ]);
 
   useEffect(() => {
-    const onPoseCaptured = (event: Event) => {
-      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
+    return listenToCanvasEvent('camera-pose-captured', (detail) => {
       if (detail?.updatePoseId) {
-        handlePoseUpdated(event);
+        handlePoseUpdated(detail);
       } else {
-        handlePoseCaptured(event);
+        handlePoseCaptured(detail);
       }
-    };
-    window.addEventListener('camera-pose-captured', onPoseCaptured);
-    return () => window.removeEventListener('camera-pose-captured', onPoseCaptured);
+    });
   }, [handlePoseCaptured, handlePoseUpdated]);
 
   useEffect(() => {
@@ -2029,65 +1582,6 @@ function App() {
   }, [appSettings.files.recentFilesLimit, refreshRecentFiles]);
 
   useEffect(() => {
-    if (activePreviewJob || previewQueue.length === 0) return;
-    const [nextJob, ...remainingJobs] = previewQueue;
-    setActivePreviewJob(nextJob);
-    setPreviewQueue(remainingJobs);
-  }, [activePreviewJob, previewQueue]);
-
-  useEffect(() => {
-    if (!hasLoadedSessionTabs) return;
-    if (skipNextSessionSave.current) {
-      skipNextSessionSave.current = false;
-      return;
-    }
-    const session: SessionTabsEnvelope = {
-      version: 1,
-      activeTabId,
-      tabs: moleculeTabs.map(({ id, path, displayName, lastOpenedAt }) => ({
-        id,
-        path,
-        displayName,
-        lastOpenedAt,
-      })),
-    };
-    void invoke('save_session_tabs', { session }).catch((err) => {
-      console.warn('Could not save session tabs', err);
-    });
-  }, [activeTabId, hasLoadedSessionTabs, moleculeTabs]);
-
-  useEffect(() => {
-    if (!currentPath || !hasLoadedPresentationState.current || isApplyingPresentationState.current) return;
-    if (!appSettings.files.autosavePresentationState) return;
-    if (saveStateTimer.current) {
-      window.clearTimeout(saveStateTimer.current);
-    }
-    const state = buildPresentationState();
-    if (activeTabId) {
-      setMoleculeTabs((current) => current.map((tab) => (
-        tab.id === activeTabId ? { ...tab, molecule: moleculeData ?? tab.molecule, presentationState: state } : tab
-      )));
-    }
-    saveStateTimer.current = window.setTimeout(() => {
-      void invoke('save_presentation_state', { path: currentPath, state }).catch((err) => {
-        handleError(err instanceof Error ? err.message : String(err));
-      });
-    }, 350);
-    return () => {
-      if (saveStateTimer.current) {
-        window.clearTimeout(saveStateTimer.current);
-      }
-    };
-  }, [
-    activeTabId,
-    appSettings.files.autosavePresentationState,
-    buildPresentationState,
-    currentPath,
-    handleError,
-    moleculeData,
-  ]);
-
-  useEffect(() => {
     if (hasStartedInitialLoad.current) return;
     hasStartedInitialLoad.current = true;
     let cancelled = false;
@@ -2099,6 +1593,15 @@ function App() {
         if (!cancelled) setAppSettings(settings);
 
         benchmarkConfig.current = await invoke<BenchmarkConfig>('get_benchmark_config');
+        // Record any forced render profile so applyPresentationState derives the whole
+        // profile (materials, atom size, and per-profile view options) during the load
+        // pass, driving the captured screenshot for --render-profile.
+        benchmarkRenderProfileRef.current = benchmarkConfig.current?.renderProfile
+          ? normalizeRenderProfile(benchmarkConfig.current.renderProfile)
+          : null;
+        if (benchmarkRenderProfileRef.current) {
+          setRenderProfile(benchmarkRenderProfileRef.current);
+        }
         const startupPath = await invoke<string | null>('get_startup_file');
         if (startupPath) {
           setHasLoadedSessionTabs(true);
@@ -2255,6 +1758,13 @@ function App() {
             selectedDihedral={selectedDihedral}
             persistentLabels={persistentLabels}
             savedPoses={savedPoses}
+            frameIndex={currentFrameIndex}
+            frameCount={currentFrameCount}
+            isFramePlaying={isFramePlaying}
+            framePlaybackSpeed={framePlaybackSpeed}
+            onFrameChange={loadMoleculeFrame}
+            onFramePlaybackToggle={() => setIsFramePlaying((current) => !current)}
+            onFramePlaybackSpeedChange={setFramePlaybackSpeed}
             selectionMode={selectionMode}
             selectionSummary={selectionSummary}
             onBondSelected={setSelectedBond}
@@ -2299,9 +1809,9 @@ function App() {
           onDeletePose={handleDeletePose}
           onAddPoseToLibrary={handleAddPoseToLibrary}
           onOpenPoseLibraryEntry={(entry) => void handleOpenPoseLibraryEntry(entry)}
-          onRenamePoseLibraryEntry={handleRenamePoseLibraryEntry}
-          onDeletePoseLibraryEntry={handleDeletePoseLibraryEntry}
-          onGeneratePosePreview={handleGeneratePosePreview}
+          onRenamePoseLibraryEntry={renamePoseLibraryEntry}
+          onDeletePoseLibraryEntry={deletePoseLibraryEntry}
+          onGeneratePosePreview={queuePosePreview}
           onClearSavedState={handleClearSavedState}
           onAddMeasurementLabel={handleAddMeasurementLabel}
           onTogglePersistentLabel={handleTogglePersistentLabel}
@@ -2340,8 +1850,8 @@ function App() {
       <PosePreviewRenderer
         job={activePreviewJob}
         appSettings={appSettings}
-        onCaptured={handlePosePreviewCaptured}
-        onFailed={handlePosePreviewFailed}
+        onCaptured={onPosePreviewCaptured}
+        onFailed={onPosePreviewFailed}
       />
       {isDraggingFiles && (
         <div className="drop-overlay" aria-hidden="true">

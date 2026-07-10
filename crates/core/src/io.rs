@@ -7,7 +7,7 @@
 //! Future: Full chemfiles integration for 40+ formats
 
 use crate::molecule::{
-    normalize_bond_perception_tolerance, Atom, AtomMetadata, Bond, BondOrder, Structure,
+    normalize_bond_perception_tolerance, Atom, AtomMetadata, Bond, BondOrder, Frame, Structure,
     DEFAULT_BOND_PERCEPTION_TOLERANCE,
 };
 use crate::{CoreError, Result};
@@ -297,7 +297,7 @@ fn validate_atom_count(count: usize, limit: usize) -> Result<()> {
     Ok(())
 }
 
-fn parse_energy_from_title(title: &str) -> Option<f64> {
+fn parse_energy_from_title(title: &str) -> (Option<f64>, Option<String>) {
     let normalized = title
         .replace(['=', ':', ','], " ")
         .split_whitespace()
@@ -309,19 +309,25 @@ fn parse_energy_from_title(title: &str) -> Option<f64> {
         if matches!(key.as_str(), "e" | "energy" | "ener") {
             if let Some(value) = normalized.get(index + 1) {
                 if let Ok(parsed) = value.parse::<f64>() {
-                    return Some(parsed);
+                    return (
+                        Some(parsed),
+                        normalized
+                            .get(index + 2)
+                            .filter(|unit| unit.parse::<f64>().is_err())
+                            .cloned(),
+                    );
                 }
             }
         }
 
         if let Some(value) = key.strip_prefix("energy=") {
             if let Ok(parsed) = value.parse::<f64>() {
-                return Some(parsed);
+                return (Some(parsed), normalized.get(index + 1).cloned());
             }
         }
     }
 
-    None
+    (None, None)
 }
 
 fn detect_xyz_frame_count(lines: &[String], first_atom_count: usize, max_atoms: usize) -> usize {
@@ -415,64 +421,106 @@ fn read_xyz_content(content: &str, options: ReadOptions) -> Result<Structure> {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "Untitled".to_string());
 
-    let frame_count = detect_xyz_frame_count(&lines, num_atoms, options.max_atoms);
-    let energy = parse_energy_from_title(&title);
+    let mut frames = Vec::<Frame>::new();
+    let mut cursor = 0usize;
+    let mut saw_extra_columns = false;
+
+    while cursor < lines.len() {
+        while cursor < lines.len() && lines[cursor].trim().is_empty() {
+            cursor += 1;
+        }
+        if cursor >= lines.len() {
+            break;
+        }
+
+        let frame_atom_count = lines[cursor].trim().parse::<usize>().map_err(|_| {
+            CoreError::Io(IoError::Parse(format!(
+                "Invalid XYZ atom count on line {}",
+                cursor + 1
+            )))
+        })?;
+        validate_atom_count(frame_atom_count, options.max_atoms)?;
+        if frame_atom_count != num_atoms {
+            return Err(CoreError::Io(IoError::Parse(format!(
+                "XYZ frame {} has {frame_atom_count} atoms but frame 1 has {num_atoms}; multi-frame XYZ files must keep atom count stable.",
+                frames.len() + 1
+            ))));
+        }
+
+        let frame_title = lines
+            .get(cursor + 1)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| "Untitled".to_string());
+        let (frame_energy, frame_energy_unit) = parse_energy_from_title(&frame_title);
+        let mut atoms = Vec::<Atom>::with_capacity(frame_atom_count);
+
+        for i in 0..frame_atom_count {
+            let line_number = cursor + i + 3;
+            let line = lines.get(cursor + i + 2).ok_or_else(|| {
+                CoreError::Io(IoError::Parse(format!(
+                    "XYZ ended early in frame {}: expected {frame_atom_count} atom rows, found {i}",
+                    frames.len() + 1
+                )))
+            })?;
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 4 {
+                return Err(CoreError::Io(IoError::Parse(format!(
+                    "Malformed XYZ atom row on line {line_number}: expected element and x y z coordinates"
+                ))));
+            }
+
+            let element = parts[0].to_string();
+            if element.is_empty() {
+                return Err(CoreError::Io(IoError::Parse(format!(
+                    "Missing element symbol on line {line_number}"
+                ))));
+            }
+
+            let x = parse_f32(parts[1], line_number, "x")?;
+            let y = parse_f32(parts[2], line_number, "y")?;
+            let z = parse_f32(parts[3], line_number, "z")?;
+            saw_extra_columns = saw_extra_columns || parts.len() > 4;
+            atoms.push(Atom::new(i as u32, &element, glam::Vec3::new(x, y, z)));
+        }
+
+        frames.push(Frame::with_metadata(
+            atoms,
+            Some(frame_title),
+            frame_energy,
+            frame_energy_unit,
+        ));
+        cursor += frame_atom_count + 2;
+    }
+
+    let frame_count =
+        frames
+            .len()
+            .max(detect_xyz_frame_count(&lines, num_atoms, options.max_atoms));
+    let (energy, energy_unit) = frames
+        .first()
+        .map(|frame| (frame.energy, frame.energy_unit.clone()))
+        .unwrap_or((None, None));
     let mut structure = Structure::new(title.clone());
+    structure.frames = frames;
     structure.metadata.source_format = Some("XYZ".to_string());
     structure.metadata.title = Some(title.clone());
     structure.metadata.frame_count = Some(frame_count);
     structure.metadata.loaded_frame_index = Some(0);
     structure.metadata.energy = energy;
-    if energy.is_some() {
-        structure.metadata.energy_unit = Some("unknown".to_string());
-    }
+    structure.metadata.energy_unit = energy_unit;
 
-    // Remaining lines: atoms
-    for i in 0..num_atoms {
-        let line_number = i + 3;
-        let line = lines.get(i + 2).ok_or_else(|| {
-            CoreError::Io(IoError::Parse(format!(
-                "XYZ ended early: expected {num_atoms} atom rows, found {i}"
-            )))
-        })?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            return Err(CoreError::Io(IoError::Parse(format!(
-                "Malformed XYZ atom row on line {line_number}: expected element and x y z coordinates"
-            ))));
-        }
-
-        let element = parts[0].to_string();
-        if element.is_empty() {
-            return Err(CoreError::Io(IoError::Parse(format!(
-                "Missing element symbol on line {line_number}"
-            ))));
-        }
-
-        let x = parse_f32(parts[1], line_number, "x")?;
-        let y = parse_f32(parts[2], line_number, "y")?;
-        let z = parse_f32(parts[3], line_number, "z")?;
-        if parts.len() > 4
-            && !structure
-                .metadata
-                .warnings
-                .iter()
-                .any(|warning| warning.contains("extra XYZ atom columns"))
-        {
-            structure.metadata.warnings.push(
-                "Detected extra XYZ atom columns; Cylform preserves coordinates only for now."
-                    .to_string(),
-            );
-        }
-
-        let atom = Atom::new(i as u32, &element, glam::Vec3::new(x, y, z));
-        structure.add_atom(atom);
+    if saw_extra_columns {
+        structure.metadata.warnings.push(
+            "Detected extra XYZ atom columns; Cylform preserves coordinates only for now."
+                .to_string(),
+        );
     }
 
     if frame_count > 1 {
-        structure.metadata.warnings.push(format!(
-            "Detected {frame_count} XYZ frames; currently displaying frame 1."
-        ));
+        structure
+            .metadata
+            .warnings
+            .push(format!("Detected {frame_count} XYZ frames."));
     }
 
     // Auto-perceive bonds
@@ -676,14 +724,35 @@ fn read_pdb_content(content: &str, options: ReadOptions) -> Result<Structure> {
 
 /// Write a structure to XYZ format
 pub fn write_xyz<P: AsRef<Path>>(path: P, structure: &Structure) -> Result<()> {
+    write_xyz_frame(path, structure, 0)
+}
+
+/// Write a specific structure frame to XYZ format.
+pub fn write_xyz_frame<P: AsRef<Path>>(
+    path: P,
+    structure: &Structure,
+    frame_index: usize,
+) -> Result<()> {
     let mut file = File::create(path).map_err(|e| CoreError::Io(IoError::Io(e)))?;
+    let frame = structure.frame(frame_index).ok_or_else(|| {
+        CoreError::Io(IoError::Parse(format!(
+            "Frame index {} is out of range for {} frame(s).",
+            frame_index,
+            structure.frames.len()
+        )))
+    })?;
 
     // Write header
-    writeln!(file, "{}", structure.atom_count()).map_err(|e| CoreError::Io(IoError::Io(e)))?;
-    writeln!(file, "{}", structure.name()).map_err(|e| CoreError::Io(IoError::Io(e)))?;
+    writeln!(file, "{}", frame.atoms.len()).map_err(|e| CoreError::Io(IoError::Io(e)))?;
+    writeln!(
+        file,
+        "{}",
+        frame.title.as_deref().unwrap_or_else(|| structure.name())
+    )
+    .map_err(|e| CoreError::Io(IoError::Io(e)))?;
 
     // Write atoms
-    for atom in structure.atoms() {
+    for atom in &frame.atoms {
         writeln!(
             file,
             "{} {:>12.6} {:>12.6} {:>12.6}",
@@ -829,18 +898,19 @@ br 5.000000 0.000000 0.000000
 
         assert_eq!(structure.name(), "energy=-123.456 hartree");
         assert_eq!(structure.metadata.energy, Some(-123.456));
+        assert_eq!(structure.metadata.energy_unit.as_deref(), Some("hartree"));
     }
 
     #[test]
-    fn test_xyz_detects_multiframe_and_extra_columns() {
+    fn test_xyz_loads_multiframe_titles_energies_and_extra_columns() {
         let xyz_content = r#"2
-step 1 E -1.0
+step 1 E -1.0 hartree
 C 0.0 0.0 0.0 charge=0.1
 H 0.7 0.0 0.0 velocity 1
 2
-step 2 E -0.9
-C 0.0 0.0 0.0
-H 0.8 0.0 0.0
+step 2 E -0.9 hartree
+C 0.1 0.0 0.0
+H 0.9 0.0 0.0
 "#;
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(xyz_content.as_bytes()).unwrap();
@@ -848,7 +918,21 @@ H 0.8 0.0 0.0
         let structure = read_structure(temp_file.path(), FileFormat::Xyz).unwrap();
 
         assert_eq!(structure.atom_count(), 2);
-        assert_eq!(structure.frames.len(), 1);
+        assert_eq!(structure.frames.len(), 2);
+        assert_eq!(
+            structure.frame(0).unwrap().title.as_deref(),
+            Some("step 1 E -1.0 hartree")
+        );
+        assert_eq!(
+            structure.frame(1).unwrap().title.as_deref(),
+            Some("step 2 E -0.9 hartree")
+        );
+        assert_eq!(structure.frame(1).unwrap().energy, Some(-0.9));
+        assert_eq!(
+            structure.frame(1).unwrap().energy_unit.as_deref(),
+            Some("hartree")
+        );
+        assert_eq!(structure.frame(1).unwrap().atoms[0].position.x, 0.1);
         assert_eq!(structure.metadata.frame_count, Some(2));
         assert_eq!(structure.metadata.loaded_frame_index, Some(0));
         assert!(structure
@@ -861,6 +945,27 @@ H 0.8 0.0 0.0
             .warnings
             .iter()
             .any(|warning| warning.contains("2 XYZ frames")));
+    }
+
+    #[test]
+    fn test_write_xyz_frame_exports_selected_frame() {
+        let xyz_content = r#"1
+frame 1 energy=-1.0
+C 0.0 0.0 0.0
+1
+frame 2 energy=-0.9
+C 1.0 2.0 3.0
+"#;
+        let mut input = NamedTempFile::new().unwrap();
+        input.write_all(xyz_content.as_bytes()).unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let structure = read_structure(input.path(), FileFormat::Xyz).unwrap();
+
+        write_xyz_frame(output.path(), &structure, 1).unwrap();
+        let exported = std::fs::read_to_string(output.path()).unwrap();
+
+        assert!(exported.contains("frame 2 energy=-0.9"));
+        assert!(exported.contains("C     1.000000     2.000000     3.000000"));
     }
 
     #[test]

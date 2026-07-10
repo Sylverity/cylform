@@ -1,39 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type SetStateAction } from 'react';
 import {
-  AmbientLight,
   Box3,
-  Color,
-  CylinderGeometry,
-  DirectionalLight,
-  DoubleSide,
-  GridHelper,
-  Group,
   InstancedMesh,
   Material,
-  Matrix4,
   MathUtils,
   Mesh,
-  MeshBasicMaterial,
   MeshPhongMaterial,
-  MOUSE,
   OrthographicCamera,
-  PerspectiveCamera,
-  PlaneGeometry,
-  Raycaster,
-  Scene,
-  SphereGeometry,
-  Vector2,
   Vector3,
-  WebGLRenderer,
 } from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import { AppearancePanel } from './AppearancePanel';
 import { LoadingSpinner } from './LoadingSpinner';
+import { dispatchCanvasEvent, listenToCanvasEvent } from '../canvasEvents';
 import { profileViewOptionPatch } from '../persistence';
 import type {
   ElementColorOverrides,
@@ -53,13 +33,12 @@ import type {
   SelectedDihedralMeasurement,
   SavedPose,
   ViewOptions,
-} from '../App';
+} from '../types';
 import type { ToastMessage } from './Toast';
 import {
   BondSelectionData,
   AtomSelectionData,
   MoleculeVisibilityIndex,
-  BondRenderInstance,
   SceneCtx,
 } from './molecule-canvas/types';
 import {
@@ -69,24 +48,11 @@ import {
 } from './molecule-canvas/labels';
 import {
   atomColorHex,
-  atomDisplayRadius,
   backdropColor,
-  MATERIAL_PRESETS,
   applyMaterialPreset,
   applyMaterialFinish,
-  bondMaterialForType,
-  bondKindToStyleType,
-  atomMaterial,
-  legacyBondMaterial,
-  legacyAtomColorHex,
-  legacyBondSplit,
-  segmentTransform,
-  bondTransform,
   bondKey,
-  renderProfileShowsAtomSpheres,
-  renderProfileUsesSplitCylinderBonds,
   applyRenderPixelRatio,
-  moleculeBatchGeometries,
   clamp,
   updateAngleSelection,
   dataUrlToBytes,
@@ -100,8 +66,6 @@ import {
 } from './molecule-canvas/camera';
 import {
   buildMoleculeVisibilityIndex,
-  isAtomVisible,
-  labelSourceVisible,
 } from './molecule-canvas/visibility';
 import {
   perfLoggingEnabled,
@@ -135,6 +99,14 @@ import {
   type PathTraceQuality,
   type PublicationExportSettings,
 } from './molecule-canvas/exportPng';
+import {
+  numberedPngPath,
+  resolveExportFrameIndices,
+  sanitizeExportFileName,
+} from './molecule-canvas/exportWorkflow';
+import { buildMoleculeBatches } from './molecule-canvas/moleculeBatches';
+import { createSceneContext, orbitMouseButtons } from './molecule-canvas/sceneSetup';
+import { updateScreenOverlays } from './molecule-canvas/screenLabels';
 import {
   renderScene,
   updateDepthCueBackground,
@@ -183,6 +155,13 @@ interface Props {
   selectedDihedral: SelectedDihedralMeasurement | null;
   persistentLabels: PersistentLabel[];
   savedPoses: SavedPose[];
+  frameIndex: number;
+  frameCount: number;
+  isFramePlaying: boolean;
+  framePlaybackSpeed: number;
+  onFrameChange: (frameIndex: number) => Promise<MoleculeData | null>;
+  onFramePlaybackToggle: () => void;
+  onFramePlaybackSpeedChange: (speed: number) => void;
   selectionMode: SelectionMode;
   selectionSummary: SelectionSummary;
   onBondSelected: (bond: SelectedBondMeasurement | null) => void;
@@ -239,6 +218,13 @@ export function MoleculeCanvas({
   selectedDihedral,
   persistentLabels,
   savedPoses,
+  frameIndex,
+  frameCount,
+  isFramePlaying,
+  framePlaybackSpeed,
+  onFrameChange,
+  onFramePlaybackToggle,
+  onFramePlaybackSpeedChange,
   selectionMode,
   selectionSummary,
   onBondSelected,
@@ -326,6 +312,16 @@ export function MoleculeCanvas({
     visibilityIndexRef.current = visibilityIndex;
   }, [visibilityIndex]);
 
+  useEffect(() => {
+    setExportSettings((current) => ({
+      ...current,
+      frameStart: Math.min(Math.max(1, current.frameStart), Math.max(1, frameCount)),
+      frameEnd: current.frameEnd <= 1
+        ? Math.max(1, frameCount)
+        : Math.min(Math.max(1, current.frameEnd), Math.max(1, frameCount)),
+    }));
+  }, [frameCount]);
+
   // ------------------------------------------------------------------
   // Init Three.js once
   // ------------------------------------------------------------------
@@ -333,264 +329,49 @@ export function MoleculeCanvas({
     const container = containerRef.current;
     if (!container) return;
 
-    const w = container.clientWidth  || 800;
-    const h = container.clientHeight || 600;
-
-    // preserveDrawingBuffer is required for toDataURL PNG export
-    const renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(w, h);
-    container.appendChild(renderer.domElement);
-
-    const scene = new Scene();
-    scene.background = new Color(0xffffff);
-    scene.fog = null;
-
-    const camera = new PerspectiveCamera(35, w / h, 0.1, 1000);
-    const orthographicCamera = new OrthographicCamera(-10, 10, 10, -10, 0.1, 1000);
-    camera.position.set(0, 0, 25);
-    orthographicCamera.position.copy(camera.position);
-
-    const renderPass = new RenderPass(scene, camera);
-    const bokehPass = new BokehPass(scene, camera, {
-      focus: 25,
-      aperture: 0.00002,
-      maxblur: 0.006,
+    const { ctx: sceneCtx, dispose: disposeSceneContext } = createSceneContext(container, {
+      renderProfile,
+      mouseMode,
+      invertScrollZoom,
+      viewOptions: viewOptionsRef.current,
     });
-    const composer = new EffectComposer(renderer);
-    composer.addPass(renderPass);
-    composer.addPass(bokehPass);
-
-    // Bright, print-oriented lighting tuned toward the CYLview reference.
-    const ambient = new AmbientLight(0xffffff, 0.52);
-    scene.add(ambient);
-
-    const key = new DirectionalLight(0xffffff, 1.65);
-    key.position.set(3.2, 4.4, 6.4);
-    scene.add(key);
-
-    const fill = new DirectionalLight(0xffffff, 0.72);
-    fill.position.set(-5.2, 1.4, 3.2);
-    scene.add(fill);
-
-    const rim = new DirectionalLight(0xffffff, 0.24);
-    rim.position.set(-1.6, -3.6, -4.8);
-    scene.add(rim);
-
-    const topLight = new DirectionalLight(0xffffff, 0.35);
-    topLight.position.set(0, 7, 1.5);
-    scene.add(topLight);
-
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping  = true;
-    controls.dampingFactor  = 0.08;
-    controls.mouseButtons = mouseMode === 'one-button'
-      ? {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.PAN,
-          RIGHT: MOUSE.PAN,
-        }
-      : {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.DOLLY,
-          RIGHT: MOUSE.PAN,
-        };
-    controls.zoomSpeed = invertScrollZoom ? -1 : 1;
-
-    const molGroup = new Group();
-    scene.add(molGroup);
-
-    const floorGroup = new Group();
-    const floorMat = new MeshBasicMaterial({
-      color: 0x2d3035,
-      side: DoubleSide,
-      transparent: true,
-      opacity: 0.92,
-    });
-    const floorPlane = new Mesh(new PlaneGeometry(1, 1), floorMat);
-    floorPlane.rotation.x = -Math.PI / 2;
-    const floorGrid = new GridHelper(10, 20, 0x737983, 0x4c525a);
-    floorGroup.add(floorPlane);
-    floorGroup.add(floorGrid);
-    floorGroup.visible = false;
-    scene.add(floorGroup);
-
-    const sphereGeom = new SphereGeometry(1, 20, 16);
-    const cylGeom    = new CylinderGeometry(1, 1, 1, 24, 1, false);
-    const sphereGeometryCache = new Map<string, SphereGeometry>([['20x16', sphereGeom]]);
-    const cylinderGeometryCache = new Map<string, CylinderGeometry>([['24', cylGeom]]);
-
-    // Saturated cyan cylinders with enough gloss to read like polished tubes.
-    const bondMat = new MeshPhongMaterial({
-      color:     MATERIAL_PRESETS[renderProfile].bondColor,
-      shininess: MATERIAL_PRESETS[renderProfile].shininess,
-      specular:  MATERIAL_PRESETS[renderProfile].specular.clone(),
-    });
-    const selectedBondMat = new MeshPhongMaterial({
-      color:     0xffa24c,
-      shininess: 190,
-      specular:  new Color(0.98, 0.88, 0.78),
-    });
-    const selectedAtomMat = new MeshPhongMaterial({
-      color:     0xffbf73,
-      shininess: 150,
-      specular:  new Color(0.98, 0.9, 0.78),
-    });
-
-    const atomMats = new Map<string, MeshPhongMaterial>();
-    const raycaster = new Raycaster();
-    const pointer = new Vector2();
+    ctxRef.current = sceneCtx;
+    const { renderer, scene, controls, perspectiveCamera: camera } = sceneCtx;
 
     // Render loop
     let animId = 0;
     function animate() {
       animId = requestAnimationFrame(animate);
       controls.update();
-      const bondLabel = bondLabelRef.current;
-      const selectedBond = ctxRef.current?.selectedBondData;
-      const activeCamera = ctxRef.current?.camera ?? camera;
-      if (bondLabel && selectedBond) {
-        const projected = selectedBond.midpoint.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        bondLabel.style.display = visible ? 'block' : 'none';
-        bondLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        bondLabel.textContent = formatDistance(selectedBond.distance, distancePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (bondLabel) {
-        bondLabel.style.display = 'none';
-      }
-
-      const angleLabel = angleLabelRef.current;
-      const anglePosition = ctxRef.current?.angleLabelPosition;
-      const angleDegrees = ctxRef.current?.angleDegrees;
-      if (angleLabel && anglePosition && typeof angleDegrees === 'number') {
-        const projected = anglePosition.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        angleLabel.style.display = visible ? 'block' : 'none';
-        angleLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        angleLabel.textContent = formatAngle(angleDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (angleLabel) {
-        angleLabel.style.display = 'none';
-      }
-
-      const dihedralLabel = dihedralLabelRef.current;
-      const dihedralPosition = ctxRef.current?.dihedralLabelPosition;
-      const dihedralDegrees = ctxRef.current?.dihedralDegrees;
-      if (dihedralLabel && dihedralPosition && typeof dihedralDegrees === 'number') {
-        const projected = dihedralPosition.clone().project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        dihedralLabel.style.display = visible ? 'block' : 'none';
-        dihedralLabel.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`;
-        dihedralLabel.textContent = formatAngle(dihedralDegrees, anglePrecisionRef.current, useSymbolUnitsRef.current);
-      } else if (dihedralLabel) {
-        dihedralLabel.style.display = 'none';
-      }
-
-      const currentMoleculeData = moleculeDataRef.current;
-      const currentVisibilityIndex = visibilityIndexRef.current;
-      const currentHiddenAtomSet = new Set(hiddenAtomIndicesRef.current);
-      const currentHydrogenVisibility = hydrogenVisibilityRef.current;
-
-      for (const label of persistentLabelsRef.current) {
-        const labelElement = persistentLabelRefs.current.get(label.id);
-        if (!labelElement) continue;
-        if (
-          !label.visible ||
-          !labelSourceVisible(
-            label,
-            currentMoleculeData,
-            currentHydrogenVisibility,
-            currentHiddenAtomSet,
-            currentVisibilityIndex,
-          )
-        ) {
-          labelElement.style.display = 'none';
-          continue;
-        }
-
-        const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
-          .project(activeCamera);
-        const x = ((projected.x + 1) / 2) * renderer.domElement.clientWidth;
-        const y = ((-projected.y + 1) / 2) * renderer.domElement.clientHeight;
-        const visible = projected.z >= -1 && projected.z <= 1;
-
-        labelElement.style.display = visible ? 'block' : 'none';
-        labelElement.style.transform = `translate(-50%, -100%) translate(${x}px, ${y - 10}px)`;
-      }
-
-      const linkCanvas = linkLinesRef.current;
-      if (linkCanvas && viewOptionsRef.current.showLabelLinkLines) {
-        const w = renderer.domElement.clientWidth;
-        const h = renderer.domElement.clientHeight;
-        if (linkCanvas.width !== w || linkCanvas.height !== h) {
-          linkCanvas.width = w;
-          linkCanvas.height = h;
-        }
-        const ctx2d = linkCanvas.getContext('2d');
-        if (ctx2d) {
-          ctx2d.clearRect(0, 0, w, h);
-          ctx2d.setLineDash([4, 3]);
-          ctx2d.strokeStyle = renderProfileRef.current === 'houkmol'
-            ? 'rgba(0, 0, 0, 0.72)'
-            : 'rgba(180, 160, 120, 0.5)';
-          ctx2d.lineWidth = 1;
-          for (const label of persistentLabelsRef.current) {
-            if (!label.visible) continue;
-            const projected = new Vector3(label.anchor.x, label.anchor.y, label.anchor.z)
-              .project(activeCamera);
-            const x = ((projected.x + 1) / 2) * w;
-            const y = ((-projected.y + 1) / 2) * h;
-            if (projected.z < -1 || projected.z > 1) continue;
-            ctx2d.beginPath();
-            ctx2d.moveTo(x, y);
-            ctx2d.lineTo(x, y - 10);
-            ctx2d.stroke();
-          }
-        }
-      } else if (linkCanvas) {
-        const ctx2d = linkCanvas.getContext('2d');
-        if (ctx2d) ctx2d.clearRect(0, 0, linkCanvas.width, linkCanvas.height);
-      }
-
       const current = ctxRef.current;
+      const activeCamera = current?.camera ?? camera;
+
       if (current) {
+        updateScreenOverlays(current, activeCamera, {
+          bondLabel: bondLabelRef.current,
+          angleLabel: angleLabelRef.current,
+          dihedralLabel: dihedralLabelRef.current,
+          linkCanvas: linkLinesRef.current,
+          labelElements: persistentLabelRefs.current,
+        }, {
+          persistentLabels: persistentLabelsRef.current,
+          moleculeData: moleculeDataRef.current,
+          hydrogenVisibility: hydrogenVisibilityRef.current,
+          hiddenAtomIndices: hiddenAtomIndicesRef.current,
+          visibilityIndex: visibilityIndexRef.current,
+          showLabelLinkLines: viewOptionsRef.current.showLabelLinkLines,
+          renderProfile: renderProfileRef.current,
+          distancePrecision: distancePrecisionRef.current,
+          anglePrecision: anglePrecisionRef.current,
+          useSymbolUnits: useSymbolUnitsRef.current,
+        });
         renderScene(current);
       } else {
         renderer.render(scene, activeCamera);
       }
     }
     animate();
-
-    ctxRef.current = {
-      renderer, scene, camera, perspectiveCamera: camera, orthographicCamera, controls,
-      molGroup, floorGroup, floorPlane, floorGrid, floorMat,
-      lights: { ambient, key, fill, rim, topLight },
-      depthCue: {
-        options: viewOptionsRef.current,
-        backgroundColor: 0xffffff,
-        composer,
-        renderPass,
-        bokehPass,
-      },
-      lastCameraDistance: 25,
-      lastMoleculeBox: null,
-      animId,
-      sphereGeom, cylGeom, sphereGeometryCache, cylinderGeometryCache, atomMats, bondMat, selectedBondMat,
-      raycaster, pointer, selectedBondOverlay: null, selectedBondData: null, bondPickObjects: [],
-      selectedAtomMat, atomPickObjects: [], selectedAtomOverlays: [], modeSelectedAtomOverlays: [],
-      modeSelectedBondOverlays: [], modeSelectedAtoms: [], modeSelectedBonds: [], angleSelection: [],
-      angleLabelPosition: null, angleDegrees: null, dihedralLabelPosition: null,
-      dihedralDegrees: null, angleArcMesh: null,
-    };
+    sceneCtx.animId = animId;
 
     // Resize
     const ro = new ResizeObserver(() => {
@@ -608,13 +389,13 @@ export function MoleculeCanvas({
     ro.observe(container);
 
     // Toolbar button and global keyboard shortcut
+    const canvasEventUnsubscribers: Array<() => void> = [];
     const onReset = () => ctxRef.current?.controls.reset();
 
-    const onCaptureCameraPose = (event: Event) => {
+    const onCaptureCameraPose = (detail: { updatePoseId?: string } | undefined) => {
       const current = ctxRef.current;
       if (!current) return;
-      const detail = (event as CustomEvent<{ updatePoseId?: string }>).detail;
-      const payload = {
+      dispatchCanvasEvent('camera-pose-captured', {
         updatePoseId: detail?.updatePoseId,
         cameraPosition: {
           x: current.camera.position.x,
@@ -628,27 +409,26 @@ export function MoleculeCanvas({
         },
         projection: viewOptionsForPoseRef.current.projection,
         viewOptions: viewOptionsForPoseRef.current,
-      };
-      window.dispatchEvent(new CustomEvent('camera-pose-captured', { detail: payload }));
+      });
     };
 
-    const onApplyCameraPose = (event: Event) => {
+    const onApplyCameraPose = (pose: SavedPose) => {
       const current = ctxRef.current;
-      const pose = (event as CustomEvent<SavedPose>).detail;
       if (!current || !pose) return;
       applySavedPoseToContext(current, pose);
     };
-    const onApplyCameraPreset = (event: Event) => {
+    const onApplyCameraPreset = (preset: 'front' | 'top' | 'right' | 'iso') => {
       const current = ctxRef.current;
-      const preset = (event as CustomEvent<'front' | 'top' | 'right' | 'iso'>).detail;
       if (!current || !moleculeDataRef.current || !preset) return;
       applyCameraPreset(current, preset);
     };
     if (!previewMode) {
-      window.addEventListener('reset-camera', onReset);
-      window.addEventListener('capture-camera-pose', onCaptureCameraPose);
-      window.addEventListener('apply-camera-pose', onApplyCameraPose);
-      window.addEventListener('camera-preset', onApplyCameraPreset);
+      canvasEventUnsubscribers.push(
+        listenToCanvasEvent('reset-camera', onReset),
+        listenToCanvasEvent('capture-camera-pose', onCaptureCameraPose),
+        listenToCanvasEvent('apply-camera-pose', onApplyCameraPose),
+        listenToCanvasEvent('camera-preset', onApplyCameraPreset),
+      );
     }
 
     let pointerDown = { x: 0, y: 0 };
@@ -1008,37 +788,21 @@ export function MoleculeCanvas({
       setExportPanelOpen(true);
     };
     if (!previewMode) {
-      window.addEventListener('export-png', onExport);
+      canvasEventUnsubscribers.push(listenToCanvasEvent('export-png', onExport));
     }
 
     const onClearSelection = () => clearSelection();
     if (!previewMode) {
-      window.addEventListener('clear-selection', onClearSelection);
+      canvasEventUnsubscribers.push(listenToCanvasEvent('clear-selection', onClearSelection));
     }
 
     return () => {
       ro.disconnect();
-      window.removeEventListener('reset-camera', onReset);
-      window.removeEventListener('capture-camera-pose', onCaptureCameraPose);
-      window.removeEventListener('apply-camera-pose', onApplyCameraPose);
-      window.removeEventListener('camera-preset', onApplyCameraPreset);
-      window.removeEventListener('export-png', onExport);
-      window.removeEventListener('clear-selection', onClearSelection);
+      canvasEventUnsubscribers.forEach((unsubscribe) => unsubscribe());
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       cancelAnimationFrame(animId);
-      sphereGeometryCache.forEach((geometry) => geometry.dispose());
-      cylinderGeometryCache.forEach((geometry) => geometry.dispose());
-      floorPlane.geometry.dispose();
-      floorMat.dispose();
-      bondMat.dispose();
-      selectedBondMat.dispose();
-      selectedAtomMat.dispose();
-      atomMats.forEach(m => m.dispose());
-      composer.dispose();
-      bokehPass.dispose();
-      renderer.dispose();
-      container.removeChild(renderer.domElement);
+      disposeSceneContext();
       ctxRef.current = null;
     };
   }, [
@@ -1131,7 +895,7 @@ export function MoleculeCanvas({
     const {
       molGroup, perspectiveCamera, camera, controls, atomMats, bondMat, selectedBondMat, selectedAtomMat,
     } = ctx;
-    const shouldFitCamera = moleculeData !== previousMoleculeDataRef.current;
+    const shouldFitCamera = moleculeData?.path !== previousMoleculeDataRef.current?.path;
 
     // Clear previous molecule batches while keeping shared base materials alive.
     const sharedAtomMaterials = new Set(atomMats.values());
@@ -1176,179 +940,19 @@ export function MoleculeCanvas({
 
     const activeVisibilityIndex = visibilityIndex?.moleculeData === moleculeData ? visibilityIndex : null;
     const hiddenAtomSet = new Set(hiddenAtomIndices);
-    let visibleBondCount = 0;
-    let visibleAtomCount = 0;
     applyRenderPixelRatio(ctx, moleculeData.atoms.length, moleculeData.bonds.length);
-    const { sphereGeom, cylGeom, qualityProfile } = moleculeBatchGeometries(
-      ctx,
-      moleculeData.atoms.length,
-      moleculeData.bonds.length,
-    );
-    const useSplitCylinderBonds = renderProfileUsesSplitCylinderBonds(renderProfile);
-    const showAtomSpheres = renderProfileShowsAtomSpheres(renderProfile);
-    const atomBuckets = new Map<string, { material: MeshPhongMaterial; atoms: AtomSelectionData[] }>();
-    const bondBuckets = new Map<string, { material: MeshPhongMaterial; bonds: BondRenderInstance[] }>();
-    const legacyBondMats = new Map<string, MeshPhongMaterial>();
-
-    const addBondInstance = (
-      bucketKey: string,
-      material: MeshPhongMaterial,
-      selection: BondSelectionData,
-      matrix: Matrix4,
-    ) => {
-      let bucket = bondBuckets.get(bucketKey);
-      if (!bucket) {
-        bucket = { material, bonds: [] };
-        bondBuckets.set(bucketKey, bucket);
-      }
-      bucket.bonds.push({ matrix, selection });
-    };
-
-    const addUniformBond = (styleType: BondStyleType, bondData: BondSelectionData) => {
-      addBondInstance(
-        `uniform|${styleType}`,
-        styleType === 'full' ? bondMat : bondMaterialForType(styleType, bondMat),
-        bondData,
-        bondData.matrix,
-      );
-    };
-
-    const legacyMaterialFor = (color: string, styleType: BondStyleType) => {
-      const key = `${color.toLowerCase()}|${styleType}`;
-      let material = legacyBondMats.get(key);
-      if (!material) {
-        material = legacyBondMaterial(color, styleType);
-        legacyBondMats.set(key, material);
-      }
-      return { key: `legacy|${key}`, material };
-    };
-
-    const addLegacyBond = (
-      styleType: BondStyleType,
-      bondData: BondSelectionData,
-      start: Vector3,
-      end: Vector3,
-      atom1Index: number,
-      atom2Index: number,
-      atom1Element: string,
-      atom2Element: string,
-    ) => {
-      const startColor = legacyAtomColorHex(atom1Index, atom1Element, elementColorOverrides, atomStyleOverrides);
-      const endColor = legacyAtomColorHex(atom2Index, atom2Element, elementColorOverrides, atomStyleOverrides);
-      if (startColor.toLowerCase() === endColor.toLowerCase()) {
-        const bucket = legacyMaterialFor(startColor, styleType);
-        addBondInstance(bucket.key, bucket.material, bondData, bondData.matrix);
-        return;
-      }
-
-      const split = legacyBondSplit(atom1Element, atom2Element);
-      const startMatrix = segmentTransform(start, end, 0, split, bondData.displayRadius, { overlapStart: true, overlapEnd: false });
-      const endMatrix = segmentTransform(start, end, split, 1, bondData.displayRadius, { overlapStart: false, overlapEnd: true });
-      if (startMatrix) {
-        const bucket = legacyMaterialFor(startColor, styleType);
-        addBondInstance(bucket.key, bucket.material, bondData, startMatrix);
-      }
-      if (endMatrix) {
-        const bucket = legacyMaterialFor(endColor, styleType);
-        addBondInstance(bucket.key, bucket.material, bondData, endMatrix);
-      }
-    };
-
-    // --- Bonds first (atoms rendered on top) ---
-    for (const bond of moleculeData.bonds) {
-      const a1 = moleculeData.atoms[bond.atom1];
-      const a2 = moleculeData.atoms[bond.atom2];
-      if (!a1 || !a2) continue;
-      if (
-        !isAtomVisible(bond.atom1, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex) ||
-        !isAtomVisible(bond.atom2, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex)
-      ) {
-        continue;
-      }
-
-      const start   = new Vector3(a1.x, a1.y, a1.z);
-      const end     = new Vector3(a2.x, a2.y, a2.z);
-      const dir     = new Vector3().subVectors(end, start);
-      const len     = dir.length();
-      if (len < 0.01) continue;
-
-      const styleType = bondStyleOverrides[bondKey(bond.atom1, bond.atom2)]?.type ?? bondKindToStyleType(bond.kind);
-      const displayRadius = (styleType === 'thin'
-        ? Math.max(0.026, bond.radius * 0.38)
-        : Math.max(0.055, bond.radius * 0.82)) * viewOptions.bondSizeScale;
-      const bondData = {
-        atom1Element: a1.element,
-        atom2Element: a2.element,
-        distance: len,
-        midpoint: new Vector3().addVectors(start, end).multiplyScalar(0.5),
-        atom1Index: bond.atom1,
-        atom2Index: bond.atom2,
-        displayRadius,
-        matrix: bondTransform(start, end, displayRadius, { overlapStart: true, overlapEnd: true }),
-      } satisfies BondSelectionData;
-
-      if (useSplitCylinderBonds) {
-        addLegacyBond(styleType, bondData, start, end, bond.atom1, bond.atom2, a1.element, a2.element);
-      } else {
-        addUniformBond(styleType, bondData);
-      }
-
-      visibleBondCount += 1;
-    }
-
-    for (const bucket of bondBuckets.values()) {
-      const bondBatch = new InstancedMesh(cylGeom, bucket.material, bucket.bonds.length);
-      bucket.bonds.forEach((bond, index) => {
-        bondBatch.setMatrixAt(index, bond.matrix);
-      });
-      bondBatch.instanceMatrix.needsUpdate = true;
-      bondBatch.userData.bonds = bucket.bonds.map((bond) => bond.selection);
-      molGroup.add(bondBatch);
-      ctx.bondPickObjects.push(bondBatch);
-    }
-
-    // --- Atoms on top ---
-    for (const [atomIndex, atom] of moleculeData.atoms.entries()) {
-      if (!isAtomVisible(atomIndex, moleculeData, hydrogenVisibility, hiddenAtomSet, activeVisibilityIndex)) continue;
-
-      const atomStyle = atomStyleOverrides[String(atomIndex)];
-      const color = atomStyle?.color ?? elementColorOverrides[atom.element] ?? atomColorHex(atom.element);
-      const r = atomDisplayRadius(atom.element) * (atomStyle?.sizeScale ?? 1) * atomSizeScale;
-      const bucketKey = `${atom.element}|${color}|${r.toFixed(4)}`;
-      let bucket = atomBuckets.get(bucketKey);
-      if (!bucket) {
-        const material = atomStyle?.color || elementColorOverrides[atom.element]
-          ? atomMaterial(color, renderProfile)
-          : (atomMats.get(atom.element) ?? atomMaterial(color, renderProfile));
-        if (!atomStyle?.color && !elementColorOverrides[atom.element] && !atomMats.has(atom.element)) {
-          atomMats.set(atom.element, material);
-        }
-        bucket = { material, atoms: [] };
-        atomBuckets.set(bucketKey, bucket);
-      }
-      bucket.atoms.push({
-        element: atom.element,
-        atomIndex,
-        position: new Vector3(atom.x, atom.y, atom.z),
-        baseRadius: r,
-      });
-      visibleAtomCount += 1;
-    }
-
-    const atomMatrix = new Matrix4();
-    for (const bucket of atomBuckets.values()) {
-      const atomBatch = new InstancedMesh(sphereGeom, bucket.material, bucket.atoms.length);
-      bucket.atoms.forEach((atom, index) => {
-        atomMatrix.makeScale(atom.baseRadius, atom.baseRadius, atom.baseRadius);
-        atomMatrix.setPosition(atom.position);
-        atomBatch.setMatrixAt(index, atomMatrix);
-      });
-      atomBatch.instanceMatrix.needsUpdate = true;
-      atomBatch.userData.atoms = bucket.atoms;
-      atomBatch.visible = showAtomSpheres;
-      molGroup.add(atomBatch);
-      ctx.atomPickObjects.push(atomBatch);
-    }
+    const { visibleAtomCount, visibleBondCount, qualityProfile } = buildMoleculeBatches(ctx, {
+      moleculeData,
+      visibilityIndex: activeVisibilityIndex,
+      hydrogenVisibility,
+      hiddenAtomSet,
+      renderProfile,
+      elementColorOverrides,
+      atomStyleOverrides,
+      bondStyleOverrides,
+      atomSizeScale,
+      bondSizeScale: viewOptions.bondSizeScale,
+    });
 
     addHighlightLayer(
       ctx,
@@ -1416,6 +1020,74 @@ export function MoleculeCanvas({
     }
 
     if (benchmarkConfig?.enabled && onBenchmarkRender && shouldFitCamera) {
+      // Optional developer visual feedback: save a PNG of the settled view so agents
+      // can eyeball the actual render without a separate app run. Best-effort only —
+      // a capture failure must never sink the benchmark result.
+      const captureBenchmarkScreenshot = async () => {
+        if (!benchmarkConfig.screenshot || !benchmarkConfig.screenshotPath) return;
+        try {
+          const dataUrl = renderCurrentViewDataUrl(ctx, containerRef.current, {
+            moleculeData,
+            pngExportScale: 1,
+          });
+          await invoke('export_png', {
+            path: benchmarkConfig.screenshotPath,
+            bytes: Array.from(dataUrlToBytes(dataUrl)),
+          });
+        } catch (error) {
+          console.error('Benchmark screenshot capture failed:', error);
+        }
+      };
+
+      if (benchmarkConfig.snapshot) {
+        // Static snapshot: let the scene settle a couple frames, capture, and report
+        // a minimal result. No frame sampling or orbit/pan/zoom, so the captured view
+        // is exactly the loaded molecule — for render/UI review on real structures.
+        void (async () => {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await captureBenchmarkScreenshot();
+          const debugInfo = webglDebugInfo(ctx.renderer);
+          const pickMetrics = benchmarkPickMetrics(ctx);
+          onBenchmarkRender({
+            rebuildSceneMs,
+            visibleAtoms: visibleAtomCount,
+            visibleBonds: visibleBondCount,
+            totalAtoms: moleculeData.atoms.length,
+            totalBonds: moleculeData.bonds.length,
+            renderProfile,
+            renderQuality: qualityProfile,
+            renderCalls: renderStats.renderCalls,
+            triangles: renderStats.triangles,
+            geometries: renderStats.geometries,
+            textures: renderStats.textures,
+            sceneObjects: renderStats.sceneObjects,
+            pickAtomMs: pickMetrics.pickAtomMs,
+            pickBondMs: pickMetrics.pickBondMs,
+            pickTotalMs: pickMetrics.pickTotalMs,
+            pickHitType: pickMetrics.pickHitType,
+            pickAtomCandidates: pickMetrics.pickAtomCandidates,
+            pickBondCandidates: pickMetrics.pickBondCandidates,
+            frameSampleMs: 0,
+            sampledFrames: 0,
+            averageFrameMs: null,
+            p95FrameMs: null,
+            minFps: null,
+            averageFps: null,
+            interactionFrameSampleMs: 0,
+            interactionAverageFrameMs: null,
+            interactionP95FrameMs: null,
+            interactionMinFps: null,
+            interactionAverageFps: null,
+            interactionPhases: [],
+            webglRenderer: debugInfo.webglRenderer,
+            webglVendor: debugInfo.webglVendor,
+            responsive: true,
+          });
+        })();
+        return;
+      }
+
       const sampleMs = benchmarkConfig.sampleMs || 3000;
       const interactionMs = benchmarkConfig.interactionMs || 1200;
       const targetFrameMs = 1000 / (benchmarkConfig.targetFps || 30);
@@ -1424,6 +1096,9 @@ export function MoleculeCanvas({
         const pickMetrics = benchmarkPickMetrics(ctx);
         const passiveMetrics = frameMetrics(frameTimes);
         const interactionMetrics = await benchmarkInteractionMetrics(ctx, interactionMs);
+
+        await captureBenchmarkScreenshot();
+
         onBenchmarkRender({
           rebuildSceneMs,
           visibleAtoms: visibleAtomCount,
@@ -1493,17 +1168,7 @@ export function MoleculeCanvas({
     const ctx = ctxRef.current;
     if (!ctx) return;
 
-    ctx.controls.mouseButtons = mouseMode === 'one-button'
-      ? {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.PAN,
-          RIGHT: MOUSE.PAN,
-        }
-      : {
-          LEFT: MOUSE.ROTATE,
-          MIDDLE: MOUSE.DOLLY,
-          RIGHT: MOUSE.PAN,
-        };
+    ctx.controls.mouseButtons = orbitMouseButtons(mouseMode);
     ctx.controls.zoomSpeed = invertScrollZoom ? -1 : 1;
   }, [invertScrollZoom, mouseMode]);
 
@@ -1593,12 +1258,12 @@ export function MoleculeCanvas({
     setExportSettings((current) => ({ ...current, ...patch }));
   };
 
-  const currentPublicationState = () => {
+  const currentPublicationState = (data: MoleculeData | null = moleculeData) => {
     const ctx = ctxRef.current;
-    if (!ctx || !moleculeData) return null;
+    if (!ctx || !data) return null;
     return capturePublicationRenderState({
       ctx,
-      moleculeData,
+      moleculeData: data,
       renderProfile,
       viewOptions,
       hydrogenVisibility,
@@ -1612,6 +1277,11 @@ export function MoleculeCanvas({
     });
   };
 
+  const waitForFrameRender = async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  };
+
   const runPublicationRender = async (purpose: 'preview' | 'save') => {
     const ctx = ctxRef.current;
     const renderState = currentPublicationState();
@@ -1623,10 +1293,11 @@ export function MoleculeCanvas({
     exportCancelRef.current = false;
     try {
       let targetPath: string | null = null;
+      const frameIndices = purpose === 'save'
+        ? resolveExportFrameIndices(exportSettings, frameCount, frameIndex)
+        : [frameIndex];
       if (purpose === 'save') {
-        const defaultName = `${moleculeData.name || 'molecule'}.png`
-          .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-          .replace(/\s+/g, '_');
+        const defaultName = sanitizeExportFileName(`${moleculeData.name || 'molecule'}.png`);
 
         targetPath = await save({
           title: 'Export Publication Figure',
@@ -1637,25 +1308,78 @@ export function MoleculeCanvas({
       }
 
       setExportProgress({ progress: 0, label: purpose === 'preview' ? 'Preparing preview' : 'Preparing export' });
-      const result = await renderPublicationExport({
-        ctx,
-        host: containerRef.current,
-        settings: exportSettings,
-        renderState,
-        onProgress: (progress, label) => setExportProgress({ progress, label }),
-        shouldCancel: () => exportCancelRef.current,
-      });
-      setExportPreviewDataUrl(result.previewDataUrl);
+      const fixedCameraPose = exportSettings.fixedCameraForSequence
+        ? {
+            position: ctx.camera.position.clone(),
+            target: ctx.controls.target.clone(),
+          }
+        : null;
+      let fixedCropBox = exportSettings.fixedCropBoundsForSequence && frameIndices.length > 1 && ctx.lastMoleculeBox
+        ? ctx.lastMoleculeBox.clone().makeEmpty()
+        : null;
+      if (fixedCropBox) {
+        for (const index of frameIndices) {
+          if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
+          await onFrameChange(index);
+          await waitForFrameRender();
+          if (ctx.lastMoleculeBox) fixedCropBox.union(ctx.lastMoleculeBox);
+        }
+      }
+
+      let lastPreview: string | null = null;
+      let savedCount = 0;
+      for (const [sequenceIndex, index] of frameIndices.entries()) {
+        if (exportCancelRef.current) throw new Error('Frame sequence export cancelled.');
+        const frameData = frameCount > 1 ? await onFrameChange(index) : moleculeData;
+        await waitForFrameRender();
+        if (fixedCameraPose) {
+          ctx.camera.position.copy(fixedCameraPose.position);
+          ctx.controls.target.copy(fixedCameraPose.target);
+          ctx.controls.update();
+        }
+        const frameRenderState = currentPublicationState(frameData ?? moleculeData);
+        if (!frameRenderState) throw new Error('Frame renderer is not ready.');
+        const frameOffset = sequenceIndex / frameIndices.length;
+        const frameSpan = 1 / frameIndices.length;
+        const result = await renderPublicationExport({
+          ctx,
+          host: containerRef.current,
+          settings: exportSettings,
+          renderState: frameRenderState,
+          fixedCropBox,
+          onProgress: (progress, label) => {
+            const totalProgress = Math.min(1, frameOffset + progress * frameSpan);
+            setExportProgress({
+              progress: totalProgress,
+              label: frameIndices.length > 1 ? `Frame ${index + 1}: ${label}` : label,
+            });
+          },
+          shouldCancel: () => exportCancelRef.current,
+        });
+        lastPreview = result.previewDataUrl;
+
+        if (purpose === 'save') {
+          if (!targetPath) throw new Error('Export path was not selected.');
+          const framePath = numberedPngPath(targetPath, index, frameIndices.length);
+          const pngBytes = dataUrlToBytes(result.dataUrl);
+          await invoke('export_png', { path: framePath, bytes: Array.from(pngBytes) });
+          if (result.metadataJson) {
+            const sidecarPath = framePath.replace(/\.png$/i, '') + '.cylform-render.json';
+            await invoke('export_text_sidecar', { path: sidecarPath, contents: result.metadataJson });
+          }
+          savedCount += 1;
+        }
+      }
+
+      if (lastPreview) setExportPreviewDataUrl(lastPreview);
 
       if (purpose === 'save') {
-        if (!targetPath) throw new Error('Export path was not selected.');
-        const pngBytes = dataUrlToBytes(result.dataUrl);
-        await invoke('export_png', { path: targetPath, bytes: Array.from(pngBytes) });
-        if (result.metadataJson) {
-          const sidecarPath = targetPath.replace(/\.png$/i, '') + '.cylform-render.json';
-          await invoke('export_text_sidecar', { path: sidecarPath, contents: result.metadataJson });
-        }
-        onToast(`Exported ${result.width} x ${result.height} PNG`, 'success');
+        onToast(
+          savedCount === 1
+            ? 'Exported current frame PNG'
+            : `Exported ${savedCount} frame PNGs`,
+          'success',
+        );
       } else {
         onToast('Export preview refreshed', 'success');
       }
@@ -1670,6 +1394,38 @@ export function MoleculeCanvas({
   const cancelPublicationExport = () => {
     exportCancelRef.current = true;
     setExportProgress((current) => current ? { ...current, label: 'Cancelling export' } : current);
+  };
+
+  const requestFrame = (nextFrameIndex: number) => {
+    const count = Math.max(1, frameCount);
+    const normalized = ((nextFrameIndex % count) + count) % count;
+    void onFrameChange(normalized);
+  };
+
+  const exportCurrentFrameXyz = async () => {
+    if (!moleculeData) {
+      onError('Load a molecule before exporting a frame.');
+      return;
+    }
+    try {
+      const defaultName = sanitizeExportFileName(
+        `${moleculeData.name || 'frame'}_${String(frameIndex + 1).padStart(4, '0')}.xyz`,
+      );
+      const targetPath = await save({
+        title: 'Export Current Frame as XYZ',
+        defaultPath: defaultName,
+        filters: [{ name: 'XYZ Structure', extensions: ['xyz'] }],
+      });
+      if (!targetPath) return;
+      await invoke('export_xyz_frame', {
+        path: targetPath,
+        sourcePath: moleculeData.path,
+        frameIndex,
+      });
+      onToast(`Exported frame ${frameIndex + 1} XYZ`, 'success');
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   return (
@@ -1694,6 +1450,48 @@ export function MoleculeCanvas({
               <span>View</span>
               <span className="view-panel-status">Session</span>
             </div>
+
+            {frameCount > 1 && (
+              <div className="frame-transport" aria-label="Frame controls">
+                <div className="view-split-row">
+                  <span>Frame</span>
+                  <span>{frameIndex + 1} / {frameCount}</span>
+                </div>
+                <input
+                  className="view-range"
+                  type="range"
+                  min="0"
+                  max={Math.max(0, frameCount - 1)}
+                  step="1"
+                  value={frameIndex}
+                  aria-label="Current frame"
+                  onChange={(event) => requestFrame(Number(event.target.value))}
+                />
+                <div className="frame-button-row">
+                  <button type="button" onClick={() => requestFrame(frameIndex - 1)}>Prev</button>
+                  <button type="button" className={isFramePlaying ? 'view-toggle active' : 'view-toggle'} onClick={onFramePlaybackToggle}>
+                    {isFramePlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <button type="button" onClick={() => requestFrame(frameIndex + 1)}>Next</button>
+                </div>
+                <label className="view-control">
+                  <span>Speed</span>
+                  <select
+                    value={framePlaybackSpeed}
+                    onChange={(event) => onFramePlaybackSpeedChange(Number(event.target.value))}
+                  >
+                    <option value={0.5}>0.5 fps</option>
+                    <option value={1}>1 fps</option>
+                    <option value={2}>2 fps</option>
+                    <option value={5}>5 fps</option>
+                    <option value={10}>10 fps</option>
+                  </select>
+                </label>
+                <button type="button" className="panel-action compact" onClick={() => void exportCurrentFrameXyz()}>
+                  Export XYZ
+                </button>
+              </div>
+            )}
 
             <div className="view-toggle-row">
               <button
@@ -2020,6 +1818,80 @@ export function MoleculeCanvas({
                   <option value="current">Current</option>
                 </select>
               </label>
+
+              {frameCount > 1 && (
+                <>
+                  <label className="view-control">
+                    <span>Frames</span>
+                    <select
+                      value={exportSettings.frameSelection}
+                      disabled={Boolean(exportProgress)}
+                      onChange={(event) => patchExportSettings({ frameSelection: event.target.value as PublicationExportSettings['frameSelection'] })}
+                    >
+                      <option value="current">Current</option>
+                      <option value="range">Range</option>
+                      <option value="every-nth">Every Nth</option>
+                    </select>
+                  </label>
+                  {exportSettings.frameSelection !== 'current' && (
+                    <>
+                      <div className="export-pair-row">
+                        <label>
+                          <span>Start</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max={frameCount}
+                            value={exportSettings.frameStart}
+                            disabled={Boolean(exportProgress)}
+                            onChange={(event) => patchExportSettings({ frameStart: Number(event.target.value) })}
+                          />
+                        </label>
+                        <label>
+                          <span>End</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max={frameCount}
+                            value={exportSettings.frameEnd}
+                            disabled={Boolean(exportProgress)}
+                            onChange={(event) => patchExportSettings({ frameEnd: Number(event.target.value) })}
+                          />
+                        </label>
+                      </div>
+                      <label className="view-control">
+                        <span>Every</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={frameCount}
+                          value={exportSettings.frameStep}
+                          disabled={Boolean(exportProgress) || exportSettings.frameSelection === 'range'}
+                          onChange={(event) => patchExportSettings({ frameStep: Number(event.target.value) })}
+                        />
+                      </label>
+                      <div className="view-toggle-row">
+                        <button
+                          type="button"
+                          className={exportSettings.fixedCameraForSequence ? 'view-toggle active' : 'view-toggle'}
+                          disabled={Boolean(exportProgress)}
+                          onClick={() => patchExportSettings({ fixedCameraForSequence: !exportSettings.fixedCameraForSequence })}
+                        >
+                          Fixed camera
+                        </button>
+                        <button
+                          type="button"
+                          className={exportSettings.fixedCropBoundsForSequence ? 'view-toggle active' : 'view-toggle'}
+                          disabled={Boolean(exportProgress)}
+                          onClick={() => patchExportSettings({ fixedCropBoundsForSequence: !exportSettings.fixedCropBoundsForSequence })}
+                        >
+                          Fixed crop
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
 
               <div className="view-toggle-row">
                 <button

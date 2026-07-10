@@ -7,14 +7,15 @@
 //! - **molecule**: Data structures for atoms, bonds, and molecular topology
 //! - **io**: File I/O using chemfiles (40+ formats)
 //! - **camera**: Orbital camera controls
-//! - **picker**: Object picking and selection
+//!
+//! Interactive picking/selection lives in the Three.js frontend
+//! (`desktop/src-ui/src/components/molecule-canvas/picking.ts`), not here.
 
 #![warn(missing_docs)]
 
 pub mod camera;
 pub mod io;
 pub mod molecule;
-pub mod picker;
 
 use thiserror::Error;
 

@@ -32,7 +32,7 @@ import type {
   RenderProfileId,
   SavedPose,
   ViewOptions,
-} from '../../App';
+} from '../../types';
 import { drawRichLabelText } from './labels';
 import { renderScene } from './depthCue';
 
@@ -57,6 +57,12 @@ export interface PublicationExportSettings {
   pixelsPerAngstrom: number;
   printSafeAnnotationScale: number;
   includeMetadataSidecar: boolean;
+  frameSelection: 'current' | 'range' | 'every-nth';
+  frameStart: number;
+  frameEnd: number;
+  frameStep: number;
+  fixedCameraForSequence: boolean;
+  fixedCropBoundsForSequence: boolean;
   supersampling: 1 | 2 | 3 | 4;
   tiledExport: boolean;
   tileSize: number;
@@ -195,6 +201,12 @@ export const DEFAULT_PUBLICATION_EXPORT_SETTINGS: PublicationExportSettings = {
   pixelsPerAngstrom: 180,
   printSafeAnnotationScale: 1.15,
   includeMetadataSidecar: true,
+  frameSelection: 'current',
+  frameStart: 1,
+  frameEnd: 1,
+  frameStep: 1,
+  fixedCameraForSequence: true,
+  fixedCropBoundsForSequence: true,
   supersampling: 2,
   tiledExport: true,
   tileSize: 2048,
@@ -783,10 +795,11 @@ export async function renderPublicationExport(options: {
   host: HTMLDivElement | null;
   settings: PublicationExportSettings;
   renderState: PublicationRenderState;
+  fixedCropBox?: Box3 | null;
   onProgress?: (progress: number, label: string) => void;
   shouldCancel?: () => boolean;
 }): Promise<PublicationExportResult> {
-  const { ctx, host, settings, renderState, onProgress, shouldCancel } = options;
+  const { ctx, host, settings, renderState, fixedCropBox, onProgress, shouldCancel } = options;
   const renderer = ctx.renderer;
   const sourceCanvas = renderer.domElement;
   const originalPixelRatio = renderer.getPixelRatio();
@@ -852,7 +865,7 @@ export async function renderPublicationExport(options: {
 
     const sourceCrop = settings.cropToMolecule
       ? moleculeCropRect(
-          ctx.lastMoleculeBox,
+          fixedCropBox ?? ctx.lastMoleculeBox,
           ctx.camera,
           dimensions.sourceWidth,
           dimensions.sourceHeight,

@@ -6,6 +6,47 @@ High-level project history for Cylform.
 
 - No unreleased changes yet.
 
+## [0.7.2] - 2026-07-09
+
+Architecture and quality milestone — the frontend and Tauri backend are split into focused modules, cross-language defaults are locked down with shared tests, and the benchmark harness gains screenshot tooling.
+
+### Added
+- **Shared golden default tests** — TS/Rust fixtures under `desktop/shared-fixtures/` verify default settings and per-profile camera state, so Rust and TypeScript defaults cannot drift.
+- **Benchmark screenshot capture** — the benchmark harness accepts `--screenshot` to save a PNG of the settled render, and `--render-profile <id>` to force a style for the capture, under `benchmark-results/screenshots/`.
+- **`snapshot:molecule` harness** (`scripts/snapshot-molecule.mjs`) opens a real molecule and saves a clean static PNG per render profile with no frame-timing sample or orbit/pan/zoom, for render and UI review.
+- Unit tests for the shared visibility/formatting helpers and for pure export-sequencing logic (frame ranges, numbered paths, filename sanitization).
+
+### Changed
+- **Shared frontend types** moved out of `App.tsx` into dedicated `types/` modules (`molecule`, `presentation`, `settings`, `workspace`, `benchmark`), so panels, canvas, and persistence no longer import from the root component.
+- **Shared domain helpers** — C-H hydrogen visibility and distance/angle formatting deduplicated into `domain/` and reused by `InfoPanel`, `AppearancePanel`, the canvas, and `App`.
+- **`App.tsx` split into domain hooks** (2.4k → 1.8k lines): `useAppSettings`, `useWorkspaceTabs`, `usePresentationStateAutosave`, and `usePoseLibrary`.
+- **Typed canvas events** — window commands between App/panels and the canvas centralized into `canvasEvents.ts` with `dispatchCanvasEvent`/`listenToCanvasEvent`.
+- **`MoleculeCanvas.tsx` further decomposed** (2.5k → ~2k lines) into `molecule-canvas/` modules: `sceneSetup.ts` (`createSceneContext`), `screenLabels.ts` (`updateScreenOverlays`), `moleculeBatches.ts` (`buildMoleculeBatches`), and `exportWorkflow.ts` (frame ranges, numbered PNG paths, filename sanitization).
+- **Desktop Tauri backend `main.rs` split** (2.5k → 0.7k lines) into `menu`, `settings`, `presentation_state`, `pose_library`, `exports`, `molecule_commands`, and `workspace` modules with no behavior change.
+- Removed the unused placeholder `picker` module from `cylform-core`; interactive picking lives in the Three.js frontend.
+- Bumped the development version to 0.7.2 across Rust, Tauri, frontend, and citation metadata.
+
+### Fixed
+- **Cross-language backdrop drift** — Rust presentation-state normalization emitted an invalid `"paper"` backdrop tone for non-Houkmol camera defaults; it now matches the TypeScript `clean` default.
+- **Forced render profiles ignored during screenshot capture** — loading a molecule reset the render profile to the settings default, so `--render-profile cylview`, `ball-stick`, and `houkmol` all rendered identically; the forced profile is now threaded through presentation-state application so each renders distinctly.
+- Removed a no-op `collisionSuffix` from numbered PNG export path generation.
+
+## [0.7.1] - 2026-07-01
+
+Multi-frame foundation milestone.
+
+### Added
+- **Multi-frame XYZ loading** stores all frames in `Structure.frames` and exposes selected-frame coordinates through `load_molecule(frameIndex)`.
+- **Frame metadata** parses each XYZ frame title/comment and optional energy/unit metadata.
+- **Frame transport controls** in the View panel: frame slider, previous/next, play/pause, and playback speed.
+- **Frame-aware rendering** preserves camera, projection, render profile, styles, and annotations while swapping frame coordinates.
+- **Current-frame XYZ export** writes the selected frame as a standalone `.xyz` file.
+- **Frame sequence PNG export** supports current frame, explicit ranges, every-Nth frame sampling, numbered PNG output, fixed camera, and fixed crop bounds.
+
+### Changed
+- Bumped the development version to 0.7.1 across Rust, Tauri, frontend, and citation metadata.
+- Documentation now describes trajectory display/export rather than first-frame-only XYZ handling.
+
 ## [0.7.0] - 2026-07-01
 
 Publication rendering pipeline milestone.

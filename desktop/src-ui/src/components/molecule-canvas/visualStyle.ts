@@ -16,7 +16,7 @@ import type {
   BondStyleOverride,
   ElementColorOverrides,
   ViewOptions,
-} from '../../App';
+} from '../../types';
 import type { SceneCtx, AtomSelectionData, RenderQualityProfile } from './types';
 export {
   ATOM_COLORS,

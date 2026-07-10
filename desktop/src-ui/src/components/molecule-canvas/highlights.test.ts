@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MoleculeData } from '../../App';
+import type { MoleculeData } from '../../types';
 import { resolveHighlightTargets } from './highlights';
 
 const molecule = {

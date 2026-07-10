@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "rendering": {
+    "pngExportScale": 2,
+    "defaultBackground": "white",
+    "customBackgroundHex": "#ffffff",
+    "defaultRenderProfile": "cylview",
+    "defaultMaterialPreset": "CYLviewLegacy",
+    "defaultProjection": "perspective",
+    "defaultLighting": "publication",
+    "showFloorGridByDefault": false
+  },
+  "chemistry": {
+    "defaultHydrogenVisibility": "shown",
+    "distancePrecision": 2,
+    "anglePrecision": 1,
+    "bondPerceptionTolerance": 1.3,
+    "useSymbolUnits": true
+  },
+  "interaction": {
+    "mouseMode": "standard",
+    "invertScrollZoom": false,
+    "keyboardShortcuts": {}
+  },
+  "files": {
+    "autosavePresentationState": true,
+    "restorePreviousSessionOnStartup": true,
+    "droppedFilesOpenInBackground": true,
+    "recentFilesLimit": 12
+  },
+  "app": {
+    "autoCheckForUpdates": false,
+    "devtoolsMenuEnabled": true,
+    "theme": "dark"
+  }
+}

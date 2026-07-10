@@ -8,7 +8,7 @@ import type {
   AtomStyleOverride,
   HydrogenVisibility,
   MoleculeData,
-} from '../../App';
+} from '../../types';
 import type { MoleculeVisibilityIndex, SceneCtx } from './types';
 import { isAtomVisible } from './visibility';
 import { atomDisplayRadius, bondTransform } from './visualStyle';

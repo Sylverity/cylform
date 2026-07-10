@@ -8,7 +8,7 @@
 
 Cylform is a desktop molecular figure editor. Its default CYLview render profile recreates the colored cylindrical-stick style used in natural products chemistry publications — cyan carbon framework, orange oxygen endpoints, pale hydrogen termini, 4-point lighting, and depth cues — for figures that remain readable in black-and-white print.
 
-Open a structure, set the view, measure, annotate, and export a publication figure.
+Open a structure or trajectory, set the view, measure, annotate, and export a publication figure.
 
 > Cylform is an independent project and is not affiliated with or endorsed by the original CYLview.
 
@@ -30,11 +30,12 @@ See [docs/KEYBOARD_SHORTCUTS.md](docs/KEYBOARD_SHORTCUTS.md) for the current def
 
 - **CYLview rendering** — colored cylindrical-stick default with cyan carbon framework, orange oxygen endpoints, and pale gray hydrogens; Ball and stick and Houkmol alternatives remain separate render profiles
 - **3-D navigation** — orbit, pan, zoom with damping; camera presets (front, top, right, iso)
+- **Multi-frame XYZ playback** — frame slider, previous/next, play/pause, playback speed, per-frame titles and energies
 - **Measurements** — distance, angle, dihedral with persistent labels, angle arcs, and Å / ° symbol units
 - **Annotations** — persistent atom/bond labels with subscript / superscript support and adjustable font scale
 - **Session state** — saved views, annotations, styles per file
 - **Tabs** — multiple structures open simultaneously
-- **Publication export** — shared render-state capture, viewport-exact PNG, supersampled publication raster PNG, experimental progressive path-traced PNG, preview thumbnails, crop/background/scale presets, and optional metadata sidecars
+- **Publication export** — shared render-state capture, viewport-exact PNG, supersampled publication raster PNG, experimental progressive path-traced PNG, numbered frame sequences, current-frame XYZ export, preview thumbnails, crop/background/scale presets, and optional metadata sidecars
 
 See [ROADMAP.md](ROADMAP.md) for completed milestones and upcoming features.
 
@@ -202,7 +203,7 @@ cff-version: 1.2.0
 message: "If you use Cylform in your research, please cite it as below."
 type: software
 title: "Cylform: A modern open-source molecular visualization tool"
-version: "0.7.0"
+version: "0.7.2"
 authors:
   - family-names: "Marston"
     given-names: "Sumner K."

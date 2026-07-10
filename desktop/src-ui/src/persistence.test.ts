@@ -5,7 +5,7 @@ import {
   normalizeSessionTabs,
   serializePresentationState,
 } from './persistence';
-import type { Annotation, AppSettings, ViewOptions } from './App';
+import type { Annotation, AppSettings, ViewOptions } from './types';
 
 function testSettings(): AppSettings {
   return {

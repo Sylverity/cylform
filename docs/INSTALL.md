@@ -87,8 +87,9 @@ Drag **Cylform** from **Applications** to the Trash, then empty the Trash.
 6. Use the top molecule tabs to switch between open structures, and use **Open Recent** in the tab bar or **File → Open Recent…** to reopen recent files. Dropping files onto an existing session adds background tabs and keeps the current active view in place.
 7. Use **Poses** to save reusable camera views for the current molecule, then add important views to the global **Pose Library**.
 8. Use the **View** overlay to switch between CYLview, Ball and stick, and Houkmol render profiles when preparing figures.
-9. Click **Export Figure** or use **File → Export Figure…** to open the publication export workflow for viewport, raster, or experimental path-traced PNG output with visible annotations.
-10. Use **File → Settings…** to configure default appearance, measurement precision, shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and app-data diagnostics.
+9. For multi-frame XYZ files, use the View panel frame slider, previous/next buttons, play/pause control, and playback speed selector.
+10. Click **Export Figure** or use **File → Export Figure…** to open the publication export workflow for viewport, raster, or experimental path-traced PNG output with visible annotations. Multi-frame XYZ files can export the current frame, a frame range, or every Nth frame as a numbered PNG sequence.
+11. Use **File → Settings…** to configure default appearance, measurement precision, shortcuts, autosave, session restore, drag/drop behavior, recent-file limits, and app-data diagnostics.
 
 See [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) for the current default shortcuts. `H` cycles hydrogen visibility only; render profiles are selected from the View overlay or Settings.
 
@@ -98,7 +99,7 @@ The desktop app also includes a standard menu bar. Use **File** for opening, rec
 
 Cylform treats molecule files as data only. It does not run scripts, shell commands, macros, or computational chemistry job directives embedded in `.xyz`, `.pdb`, or other selected files.
 
-The current app supports XYZ and PDB files for normal opening. It may display inert metadata such as XYZ titles/energies, detected frame counts, PDB residue fields, and parser notes, but it still opens only the first structure frame/model in this release. To keep the desktop app responsive, files larger than 25 MB and structures larger than 50,000 atoms are rejected with a clear error.
+The current app supports XYZ and PDB files for normal opening. Multi-frame XYZ files load as frame-aware trajectories with per-frame titles and optional energies. PDB files still open the first model while reporting detected model counts. To keep the desktop app responsive, files larger than 25 MB and structures larger than 50,000 atoms per frame are rejected with a clear error.
 
 ## Troubleshooting
 
