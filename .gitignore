@@ -41,4 +41,9 @@ visual-results/
 *.dll
 *.so
 *.dylib
-Agents.md
+
+#ai
+agents.md
+claude.md
+
+
