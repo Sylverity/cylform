@@ -4,13 +4,12 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
-- Added drag-and-drop reordering for molecule tabs.
-
-## [0.7.2] - 2026-07-09
+## [0.7.2] - 2026-07-18
 
 Architecture and quality milestone — the frontend and Tauri backend are split into focused modules, cross-language defaults are locked down with shared tests, and the benchmark harness gains screenshot tooling.
 
 ### Added
+- Drag-and-drop reordering for molecule tabs.
 - **Shared golden default tests** — TS/Rust fixtures under `desktop/shared-fixtures/` verify default settings and per-profile camera state, so Rust and TypeScript defaults cannot drift.
 - **Benchmark screenshot capture** — the benchmark harness accepts `--screenshot` to save a PNG of the settled render, and `--render-profile <id>` to force a style for the capture, under `benchmark-results/screenshots/`.
 - **`snapshot:molecule` harness** (`scripts/snapshot-molecule.mjs`) opens a real molecule and saves a clean static PNG per render profile with no frame-timing sample or orbit/pan/zoom, for render and UI review.
