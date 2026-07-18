@@ -30,6 +30,7 @@ import {
 import { dispatchCanvasEvent, listenToCanvasEvent, type CameraPresetId } from './canvasEvents'
 import { formatAngle, formatDistance } from './domain/measurements'
 import { displayNameForPath, isSupportedMoleculePath } from './domain/paths'
+import { reorderById } from './domain/workspaceTabs'
 import { useAppSettings } from './hooks/useAppSettings'
 import { usePoseLibrary, type PosePreviewJob } from './hooks/usePoseLibrary'
 import { usePresentationStateAutosave } from './hooks/usePresentationStateAutosave'
@@ -236,13 +237,17 @@ function WorkspaceTabs({
   isLoading,
   onSelectTab,
   onCloseTab,
+  onReorderTab,
 }: {
   tabs: MoleculeTab[];
   activeTabId: string | null;
   isLoading: boolean;
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
+  onReorderTab: (draggedId: string, targetId: string) => void;
 }) {
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+
   return (
     <div className="workspace-tabs" aria-label="Open molecules">
       <div className="workspace-tab-list" role="tablist">
@@ -259,6 +264,24 @@ function WorkspaceTabs({
               title={tab.path}
               onClick={() => onSelectTab(tab.id)}
               disabled={isLoading}
+              draggable={!isLoading}
+              data-dragging={draggedTabId === tab.id || undefined}
+              onDragStart={(event) => {
+                setDraggedTabId(tab.id);
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', tab.id);
+              }}
+              onDragOver={(event) => {
+                if (!draggedTabId || draggedTabId === tab.id) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                onReorderTab(draggedTabId, tab.id);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDraggedTabId(null);
+              }}
+              onDragEnd={() => setDraggedTabId(null)}
             >
               <span className="workspace-tab-name">{tab.displayName}</span>
               <span
@@ -1711,6 +1734,9 @@ function App() {
         isLoading={isLoading}
         onSelectTab={(id) => void focusMoleculeTab(id)}
         onCloseTab={handleCloseTab}
+        onReorderTab={(draggedId, targetId) => {
+          setMoleculeTabs((current) => reorderById(current, draggedId, targetId));
+        }}
       />
 
       <div className="main-content">

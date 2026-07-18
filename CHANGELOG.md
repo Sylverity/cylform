@@ -4,7 +4,7 @@ High-level project history for Cylform.
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+- Added drag-and-drop reordering for molecule tabs.
 
 ## [0.7.2] - 2026-07-09
 
